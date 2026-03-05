@@ -1,46 +1,49 @@
 #!/usr/bin/env python3
 """
-s06_context_compact.py - Compact
+s06_context_compact.py - 上下文压缩
 
-Three-layer compression pipeline so the agent can work forever:
+三层压缩流水线，让代理在长会话中持续工作：
 
-    Every turn:
+    每一轮：
     +------------------+
     | Tool call result |
     +------------------+
             |
             v
-    [Layer 1: micro_compact]        (silent, every turn)
-      Replace tool_result content older than last 3
-      with "[Previous: used {tool_name}]"
+        [第 1 层: micro_compact]        （每轮静默执行）
+            将除最近 3 条以外的 tool_result 内容替换为
+            "[Previous: used {tool_name}]"
             |
             v
-    [Check: tokens > 50000?]
+    [检查：tokens > 50000 ?]
        |               |
        no              yes
        |               |
        v               v
-    continue    [Layer 2: auto_compact]
-                  Save full transcript to .transcripts/
-                  Ask LLM to summarize conversation.
-                  Replace all messages with [summary].
+    continue    [第 2 层: auto_compact]
+                  保存完整对话到 .transcripts/
+                  让 LLM 生成会话摘要
+                  用摘要替换当前 messages
                         |
                         v
-                [Layer 3: compact tool]
-                  Model calls compact -> immediate summarization.
-                  Same as auto, triggered manually.
+                                [第 3 层: compact 工具]
+                                    模型调用 compact 后立即压缩
+                                    逻辑与 auto 相同，仅手动触发
 
-Key insight: "The agent can forget strategically and keep working forever."
+关键点："通过策略性遗忘，代理可以长期稳定运行。"
 """
 
 import json
 import os
-import subprocess
 import time
 from pathlib import Path
 
-from anthropic import Anthropic
+from client import get_client, get_model
 from dotenv import load_dotenv
+try:
+    from base import BaseAgentLoop, WorkspaceOps, tool
+except ImportError:
+    from agents.base import BaseAgentLoop, WorkspaceOps, tool
 
 load_dotenv(override=True)
 
@@ -48,8 +51,9 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
+client = get_client()
+MODEL = get_model()
+OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks."
 
@@ -59,13 +63,13 @@ KEEP_RECENT = 3
 
 
 def estimate_tokens(messages: list) -> int:
-    """Rough token count: ~4 chars per token."""
+    """粗略估算 token 数：约 4 个字符约等于 1 个 token。"""
     return len(str(messages)) // 4
 
 
-# -- Layer 1: micro_compact - replace old tool results with placeholders --
+# -- 第 1 层：micro_compact，将旧 tool_result 替换为占位符 --
 def micro_compact(messages: list) -> list:
-    # Collect (msg_index, part_index, tool_result_dict) for all tool_result entries
+    # 收集所有 tool_result 的位置与内容
     tool_results = []
     for msg_idx, msg in enumerate(messages):
         if msg["role"] == "user" and isinstance(msg.get("content"), list):
@@ -74,7 +78,7 @@ def micro_compact(messages: list) -> list:
                     tool_results.append((msg_idx, part_idx, part))
     if len(tool_results) <= KEEP_RECENT:
         return messages
-    # Find tool_name for each result by matching tool_use_id in prior assistant messages
+    # 通过 tool_use_id 回溯对应的工具名
     tool_name_map = {}
     for msg in messages:
         if msg["role"] == "assistant":
@@ -83,7 +87,7 @@ def micro_compact(messages: list) -> list:
                 for block in content:
                     if hasattr(block, "type") and block.type == "tool_use":
                         tool_name_map[block.id] = block.name
-    # Clear old results (keep last KEEP_RECENT)
+    # 清理旧结果（仅保留最近 KEEP_RECENT 条完整内容）
     to_clear = tool_results[:-KEEP_RECENT]
     for _, _, result in to_clear:
         if isinstance(result.get("content"), str) and len(result["content"]) > 100:
@@ -93,16 +97,16 @@ def micro_compact(messages: list) -> list:
     return messages
 
 
-# -- Layer 2: auto_compact - save transcript, summarize, replace messages --
+# -- 第 2 层：auto_compact，落盘全文后生成摘要并替换消息 --
 def auto_compact(messages: list) -> list:
-    # Save full transcript to disk
+    # 将完整对话写入磁盘
     TRANSCRIPT_DIR.mkdir(exist_ok=True)
     transcript_path = TRANSCRIPT_DIR / f"transcript_{int(time.time())}.jsonl"
     with open(transcript_path, "w") as f:
         for msg in messages:
             f.write(json.dumps(msg, default=str) + "\n")
     print(f"[transcript saved: {transcript_path}]")
-    # Ask LLM to summarize
+    # 请求模型生成连续性摘要
     conversation_text = json.dumps(messages, default=str)[:80000]
     response = client.messages.create(
         model=MODEL,
@@ -113,119 +117,60 @@ def auto_compact(messages: list) -> list:
         max_tokens=2000,
     )
     summary = response.content[0].text
-    # Replace all messages with compressed summary
+    # 用压缩后的摘要替换当前上下文
     return [
         {"role": "user", "content": f"[Conversation compressed. Transcript: {transcript_path}]\n\n{summary}"},
         {"role": "assistant", "content": "Understood. I have the context from the summary. Continuing."},
     ]
 
-
-# -- Tool implementations --
-def safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
-        raise ValueError(f"Path escapes workspace: {p}")
-    return path
-
-def run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
-    try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
-
-def run_read(path: str, limit: int = None) -> str:
-    try:
-        lines = safe_path(path).read_text().splitlines()
-        if limit and limit < len(lines):
-            lines = lines[:limit] + [f"... ({len(lines) - limit} more)"]
-        return "\n".join(lines)[:50000]
-    except Exception as e:
-        return f"Error: {e}"
-
-def run_write(path: str, content: str) -> str:
-    try:
-        fp = safe_path(path)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content)
-        return f"Wrote {len(content)} bytes"
-    except Exception as e:
-        return f"Error: {e}"
-
-def run_edit(path: str, old_text: str, new_text: str) -> str:
-    try:
-        fp = safe_path(path)
-        content = fp.read_text()
-        if old_text not in content:
-            return f"Error: Text not found in {path}"
-        fp.write_text(content.replace(old_text, new_text, 1))
-        return f"Edited {path}"
-    except Exception as e:
-        return f"Error: {e}"
+@tool(name="compact", description="Trigger manual conversation compression.")
+def compact(focus: str | None = None) -> str:
+    _ = focus
+    return "Compressing..."
 
 
-TOOL_HANDLERS = {
-    "bash":       lambda **kw: run_bash(kw["command"]),
-    "read_file":  lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":  lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "compact":    lambda **kw: "Manual compression requested.",
-}
+TOOLS = OPS.get_tools() + [compact]
 
-TOOLS = [
-    {"name": "bash", "description": "Run a shell command.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file contents.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write content to file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "edit_file", "description": "Replace exact text in file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "compact", "description": "Trigger manual conversation compression.",
-     "input_schema": {"type": "object", "properties": {"focus": {"type": "string", "description": "What to preserve in the summary"}}}},
-]
+_S06_STATE = {"manual_compact": False}
+
+
+def _on_before_round(messages: list):
+    # 第 1 层：每次模型调用前先做微压缩
+    micro_compact(messages)
+    # 第 2 层：超阈值时自动压缩
+    if estimate_tokens(messages) > THRESHOLD:
+        print("[auto_compact triggered]")
+        messages[:] = auto_compact(messages)
+
+
+def _on_tool_result(block, output: str, results: list, messages: list):
+    print(f"> {block.name}: {output[:200]}")
+    if block.name == "compact":
+        _S06_STATE["manual_compact"] = True
+
+
+def _on_after_round(messages: list, response):
+    # 第 3 层：由 compact 工具触发手动压缩
+    if _S06_STATE["manual_compact"]:
+        print("[manual compact]")
+        messages[:] = auto_compact(messages)
+        _S06_STATE["manual_compact"] = False
+
+
+AGENT_LOOP = BaseAgentLoop(
+    client=client,
+    model=MODEL,
+    system=SYSTEM,
+    tools=TOOLS,
+    max_tokens=8000,
+    on_before_round=_on_before_round,
+    on_tool_result=_on_tool_result,
+    on_after_round=_on_after_round,
+)
 
 
 def agent_loop(messages: list):
-    while True:
-        # Layer 1: micro_compact before each LLM call
-        micro_compact(messages)
-        # Layer 2: auto_compact if token estimate exceeds threshold
-        if estimate_tokens(messages) > THRESHOLD:
-            print("[auto_compact triggered]")
-            messages[:] = auto_compact(messages)
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
-            return
-        results = []
-        manual_compact = False
-        for block in response.content:
-            if block.type == "tool_use":
-                if block.name == "compact":
-                    manual_compact = True
-                    output = "Compressing..."
-                else:
-                    handler = TOOL_HANDLERS.get(block.name)
-                    try:
-                        output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                    except Exception as e:
-                        output = f"Error: {e}"
-                print(f"> {block.name}: {str(output)[:200]}")
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
-        # Layer 3: manual compact triggered by the compact tool
-        if manual_compact:
-            print("[manual compact]")
-            messages[:] = auto_compact(messages)
+    AGENT_LOOP.run(messages)
 
 
 if __name__ == "__main__":
@@ -245,3 +190,5 @@ if __name__ == "__main__":
                 if hasattr(block, "text"):
                     print(block.text)
         print()
+
+

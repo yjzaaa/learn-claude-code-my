@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | [ s07 ] s08 > s09 > s10 > s11 > s12`
 
-> *"大目标要拆成小任务, 排好序, 记在磁盘上"* -- 文件持久化的任务图, 为多 agent 协作打基础。
+> _"大目标要拆成小任务, 排好序, 记在磁盘上"_ -- 文件持久化的任务图, 为多 agent 协作打基础。
 
 ## 问题
 
@@ -104,13 +104,19 @@ TOOL_HANDLERS = {
 
 ## 相对 s06 的变更
 
-| 组件 | 之前 (s06) | 之后 (s07) |
-|---|---|---|
-| Tools | 5 | 8 (`task_create/update/list/get`) |
-| 规划模型 | 扁平清单 (仅内存) | 带依赖关系的任务图 (磁盘) |
-| 关系 | 无 | `blockedBy` + `blocks` 边 |
-| 状态追踪 | 做完没做完 | `pending` -> `in_progress` -> `completed` |
-| 持久化 | 压缩后丢失 | 压缩和重启后存活 |
+| 组件     | 之前 (s06)        | 之后 (s07)                                |
+| -------- | ----------------- | ----------------------------------------- |
+| Tools    | 5                 | 8 (`task_create/update/list/get`)         |
+| 规划模型 | 扁平清单 (仅内存) | 带依赖关系的任务图 (磁盘)                 |
+| 关系     | 无                | `blockedBy` + `blocks` 边                 |
+| 状态追踪 | 做完没做完        | `pending` -> `in_progress` -> `completed` |
+| 持久化   | 压缩后丢失        | 压缩和重启后存活                          |
+
+## 当前代码实现更新
+
+- 主循环已统一迁移到 `BaseAgentLoop`（不再手写 `while + tool_use` 样板循环）。
+- 基础工具（`bash/read_file/write_file/edit_file`）统一复用 `WorkspaceOps`。
+- `TaskManager` 的任务文件读写已显式使用 UTF-8，降低 Windows 编码差异问题。
 
 ## 试一试
 

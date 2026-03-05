@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > [ s09 ] s10 > s11 > s12`
 
-> *"任务太大一个人干不完, 要能分给队友"* -- 持久化队友 + JSONL 邮箱。
+> _"任务太大一个人干不完, 要能分给队友"_ -- 持久化队友 + JSONL 邮箱。
 
 ## 问题
 
@@ -102,14 +102,21 @@ def _teammate_loop(self, name, role, prompt):
 
 ## 相对 s08 的变更
 
-| 组件           | 之前 (s08)       | 之后 (s09)                         |
-|----------------|------------------|------------------------------------|
-| Tools          | 6                | 9 (+spawn/send/read_inbox)         |
-| 智能体数量     | 单一             | 领导 + N 个队友                    |
-| 持久化         | 无               | config.json + JSONL 收件箱         |
-| 线程           | 后台命令         | 每线程完整 agent loop              |
-| 生命周期       | 一次性           | idle -> working -> idle            |
-| 通信           | 无               | message + broadcast                |
+| 组件       | 之前 (s08) | 之后 (s09)                 |
+| ---------- | ---------- | -------------------------- |
+| Tools      | 6          | 9 (+spawn/send/read_inbox) |
+| 智能体数量 | 单一       | 领导 + N 个队友            |
+| 持久化     | 无         | config.json + JSONL 收件箱 |
+| 线程       | 后台命令   | 每线程完整 agent loop      |
+| 生命周期   | 一次性     | idle -> working -> idle    |
+| 通信       | 无         | message + broadcast        |
+
+## 当前代码实现更新
+
+- 领导（lead）主循环已迁移为 `BaseAgentLoop`。
+- 领导与队友的基础工具统一复用 `WorkspaceOps`。
+- 收件箱与团队配置文件读写统一为 UTF-8。
+- 收件箱注入逻辑通过 `on_before_round` 回调在每轮模型调用前执行。
 
 ## 试一试
 

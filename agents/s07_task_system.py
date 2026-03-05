@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
 """
-s07_task_system.py - Tasks
+s07_task_system.py - 任务系统
 
-Tasks persist as JSON files in .tasks/ so they survive context compression.
-Each task has a dependency graph (blockedBy/blocks).
+任务以 JSON 文件形式持久化到 .tasks/，可跨上下文压缩保留。
+每个任务包含依赖图关系（blockedBy/blocks）。
 
     .tasks/
       task_1.json  {"id":1, "subject":"...", "status":"completed", ...}
       task_2.json  {"id":2, "blockedBy":[1], "status":"pending", ...}
       task_3.json  {"id":3, "blockedBy":[2], "blocks":[], ...}
 
-    Dependency resolution:
+    依赖关系示意：
     +----------+     +----------+     +----------+
     | task 1   | --> | task 2   | --> | task 3   |
-    | complete |     | blocked  |     | blocked  |
+    | 已完成   |     | 被阻塞   |     | 被阻塞   |
     +----------+     +----------+     +----------+
          |                ^
-         +--- completing task 1 removes it from task 2's blockedBy
+         +--- task 1 完成后会从 task 2 的 blockedBy 中移除
 
-Key insight: "State that survives compression -- because it's outside the conversation."
+关键点："把状态放在对话外部存储，压缩上下文后也不会丢失。"
 """
 
 import json
 import os
-import subprocess
 from pathlib import Path
 
-from anthropic import Anthropic
 from dotenv import load_dotenv
+try:
+    from client import get_client, get_model
+    from base import BaseAgentLoop, WorkspaceOps, tool
+except ImportError:
+    from agents.client import get_client, get_model
+    from agents.base import BaseAgentLoop, WorkspaceOps, tool
 
 load_dotenv(override=True)
 
@@ -35,14 +39,15 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
-MODEL = os.environ["MODEL_ID"]
+client = get_client()
+MODEL = get_model()
 TASKS_DIR = WORKDIR / ".tasks"
+OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use task tools to plan and track work."
 
 
-# -- TaskManager: CRUD with dependency graph, persisted as JSON files --
+# -- 任务管理：带依赖图的 CRUD，并持久化为 JSON 文件 --
 class TaskManager:
     def __init__(self, tasks_dir: Path):
         self.dir = tasks_dir
@@ -57,11 +62,11 @@ class TaskManager:
         path = self.dir / f"task_{task_id}.json"
         if not path.exists():
             raise ValueError(f"Task {task_id} not found")
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def _save(self, task: dict):
         path = self.dir / f"task_{task['id']}.json"
-        path.write_text(json.dumps(task, indent=2))
+        path.write_text(json.dumps(task, indent=2), encoding="utf-8")
 
     def create(self, subject: str, description: str = "") -> str:
         task = {
@@ -82,14 +87,14 @@ class TaskManager:
             if status not in ("pending", "in_progress", "completed"):
                 raise ValueError(f"Invalid status: {status}")
             task["status"] = status
-            # When a task is completed, remove it from all other tasks' blockedBy
+            # 任务完成后，从其他任务的 blockedBy 中移除该任务
             if status == "completed":
                 self._clear_dependency(task_id)
         if add_blocked_by:
             task["blockedBy"] = list(set(task["blockedBy"] + add_blocked_by))
         if add_blocks:
             task["blocks"] = list(set(task["blocks"] + add_blocks))
-            # Bidirectional: also update the blocked tasks' blockedBy lists
+            # 双向维护：同时更新被阻塞任务的 blockedBy 列表
             for blocked_id in add_blocks:
                 try:
                     blocked = self._load(blocked_id)
@@ -102,9 +107,9 @@ class TaskManager:
         return json.dumps(task, indent=2)
 
     def _clear_dependency(self, completed_id: int):
-        """Remove completed_id from all other tasks' blockedBy lists."""
+        """将 completed_id 从所有任务的 blockedBy 列表中移除。"""
         for f in self.dir.glob("task_*.json"):
-            task = json.loads(f.read_text())
+            task = json.loads(f.read_text(encoding="utf-8"))
             if completed_id in task.get("blockedBy", []):
                 task["blockedBy"].remove(completed_id)
                 self._save(task)
@@ -112,7 +117,7 @@ class TaskManager:
     def list_all(self) -> str:
         tasks = []
         for f in sorted(self.dir.glob("task_*.json")):
-            tasks.append(json.loads(f.read_text()))
+            tasks.append(json.loads(f.read_text(encoding="utf-8")))
         if not tasks:
             return "No tasks."
         lines = []
@@ -126,106 +131,50 @@ class TaskManager:
 TASKS = TaskManager(TASKS_DIR)
 
 
-# -- Base tool implementations --
-def safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
-        raise ValueError(f"Path escapes workspace: {p}")
-    return path
-
-def run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
-    try:
-        r = subprocess.run(command, shell=True, cwd=WORKDIR,
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
-
-def run_read(path: str, limit: int = None) -> str:
-    try:
-        lines = safe_path(path).read_text().splitlines()
-        if limit and limit < len(lines):
-            lines = lines[:limit] + [f"... ({len(lines) - limit} more)"]
-        return "\n".join(lines)[:50000]
-    except Exception as e:
-        return f"Error: {e}"
-
-def run_write(path: str, content: str) -> str:
-    try:
-        fp = safe_path(path)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content)
-        return f"Wrote {len(content)} bytes"
-    except Exception as e:
-        return f"Error: {e}"
-
-def run_edit(path: str, old_text: str, new_text: str) -> str:
-    try:
-        fp = safe_path(path)
-        c = fp.read_text()
-        if old_text not in c:
-            return f"Error: Text not found in {path}"
-        fp.write_text(c.replace(old_text, new_text, 1))
-        return f"Edited {path}"
-    except Exception as e:
-        return f"Error: {e}"
+@tool(name="task_create", description="Create a new task.")
+def task_create(subject: str, description: str = "") -> str:
+    return TASKS.create(subject, description)
 
 
-TOOL_HANDLERS = {
-    "bash":        lambda **kw: run_bash(kw["command"]),
-    "read_file":   lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file":  lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":   lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
-    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("addBlockedBy"), kw.get("addBlocks")),
-    "task_list":   lambda **kw: TASKS.list_all(),
-    "task_get":    lambda **kw: TASKS.get(kw["task_id"]),
-}
+@tool(name="task_update", description="Update a task's status or dependencies.")
+def task_update(
+    task_id: int,
+    status: str | None = None,
+    addBlockedBy: list[int] | None = None,
+    addBlocks: list[int] | None = None,
+) -> str:
+    return TASKS.update(task_id, status, addBlockedBy, addBlocks)
 
-TOOLS = [
-    {"name": "bash", "description": "Run a shell command.",
-     "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
-    {"name": "read_file", "description": "Read file contents.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["path"]}},
-    {"name": "write_file", "description": "Write content to file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-    {"name": "edit_file", "description": "Replace exact text in file.",
-     "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
-    {"name": "task_create", "description": "Create a new task.",
-     "input_schema": {"type": "object", "properties": {"subject": {"type": "string"}, "description": {"type": "string"}}, "required": ["subject"]}},
-    {"name": "task_update", "description": "Update a task's status or dependencies.",
-     "input_schema": {"type": "object", "properties": {"task_id": {"type": "integer"}, "status": {"type": "string", "enum": ["pending", "in_progress", "completed"]}, "addBlockedBy": {"type": "array", "items": {"type": "integer"}}, "addBlocks": {"type": "array", "items": {"type": "integer"}}}, "required": ["task_id"]}},
-    {"name": "task_list", "description": "List all tasks with status summary.",
-     "input_schema": {"type": "object", "properties": {}}},
-    {"name": "task_get", "description": "Get full details of a task by ID.",
-     "input_schema": {"type": "object", "properties": {"task_id": {"type": "integer"}}, "required": ["task_id"]}},
-]
+
+@tool(name="task_list", description="List all tasks with status summary.")
+def task_list() -> str:
+    return TASKS.list_all()
+
+
+@tool(name="task_get", description="Get full details of a task by ID.")
+def task_get(task_id: int) -> str:
+    return TASKS.get(task_id)
+
+
+TOOLS = OPS.get_tools() + [task_create, task_update, task_list, task_get]
+
+
+def _on_tool_result(block, output: str, results: list, messages: list):
+    print(f"> {block.name}: {str(output)[:200]}")
+
+
+AGENT_LOOP = BaseAgentLoop(
+    client=client,
+    model=MODEL,
+    system=SYSTEM,
+    tools=TOOLS,
+    max_tokens=8000,
+    on_tool_result=_on_tool_result,
+)
 
 
 def agent_loop(messages: list):
-    while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        if response.stop_reason != "tool_use":
-            return
-        results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                handler = TOOL_HANDLERS.get(block.name)
-                try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
-                print(f"> {block.name}: {str(output)[:200]}")
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
-        messages.append({"role": "user", "content": results})
+    AGENT_LOOP.run(messages)
 
 
 if __name__ == "__main__":
@@ -245,3 +194,5 @@ if __name__ == "__main__":
                 if hasattr(block, "text"):
                     print(block.text)
         print()
+
+
