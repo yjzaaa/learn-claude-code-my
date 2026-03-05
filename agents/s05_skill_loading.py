@@ -37,6 +37,7 @@ s05_skill_loading.py - 技能加载
 import os
 import re
 import json
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -79,6 +80,7 @@ class SkillLoader:
     def __init__(self, skills_dir: Path):
         self.skills_dir = skills_dir
         self.skills = {}
+        self.backups_dir = WORKDIR / ".backups" / "skills"
         self._load_all()
 
     def _load_all(self):
@@ -200,15 +202,109 @@ class SkillLoader:
         content = read_text_safe(target)
         return f"<skill_script skill=\"{name}\" path=\"{script_path}\">\n{content}\n</skill_script>"
 
+    def _backup_skill(self, name: str, reason: str = "") -> Path:
+        """备份 skill 文件到 .backups/skills/YYYY-MM-DD/skill-name/"""
+        skill = self.skills.get(name)
+        if not skill:
+            raise ValueError(f"Unknown skill: {name}")
+
+        skill_path = Path(skill["path"])
+        today = datetime.now().strftime("%Y-%m-%d")
+        timestamp = datetime.now().strftime("%H-%M-%S")
+
+        backup_dir = self.backups_dir / today / name
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        backup_path = backup_dir / f"SKILL-{timestamp}.md"
+
+        # 读取并添加元数据
+        content = read_text_safe(skill_path)
+        metadata = f"<!-- Backup: {timestamp} | Reason: {reason} -->\n"
+        backup_path.write_text(metadata + content, encoding="utf-8")
+
+        return backup_path
+
+    def update_skill(self, name: str, old_text: str = None, new_text: str = None,
+                     full_content: str = None, reason: str = "") -> str:
+        """更新 skill 文件，自动备份。
+
+        Args:
+            name: skill 名称
+            old_text: 要替换的旧文本（增量模式）
+            new_text: 新文本（增量模式）
+            full_content: 完整新内容（替换模式）
+            reason: 修改原因，用于备份记录
+
+        Returns:
+            操作结果描述
+        """
+        skill = self.skills.get(name)
+        if not skill:
+            return f"Error: Unknown skill '{name}'. Available: {', '.join(self.skills.keys())}"
+
+        skill_path = Path(skill["path"])
+
+        try:
+            # 1. 备份
+            backup_path = self._backup_skill(name, reason)
+
+            # 2. 执行修改
+            if full_content:
+                # 完整替换模式
+                # 保留 frontmatter
+                _, body = self._parse_frontmatter(full_content)
+                meta = skill["meta"]
+                frontmatter_lines = ["---"]
+                for key, val in meta.items():
+                    frontmatter_lines.append(f"{key}: {val}")
+                frontmatter_lines.append("---")
+                new_content = "\n".join(frontmatter_lines) + "\n\n" + body
+                skill_path.write_text(new_content, encoding="utf-8")
+
+            elif old_text and new_text:
+                # 增量编辑模式
+                content = read_text_safe(skill_path)
+                if old_text not in content:
+                    return f"Error: old_text not found in skill '{name}'. No changes made."
+                new_content = content.replace(old_text, new_text, 1)
+                skill_path.write_text(new_content, encoding="utf-8")
+
+            else:
+                return "Error: Must provide either (full_content) or (old_text + new_text)"
+
+            # 3. 重载 skill
+            self._reload_skill(name)
+
+            return f"Updated skill '{name}'. Backup: {backup_path}"
+
+        except Exception as e:
+            return f"Error updating skill '{name}': {e}"
+
+    def _reload_skill(self, name: str):
+        """重新加载单个 skill。"""
+        skill = self.skills.get(name)
+        if not skill:
+            return
+        path = Path(skill["path"])
+        text = read_text_safe(path)
+        meta, body = self._parse_frontmatter(text)
+        self.skills[name] = {"meta": meta, "body": body, "path": str(path)}
+
 
 SKILL_LOADER = SkillLoader(SKILLS_DIR)
 
 # 第 1 层：将技能元数据注入 system prompt
-SYSTEM = f"""You are a coding agent at {WORKDIR}.
-Use load_skill to access specialized knowledge before tackling unfamiliar topics.
+SYSTEM = f"""You are a helpful assistant at {WORKDIR}.
 
-Skills available:
-{SKILL_LOADER.get_descriptions()}"""
+INSTRUCTIONS:
+1. Read the skill descriptions below
+2. Call load_skill() with the skill that matches the user's question
+3. Follow the loaded skill's instructions to answer
+
+SKILLS:
+{SKILL_LOADER.get_descriptions()}
+
+IMPORTANT: Always call load_skill() before answering. The skill contains the specialized knowledge needed."""
 
 @tool(name="load_skill", description="Load specialized knowledge by name.")
 def load_skill(name: str) -> str:
@@ -225,7 +321,30 @@ def load_skill_script(name: str, path: str = "") -> str:
     return SKILL_LOADER.get_scripts_content(name, path)
 
 
-TOOLS = OPS.get_tools() + [load_skill, load_skill_reference, load_skill_script]
+@tool(name="update_skill", description="Update a skill file. Use old_text+new_text for incremental edits, or full_content for complete replacement.")
+def update_skill(name: str, old_text: str = "", new_text: str = "",
+                 full_content: str = "", reason: str = "") -> str:
+    """
+    更新 skill 文件。
+
+    参数:
+        name: skill 名称
+        old_text: 要替换的旧文本（增量编辑模式）
+        new_text: 新文本（增量编辑模式）
+        full_content: 完整新内容（完整替换模式）
+        reason: 修改原因（用于备份记录）
+    """
+    return SKILL_LOADER.update_skill(
+        name,
+        old_text or None,
+        new_text or None,
+        full_content or None,
+        reason
+    )
+
+
+# 技能加载工具放前面，让模型优先看到
+TOOLS = [load_skill, load_skill_reference, load_skill_script, update_skill] + OPS.get_tools()
 
 
 def _serialize_content_block(block):
@@ -292,6 +411,7 @@ AGENT_LOOP = BaseAgentLoop(
     system=SYSTEM,
     tools=TOOLS,
     max_tokens=8000,
+    max_rounds=10,  # 限制最多10轮对话
     on_stream_token=_on_stream_token,
     on_stop=_on_stop,
 )
