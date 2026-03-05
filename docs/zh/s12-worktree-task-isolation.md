@@ -2,7 +2,7 @@
 
 `s01 > s02 > s03 > s04 > s05 > s06 | s07 > s08 > s09 > s10 > s11 > [ s12 ]`
 
-> *"各干各的目录, 互不干扰"* -- 任务管目标, worktree 管目录, 按 ID 绑定。
+> _"各干各的目录, 互不干扰"_ -- 任务管目标, worktree 管目录, 按 ID 绑定。
 
 ## 问题
 
@@ -85,8 +85,8 @@ def remove(self, name, force=False, complete_task=False):
 ```json
 {
   "event": "worktree.remove.after",
-  "task": {"id": 1, "status": "completed"},
-  "worktree": {"name": "auth-refactor", "status": "removed"},
+  "task": { "id": 1, "status": "completed" },
+  "worktree": { "name": "auth-refactor", "status": "removed" },
   "ts": 1730000000
 }
 ```
@@ -97,13 +97,20 @@ def remove(self, name, force=False, complete_task=False):
 
 ## 相对 s11 的变更
 
-| 组件               | 之前 (s11)                 | 之后 (s12)                                   |
-|--------------------|----------------------------|----------------------------------------------|
-| 协调               | 任务板 (owner/status)      | 任务板 + worktree 显式绑定                   |
-| 执行范围           | 共享目录                   | 每个任务独立目录                             |
-| 可恢复性           | 仅任务状态                 | 任务状态 + worktree 索引                     |
-| 收尾               | 任务完成                   | 任务完成 + 显式 keep/remove                  |
-| 生命周期可见性     | 隐式日志                   | `.worktrees/events.jsonl` 显式事件流         |
+| 组件           | 之前 (s11)            | 之后 (s12)                           |
+| -------------- | --------------------- | ------------------------------------ |
+| 协调           | 任务板 (owner/status) | 任务板 + worktree 显式绑定           |
+| 执行范围       | 共享目录              | 每个任务独立目录                     |
+| 可恢复性       | 仅任务状态            | 任务状态 + worktree 索引             |
+| 收尾           | 任务完成              | 任务完成 + 显式 keep/remove          |
+| 生命周期可见性 | 隐式日志              | `.worktrees/events.jsonl` 显式事件流 |
+
+## 当前代码实现更新
+
+- 主循环已统一到 `BaseAgentLoop`。
+- 基础工具统一复用 `WorkspaceOps`，删除了重复本地实现。
+- 任务板、worktree 索引、事件日志文件读写均显式使用 UTF-8。
+- worktree 生命周期事件与任务绑定语义保持不变。
 
 ## 试一试
 
