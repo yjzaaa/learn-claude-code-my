@@ -34,6 +34,8 @@ class WorkspaceOps:
         self.workdir = workdir
         self.command_guard = command_guard or DefaultCommandGuard()
         self.shell_runner = shell_runner or subprocess.run
+        # write_file 仅允许写入该受控目录。
+        self.write_scope = (self.workdir / ".workspace").resolve()
         # 默认在构造阶段构建基础工具列表，供外部直接复用。
         self.tools: list[Callable[..., Any]] = (
             self.build_default_tools() if auto_build_tools else []
@@ -89,6 +91,8 @@ class WorkspaceOps:
         """写入文件内容（自动创建父目录）。"""
         try:
             file_path = self.safe_path(path)
+            if not file_path.is_relative_to(self.write_scope):
+                return "Error: write_file is restricted to .workspace/"
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
             return f"Wrote {len(content)} bytes"
@@ -99,6 +103,8 @@ class WorkspaceOps:
         """在文件中做一次精确文本替换。"""
         try:
             file_path = self.safe_path(path)
+            if not file_path.is_relative_to(self.write_scope):
+                return "Error: edit_file is restricted to .workspace/"
             content = self._read_text_safe(file_path)
             if old_text not in content:
                 return f"Error: Text not found in {path}"
@@ -136,14 +142,14 @@ class WorkspaceOps:
             tools.append(read_file)
 
         if include_write:
-            @tool(name="write_file", description="Write content to file.")
+            @tool(name="write_file", description="Write content to file under .workspace/ only.")
             def write_file(path: str, content: str) -> str:
                 return self.run_write(path, content)
 
             tools.append(write_file)
 
         if include_edit:
-            @tool(name="edit_file", description="Replace exact text in file.")
+            @tool(name="edit_file", description="Replace exact text in files under .workspace/ only.")
             def edit_file(path: str, old_text: str, new_text: str) -> str:
                 return self.run_edit(path, old_text, new_text)
 
