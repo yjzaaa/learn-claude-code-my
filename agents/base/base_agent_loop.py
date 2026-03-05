@@ -19,14 +19,16 @@ class BaseAgentLoop:
         tools: list[Any],
         tool_handlers: dict[str, Callable[..., Any]] | None = None,
         max_tokens: int = 8000,
-        max_rounds: int | None = None,
+        max_rounds: int | None = 25,
         on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
+        on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
         on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
         on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
         on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
         on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
         on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
         on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ):
         self.client = client
         self.model = model
@@ -35,12 +37,14 @@ class BaseAgentLoop:
         self.max_tokens = max_tokens
         self.max_rounds = max_rounds
         self.on_before_round = on_before_round
+        self.on_tool_call = on_tool_call
         self.on_tool_result = on_tool_result
         self.on_stream_token = on_stream_token
         self.on_stream_text = on_stream_text
         self.on_round_end = on_round_end
         self.on_after_round = on_after_round
         self.on_stop = on_stop
+        self.should_stop = should_stop
 
     @classmethod
     def from_namespace(
@@ -51,14 +55,16 @@ class BaseAgentLoop:
         system: str,
         namespace: dict[str, Any],
         max_tokens: int = 8000,
-        max_rounds: int | None = None,
+        max_rounds: int | None = 25,
         on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
+        on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
         on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
         on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
         on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
         on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
         on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
         on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
     ) -> "BaseAgentLoop":
         """从命名空间中自动扫描 @tool 函数并创建循环实例。"""
         from .toolkit import scan_tools
@@ -79,6 +85,7 @@ class BaseAgentLoop:
             on_round_end=on_round_end,
             on_after_round=on_after_round,
             on_stop=on_stop,
+            should_stop=should_stop,
         )
 
     @staticmethod
@@ -90,29 +97,45 @@ class BaseAgentLoop:
 
     def _emit_stream_tokens(self, text: str, block: Any, messages: list[dict[str, Any]], response: Any) -> None:
         """触发 token 流式钩子。"""
+        print(f"[BaseAgentLoop] _emit_stream_tokens called, text length={len(text)}, on_stream_token={self.on_stream_token is not None}")
         if not self.on_stream_token:
+            print("[BaseAgentLoop] on_stream_token is None, skipping")
             return
-        for token in self._iter_tokens(text):
+        tokens = self._iter_tokens(text)
+        print(f"[BaseAgentLoop] Emitting {len(tokens)} tokens")
+        for token in tokens:
             try:
                 self.on_stream_token(token, block, messages, response)
-            except Exception:
+            except Exception as e:
                 # token 流式回调仅用于展示，不应影响主流程。
+                print(f"[BaseAgentLoop] on_stream_token error: {e}")
+                import traceback
+                traceback.print_exc()
                 pass
 
     def _emit_stream_text(self, response: Any, messages: list[dict[str, Any]]) -> None:
         """触发流式文本钩子：按响应中的文本块顺序回调。"""
+        print(f"[BaseAgentLoop] _emit_stream_text called, on_stream_text={self.on_stream_text is not None}, on_stream_token={self.on_stream_token is not None}")
         if not self.on_stream_text and not self.on_stream_token:
+            print("[BaseAgentLoop] Both callbacks are None, skipping")
             return
 
         content = getattr(response, "content", None)
+        print(f"[BaseAgentLoop] response.content type={type(content)}")
         if isinstance(content, str):
             if content:
+                print(f"[BaseAgentLoop] Emitting string content, length={len(content)}")
                 self._emit_stream_tokens(content, None, messages, response)
                 try:
                     if self.on_stream_text:
                         self.on_stream_text(content, None, messages, response)
-                except Exception:
+                except Exception as e:
+                    print(f"[BaseAgentLoop] on_stream_text error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     pass
+            else:
+                print("[BaseAgentLoop] String content is empty")
             return
 
         if not isinstance(content, list):
@@ -207,6 +230,13 @@ class BaseAgentLoop:
         """执行标准循环，直到模型不再请求工具。"""
         rounds = 0
         while True:
+            # 检查是否应该停止
+            if self.should_stop and self.should_stop():
+                print("[BaseAgentLoop] Stop requested, breaking loop")
+                if self.on_stop:
+                    self.on_stop(messages, None)
+                return
+
             if self.on_before_round:
                 self.on_before_round(messages)
 
@@ -235,6 +265,20 @@ class BaseAgentLoop:
             for block in response.content:
                 if getattr(block, "type", None) != "tool_use":
                     continue
+
+                # 检查是否应该停止（工具调用前）
+                if self.should_stop and self.should_stop():
+                    print("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
+                    if self.on_stop:
+                        self.on_stop(messages, response)
+                    return
+
+                # 触发工具调用开始回调
+                if self.on_tool_call:
+                    try:
+                        self.on_tool_call(block.name, block.input, messages)
+                    except Exception as e:
+                        print(f"[BaseAgentLoop] on_tool_call error: {e}")
 
                 handler = self.tool_handlers.get(block.name)
                 try:
@@ -272,12 +316,14 @@ def run_base_agent_loop(
     max_tokens: int = 8000,
     max_rounds: int | None = None,
     on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
+    on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
     on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
     on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
     on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
     on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
     on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
     on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> None:
     """函数式入口：快速执行一次基础 Agent 循环。"""
     loop = BaseAgentLoop(
@@ -289,11 +335,13 @@ def run_base_agent_loop(
         max_tokens=max_tokens,
         max_rounds=max_rounds,
         on_before_round=on_before_round,
+        on_tool_call=on_tool_call,
         on_tool_result=on_tool_result,
         on_stream_token=on_stream_token,
         on_stream_text=on_stream_text,
         on_round_end=on_round_end,
         on_after_round=on_after_round,
         on_stop=on_stop,
+        should_stop=should_stop,
     )
     loop.run(messages)
