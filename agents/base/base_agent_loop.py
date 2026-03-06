@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, Callable
+from loguru import logger
 
 
 class BaseAgentLoop:
@@ -97,45 +98,45 @@ class BaseAgentLoop:
 
     def _emit_stream_tokens(self, text: str, block: Any, messages: list[dict[str, Any]], response: Any) -> None:
         """触发 token 流式钩子。"""
-        print(f"[BaseAgentLoop] _emit_stream_tokens called, text length={len(text)}, on_stream_token={self.on_stream_token is not None}")
+        logger.info(f"[BaseAgentLoop] _emit_stream_tokens called, text length={len(text)}, on_stream_token={self.on_stream_token is not None}")
         if not self.on_stream_token:
-            print("[BaseAgentLoop] on_stream_token is None, skipping")
+            logger.info("[BaseAgentLoop] on_stream_token is None, skipping")
             return
         tokens = self._iter_tokens(text)
-        print(f"[BaseAgentLoop] Emitting {len(tokens)} tokens")
+        logger.info(f"[BaseAgentLoop] Emitting {len(tokens)} tokens")
         for token in tokens:
             try:
                 self.on_stream_token(token, block, messages, response)
             except Exception as e:
                 # token 流式回调仅用于展示，不应影响主流程。
-                print(f"[BaseAgentLoop] on_stream_token error: {e}")
+                logger.info(f"[BaseAgentLoop] on_stream_token error: {e}")
                 import traceback
                 traceback.print_exc()
                 pass
 
     def _emit_stream_text(self, response: Any, messages: list[dict[str, Any]]) -> None:
         """触发流式文本钩子：按响应中的文本块顺序回调。"""
-        print(f"[BaseAgentLoop] _emit_stream_text called, on_stream_text={self.on_stream_text is not None}, on_stream_token={self.on_stream_token is not None}")
+        logger.info(f"[BaseAgentLoop] _emit_stream_text called, on_stream_text={self.on_stream_text is not None}, on_stream_token={self.on_stream_token is not None}")
         if not self.on_stream_text and not self.on_stream_token:
-            print("[BaseAgentLoop] Both callbacks are None, skipping")
+            logger.info("[BaseAgentLoop] Both callbacks are None, skipping")
             return
 
         content = getattr(response, "content", None)
-        print(f"[BaseAgentLoop] response.content type={type(content)}")
+        logger.info(f"[BaseAgentLoop] response.content type={type(content)}")
         if isinstance(content, str):
             if content:
-                print(f"[BaseAgentLoop] Emitting string content, length={len(content)}")
+                logger.info(f"[BaseAgentLoop] Emitting string content, length={len(content)}")
                 self._emit_stream_tokens(content, None, messages, response)
                 try:
                     if self.on_stream_text:
                         self.on_stream_text(content, None, messages, response)
                 except Exception as e:
-                    print(f"[BaseAgentLoop] on_stream_text error: {e}")
+                    logger.info(f"[BaseAgentLoop] on_stream_text error: {e}")
                     import traceback
                     traceback.print_exc()
                     pass
             else:
-                print("[BaseAgentLoop] String content is empty")
+                logger.info("[BaseAgentLoop] String content is empty")
             return
 
         if not isinstance(content, list):
@@ -232,16 +233,20 @@ class BaseAgentLoop:
         while True:
             # 检查是否应该停止
             if self.should_stop and self.should_stop():
-                print("[BaseAgentLoop] Stop requested, breaking loop")
+                logger.info("[BaseAgentLoop] Stop requested, breaking loop")
+                if self.on_stop:
+                    self.on_stop(messages, None)
+                return
+
+            # 达到最大轮数时直接停止，避免触发一轮无响应的 before_round 事件。
+            if self.max_rounds is not None and rounds >= self.max_rounds:
+                logger.info(f"[BaseAgentLoop] Reached max_rounds={self.max_rounds}, stopping")
                 if self.on_stop:
                     self.on_stop(messages, None)
                 return
 
             if self.on_before_round:
                 self.on_before_round(messages)
-
-            if self.max_rounds is not None and rounds >= self.max_rounds:
-                return
 
             response = self.client.messages.create(
                 model=self.model,
@@ -268,7 +273,7 @@ class BaseAgentLoop:
 
                 # 检查是否应该停止（工具调用前）
                 if self.should_stop and self.should_stop():
-                    print("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
+                    logger.info("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
                     if self.on_stop:
                         self.on_stop(messages, response)
                     return
@@ -278,8 +283,7 @@ class BaseAgentLoop:
                     try:
                         self.on_tool_call(block.name, block.input, messages)
                     except Exception as e:
-                        print(f"[BaseAgentLoop] on_tool_call error: {e}")
-
+                        logger.info(f"[BaseAgentLoop] on_tool_call error: {e}")
                 handler = self.tool_handlers.get(block.name)
                 try:
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"

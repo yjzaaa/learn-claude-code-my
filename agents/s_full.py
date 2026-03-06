@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s_full.py - Full Reference Agent
@@ -488,7 +489,7 @@ class TeammateManager:
                                         "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
                                         "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"])}
                             output = dispatch.get(block.name, lambda **kw: "Unknown")(**block.input)
-                        print(f"  [{name}] {block.name}: {str(output)[:120]}")
+                        logger.info(f"  [{name}] {block.name}: {str(output)[:120]}")
                         results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
                 messages.append({"role": "user", "content": results})
                 if idle_requested:
@@ -657,7 +658,7 @@ def agent_loop(messages: list):
         # s06: compression pipeline
         microcompact(messages)
         if estimate_tokens(messages) > TOKEN_THRESHOLD:
-            print("[auto-compact triggered]")
+            logger.info("[auto-compact triggered]")
             messages[:] = auto_compact(messages)
         # s08: drain background notifications
         notifs = BG.drain()
@@ -691,7 +692,7 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}: {str(output)[:200]}")
+                logger.info(f"> {block.name}: {str(output)[:200]}")
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
                 if block.name == "TodoWrite":
                     used_todo = True
@@ -702,7 +703,7 @@ def agent_loop(messages: list):
         messages.append({"role": "user", "content": results})
         # s06: manual compress
         if manual_compress:
-            print("[manual compact]")
+            logger.info("[manual compact]")
             messages[:] = auto_compact(messages)
 
 
@@ -718,20 +719,18 @@ if __name__ == "__main__":
             break
         if query.strip() == "/compact":
             if history:
-                print("[manual compact via /compact]")
+                logger.info("[manual compact via /compact]")
                 history[:] = auto_compact(history)
             continue
         if query.strip() == "/tasks":
-            print(TASK_MGR.list_all())
+            logger.info(TASK_MGR.list_all())
             continue
         if query.strip() == "/team":
-            print(TEAM.list_all())
+            logger.info(TEAM.list_all())
             continue
         if query.strip() == "/inbox":
-            print(json.dumps(BUS.read_inbox("lead"), indent=2))
+            logger.info(json.dumps(BUS.read_inbox("lead"), indent=2))
             continue
         history.append({"role": "user", "content": query})
         agent_loop(history)
-        print()
-
-
+        logger.info("")

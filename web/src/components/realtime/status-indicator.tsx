@@ -8,6 +8,7 @@ interface StatusIndicatorProps {
   status: MessageStatus;
   size?: "sm" | "md" | "lg";
   showLabel?: boolean;
+  animate?: boolean;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ export function StatusIndicator({
   status,
   size = "md",
   showLabel = false,
+  animate,
   className,
 }: StatusIndicatorProps) {
   const config = MESSAGE_STATUS_CONFIG[status];
@@ -42,7 +44,7 @@ export function StatusIndicator({
           "rounded-full",
           sizeConfig.dot,
           config.dotColor,
-          config.animate && "animate-pulse"
+          (animate ?? config.animate) && "animate-pulse",
         )}
       />
       {showLabel && (

@@ -41,7 +41,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   } = options;
 
   const [status, setStatus] = useState<WebSocketStatus>(
-    globalWsRef.current?.readyState === WebSocket.OPEN ? "connected" : "disconnected"
+    globalWsRef.current?.readyState === WebSocket.OPEN
+      ? "connected"
+      : "disconnected",
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +53,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const clientIdRef = globalClientId;
   const optionsRef = useRef(options);
   const isConnectingRef = useRef(false);
+  const mountedRef = useRef(true);
   const subscribedDialogsRef = useRef(subscribedDialogs);
 
   // Update options ref when they change
@@ -64,7 +67,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN || isConnectingRef.current) {
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      isConnectingRef.current
+    ) {
       return;
     }
 
@@ -89,11 +95,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
         // 恢复之前的订阅
         subscribedDialogsRef.current.forEach((dialogId) => {
-          console.log("[WebSocket] Restoring subscription to dialog:", dialogId);
-          ws.send(JSON.stringify({
-            type: "subscribe_dialog",
-            dialog_id: dialogId,
-          }));
+          console.log(
+            "[WebSocket] Restoring subscription to dialog:",
+            dialogId,
+          );
+          ws.send(
+            JSON.stringify({
+              type: "subscribe_dialog",
+              dialog_id: dialogId,
+            }),
+          );
         });
       };
 
@@ -109,28 +120,28 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case "stream_token":
               globalEventEmitter.emit(
                 "stream:token",
-                message as StreamTokenMessage
+                message as StreamTokenMessage,
               );
               break;
             case "message_added":
               console.log("[WebSocket] Emitting message:added");
               globalEventEmitter.emit(
                 "message:added",
-                message as MessageAddedEvent
+                message as MessageAddedEvent,
               );
               break;
             case "message_updated":
               console.log("[WebSocket] Emitting message:updated");
               globalEventEmitter.emit(
                 "message:updated",
-                message as MessageUpdatedEvent
+                message as MessageUpdatedEvent,
               );
               break;
             case "dialog_subscribed":
               console.log("[WebSocket] Dialog subscribed:", message);
               globalEventEmitter.emit(
                 "dialog:subscribed",
-                message as DialogSubscribedEvent
+                message as DialogSubscribedEvent,
               );
               break;
             case "dialog_created":
@@ -155,9 +166,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         globalEventEmitter.emit("websocket:disconnected");
         console.log("[WebSocket] Connection closed");
 
-        if (autoReconnect && reconnectAttemptsRef.current < maxReconnectAttempts) {
+        if (
+          autoReconnect &&
+          reconnectAttemptsRef.current < maxReconnectAttempts
+        ) {
           reconnectAttemptsRef.current++;
-          console.log(`[WebSocket] Reconnecting... attempt ${reconnectAttemptsRef.current}`);
+          console.log(
+            `[WebSocket] Reconnecting... attempt ${reconnectAttemptsRef.current}`,
+          );
           reconnectTimerRef.current = setTimeout(() => {
             if (mountedRef.current) {
               connect();
@@ -202,25 +218,31 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     return false;
   }, []);
 
-  const subscribeToDialog = useCallback((dialogId: string) => {
-    console.log("[WebSocket] Subscribing to dialog:", dialogId);
-    // 记录订阅，以便重连后恢复
-    subscribedDialogsRef.current.add(dialogId);
-    const result = send({
-      type: "subscribe_dialog",
-      dialog_id: dialogId,
-    });
-    console.log("[WebSocket] Subscribe message sent:", result);
-    return result;
-  }, [send]);
+  const subscribeToDialog = useCallback(
+    (dialogId: string) => {
+      console.log("[WebSocket] Subscribing to dialog:", dialogId);
+      // 记录订阅，以便重连后恢复
+      subscribedDialogsRef.current.add(dialogId);
+      const result = send({
+        type: "subscribe_dialog",
+        dialog_id: dialogId,
+      });
+      console.log("[WebSocket] Subscribe message sent:", result);
+      return result;
+    },
+    [send],
+  );
 
-  const unsubscribeFromDialog = useCallback((dialogId: string) => {
-    subscribedDialogsRef.current.delete(dialogId);
-    return send({
-      type: "unsubscribe_dialog",
-      dialog_id: dialogId,
-    });
-  }, [send]);
+  const unsubscribeFromDialog = useCallback(
+    (dialogId: string) => {
+      subscribedDialogsRef.current.delete(dialogId);
+      return send({
+        type: "unsubscribe_dialog",
+        dialog_id: dialogId,
+      });
+    },
+    [send],
+  );
 
   const sendPing = useCallback(() => {
     return send({ type: "ping" });
@@ -231,6 +253,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       connect();
     }
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   return {

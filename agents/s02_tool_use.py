@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s02_tool_use.py - 工具调用
@@ -71,7 +72,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

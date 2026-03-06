@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s08_background_tasks.py - 后台任务
@@ -140,9 +141,7 @@ def _on_before_round(messages: list):
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {str(output)[:200]}")
-
-
+    logger.info(f"> {block.name}: {str(output)[:200]}")
 AGENT_LOOP = BaseAgentLoop(
     client=client,
     model=MODEL,
@@ -173,7 +172,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

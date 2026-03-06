@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s04_subagent.py - 子代理
@@ -93,7 +94,7 @@ def run_subagent(prompt: str) -> str:
 
 def run_task(prompt: str, description: str | None = None) -> str:
     desc = description or "subtask"
-    print(f"> task ({desc}): {prompt[:80]}")
+    logger.info(f"> task ({desc}): {prompt[:80]}")
     return run_subagent(prompt)
 
 
@@ -110,9 +111,7 @@ PARENT_TOOLS = CHILD_TOOLS + [task]
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"  {output[:200]}")
-
-
+    logger.info(f"  {output[:200]}")
 AGENT_LOOP = BaseAgentLoop(
     client=client,
     model=MODEL,
@@ -142,7 +141,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

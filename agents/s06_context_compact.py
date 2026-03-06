@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s06_context_compact.py - 上下文压缩
@@ -105,7 +106,7 @@ def auto_compact(messages: list) -> list:
     with open(transcript_path, "w") as f:
         for msg in messages:
             f.write(json.dumps(msg, default=str) + "\n")
-    print(f"[transcript saved: {transcript_path}]")
+    logger.info(f"[transcript saved: {transcript_path}]")
     # 请求模型生成连续性摘要
     conversation_text = json.dumps(messages, default=str)[:80000]
     response = client.messages.create(
@@ -139,12 +140,12 @@ def _on_before_round(messages: list):
     micro_compact(messages)
     # 第 2 层：超阈值时自动压缩
     if estimate_tokens(messages) > THRESHOLD:
-        print("[auto_compact triggered]")
+        logger.info("[auto_compact triggered]")
         messages[:] = auto_compact(messages)
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {output[:200]}")
+    logger.info(f"> {block.name}: {output[:200]}")
     if block.name == "compact":
         _S06_STATE["manual_compact"] = True
 
@@ -152,7 +153,7 @@ def _on_tool_result(block, output: str, results: list, messages: list):
 def _on_after_round(messages: list, response):
     # 第 3 层：由 compact 工具触发手动压缩
     if _S06_STATE["manual_compact"]:
-        print("[manual compact]")
+        logger.info("[manual compact]")
         messages[:] = auto_compact(messages)
         _S06_STATE["manual_compact"] = False
 
@@ -188,7 +189,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
+  { key: "agent", href: "/agent" },
   { key: "timeline", href: "/timeline" },
   { key: "compare", href: "/compare" },
   { key: "layers", href: "/layers" },
@@ -62,7 +63,7 @@ export function Header() {
                 "text-sm font-medium transition-colors hover:text-zinc-900 dark:hover:text-white",
                 pathname.includes(item.href)
                   ? "text-zinc-900 dark:text-white"
-                  : "text-zinc-500 dark:text-zinc-400"
+                  : "text-zinc-500 dark:text-zinc-400",
               )}
             >
               {t(item.key)}
@@ -79,7 +80,7 @@ export function Header() {
                   "rounded-md px-2 py-1 text-xs font-medium transition-colors",
                   locale === l.code
                     ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
+                    : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400",
                 )}
               >
                 {l.label}
@@ -136,7 +137,7 @@ export function Header() {
                     "min-h-[44px] min-w-[44px] rounded-md px-3 text-xs font-medium",
                     locale === l.code
                       ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                      : "border border-[var(--color-border)]"
+                      : "border border-[var(--color-border)]",
                   )}
                 >
                   {l.label}
