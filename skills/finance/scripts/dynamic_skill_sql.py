@@ -1,3 +1,4 @@
+﻿from loguru import logger
 import json
 
 try:
@@ -55,15 +56,15 @@ def execute_sql(sql_query):
 
 if __name__ == "__main__":
     user_query = "白领数分摊服务有哪些？"
-    user_filters = {"Year": "2026", "Scenario": "Budget1"}
+    user_filters = {"Year": "2025", "Scenario": "Actual", "[Function]": "IT", "CC": "CT"}
 
     intent_result = analyze_intent(user_query)
     if intent_result["is_data_query"]:
         sql_query = construct_sql(intent_result, user_filters)
         if sql_query:
             results = execute_sql(sql_query)
-            print(json.dumps(results, ensure_ascii=False, indent=4))
+            logger.info(json.dumps(results, ensure_ascii=False, indent=4))
         else:
-            print("无法生成 SQL 查询！")
+            logger.info("无法生成 SQL 查询！")
     else:
-        print("问题不涉及数据查询。")
+        logger.info("问题不涉及数据查询。")

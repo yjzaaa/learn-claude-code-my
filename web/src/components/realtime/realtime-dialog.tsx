@@ -24,7 +24,12 @@ interface RealtimeDialogProps {
   dialogId: string;
   title?: string;
   className?: string;
-  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left" | "center";
+  position?:
+    | "bottom-right"
+    | "bottom-left"
+    | "top-right"
+    | "top-left"
+    | "center";
   width?: "sm" | "md" | "lg" | "xl" | "full";
   height?: "sm" | "md" | "lg" | "xl" | "full";
   draggable?: boolean;
@@ -169,17 +174,14 @@ export function RealtimeDialog({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.9 }}
-        className={cn(
-          POSITION_CONFIG[position],
-          "z-50"
-        )}
+        className={cn(POSITION_CONFIG[position], "z-50")}
       >
         <button
           onClick={() => setIsMinimized(false)}
           className={cn(
             "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg",
             "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700",
-            "hover:shadow-xl transition-shadow"
+            "hover:shadow-xl transition-shadow",
           )}
         >
           <StatusIndicator
@@ -213,7 +215,7 @@ export function RealtimeDialog({
         "z-50 flex flex-col rounded-xl shadow-2xl",
         "bg-white dark:bg-zinc-900",
         "border border-zinc-200 dark:border-zinc-700",
-        className
+        className,
       )}
     >
       {/* Header */}
@@ -285,7 +287,11 @@ export function RealtimeDialog({
                   message={message}
                   childMessages={childMessages}
                   isStreaming={isStreaming}
-                  defaultExpanded={index >= organizedMessages.parentMessages.length - 2}
+                  defaultExpanded={
+                    message.type !== "tool_call" &&
+                    message.type !== "tool_result" &&
+                    index >= organizedMessages.parentMessages.length - 2
+                  }
                 />
               );
             })}
@@ -311,7 +317,7 @@ export function RealtimeDialog({
                 "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500",
                 "bg-zinc-50 dark:bg-zinc-800",
                 "border-zinc-200 dark:border-zinc-700",
-                "disabled:opacity-50 disabled:cursor-not-allowed"
+                "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
               rows={1}
               style={{ minHeight: "40px", maxHeight: "120px" }}
@@ -325,7 +331,7 @@ export function RealtimeDialog({
               "bg-blue-500 text-white",
               "hover:bg-blue-600 active:bg-blue-700",
               "disabled:opacity-50 disabled:cursor-not-allowed",
-              "transition-colors"
+              "transition-colors",
             )}
           >
             <Send className="h-4 w-4" />
@@ -341,12 +347,12 @@ interface RealtimeDialogContainerProps {
   children?: React.ReactNode;
 }
 
-export function RealtimeDialogContainer({ children }: RealtimeDialogContainerProps) {
+export function RealtimeDialogContainer({
+  children,
+}: RealtimeDialogContainerProps) {
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
-      <div className="relative w-full h-full">
-        {children}
-      </div>
+      <div className="relative w-full h-full">{children}</div>
     </div>
   );
 }

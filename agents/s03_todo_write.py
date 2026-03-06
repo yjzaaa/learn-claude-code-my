@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s03_todo_write.py - 任务清单写入
@@ -103,7 +104,7 @@ _LOOP_STATE = {"rounds_since_todo": 0, "used_todo": False}
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {output[:200]}")
+    logger.info(f"> {block.name}: {output[:200]}")
     if block.name == "todo":
         _LOOP_STATE["used_todo"] = True
 
@@ -150,7 +151,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

@@ -26,7 +26,7 @@ const LAYER_BAR_COLORS = {
   collaboration: "bg-red-500",
 };
 
-function getVersionData(id) {
+function getVersionData(id: string) {
   return versionsData.versions.find((v) => v.id === id);
 }
 
@@ -45,7 +45,7 @@ export function HomeClient() {
         </p>
         <div className="mt-8">
           <Link
-            href={}
+            href={`/${locale}/timeline`}
             className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-zinc-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
           >
             {t("start")}
@@ -56,7 +56,9 @@ export function HomeClient() {
 
       <section>
         <div className="mb-6 text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl">{t("core_pattern")}</h2>
+          <h2 className="text-2xl font-bold sm:text-3xl">
+            {t("core_pattern")}
+          </h2>
           <p className="mt-2 text-[var(--color-text-secondary)]">
             {t("core_pattern_desc")}
           </p>
@@ -65,7 +67,9 @@ export function HomeClient() {
 
       <section>
         <div className="mb-6 text-center">
-          <h2 className="text-2xl font-bold sm:text-3xl">{t("learning_path")}</h2>
+          <h2 className="text-2xl font-bold sm:text-3xl">
+            {t("learning_path")}
+          </h2>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {LEARNING_PATH.map((versionId) => {
@@ -75,7 +79,7 @@ export function HomeClient() {
             return (
               <Link
                 key={versionId}
-                href={}
+                href={`/${locale}/${versionId}`}
                 className="group block"
               >
                 <Card>{meta.title}</Card>

@@ -1,11 +1,11 @@
-"""
+﻿"""
 Subagent Pattern - How to implement Task tool for context isolation.
 
 The key insight: spawn child agents with ISOLATED context to prevent
 "context pollution" where exploration details fill up the main conversation.
 """
 
-import time
+from loguru import logger`r`nimport time
 import sys
 
 # Assuming client, MODEL, execute_tool are defined elsewhere
@@ -160,7 +160,7 @@ Complete the task and return a clear, concise summary."""
     sub_messages = [{"role": "user", "content": prompt}]
 
     # Progress display
-    print(f"  [{agent_type}] {description}")
+    logger.info(f"  [{agent_type}] {description}")
     start = time.time()
     tool_count = 0
 
@@ -241,3 +241,4 @@ def execute_tool(name: str, args: dict) -> str:
 # In your TOOLS list:
 TOOLS = BASE_TOOLS + [TASK_TOOL]
 """
+

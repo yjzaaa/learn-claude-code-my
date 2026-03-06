@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s12_worktree_task_isolation.py - Worktree 与任务隔离
@@ -568,9 +569,7 @@ TOOLS = OPS.get_tools() + [
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {str(output)[:200]}")
-
-
+    logger.info(f"> {block.name}: {str(output)[:200]}")
 AGENT_LOOP = BaseAgentLoop(
     client=client,
     model=MODEL,
@@ -586,10 +585,9 @@ def agent_loop(messages: list):
 
 
 if __name__ == "__main__":
-    print(f"Repo root for s12: {REPO_ROOT}")
+    logger.info(f"Repo root for s12: {REPO_ROOT}")
     if not WORKTREES.git_available:
-        print("Note: Not in a git repo. worktree_* tools will return errors.")
-
+        logger.info("Note: Not in a git repo. worktree_* tools will return errors.")
     history = []
     while True:
         try:
@@ -604,7 +602,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

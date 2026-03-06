@@ -53,7 +53,9 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
         if cursor.description:
             cols = [col[0] for col in cursor.description]
             rows = cursor.fetchmany(limit)
-            data = [dict(zip(cols, row)) for row in rows]
+            import decimal
+            import datetime
+            data = [dict(zip(cols, [float(x) if isinstance(x, decimal.Decimal) else x.isoformat() if isinstance(x, datetime.datetime) else x for x in row])) for row in rows]
             payload = {
                 "truncated": len(data) >= limit,
                 "limit": limit,

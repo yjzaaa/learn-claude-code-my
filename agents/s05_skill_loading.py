@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s05_skill_loading.py - 技能加载
@@ -300,6 +301,7 @@ INSTRUCTIONS:
 1. Read the skill descriptions below
 2. Call load_skill() with the skill that matches the user's question
 3. Follow the loaded skill's instructions to answer
+4. Runtime OS is Windows only. Shell commands must be Windows PowerShell compatible.
 
 SKILLS:
 {SKILL_LOADER.get_descriptions()}
@@ -344,7 +346,7 @@ def update_skill(name: str, old_text: str = "", new_text: str = "",
 
 
 # 技能加载工具放前面，让模型优先看到
-TOOLS = [load_skill, load_skill_reference, load_skill_script, update_skill] + OPS.get_tools()
+TOOLS =  OPS.get_tools()+[load_skill, load_skill_reference, load_skill_script, update_skill]
 
 
 def _serialize_content_block(block):
@@ -401,7 +403,7 @@ def _on_stream_token(token: str, block, messages: list, response):
     _ = block
     _ = messages
     _ = response
-    print(token, end="", flush=True)
+    logger.opt(raw=True).info(token)
     _S05_STREAM_STATE["printed"] = True
 
 
@@ -438,7 +440,5 @@ if __name__ == "__main__":
             if isinstance(response_content, list):
                 for block in response_content:
                     if hasattr(block, "text"):
-                        print(block.text)
-        print()
-
-
+                        logger.info(block.text)
+        logger.info("")

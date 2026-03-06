@@ -9,7 +9,7 @@ export function Card({ className, children, ...props }: CardProps) {
     <div
       className={cn(
         "rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900",
-        className
+        className,
       )}
       {...props}
     >
@@ -35,5 +35,13 @@ export function CardTitle({
     <h3 className={cn("text-lg font-semibold", className)} {...props}>
       {children}
     </h3>
+  );
+}
+
+export function CardContent({ className, children, ...props }: CardProps) {
+  return (
+    <div className={cn("", className)} {...props}>
+      {children}
+    </div>
   );
 }

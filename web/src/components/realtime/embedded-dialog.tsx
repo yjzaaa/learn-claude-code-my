@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -21,6 +21,10 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const [dialogId, setDialogId] = useState<string>("");
   const [inputValue, setInputValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string>("");
+  const activeDialogIdRef = useRef<string>("");
+  const creatingDialogPromiseRef = useRef<Promise<string> | null>(null);
 
   // WebSocket连接
   const { status, subscribeToDialog, isConnected } = useWebSocket();
@@ -31,16 +35,34 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   // 消息存储
   const { currentDialog, setCurrentDialog, messages } = useMessageStore();
 
+  const activeDialogId = dialogId || currentDialog?.id || "";
+
+  useEffect(() => {
+    activeDialogIdRef.current = activeDialogId;
+  }, [activeDialogId]);
+
   // 初始化：如果没有对话框，创建一个
   useEffect(() => {
     if (!dialogId) {
-      createDialog("Agent 对话").then((result) => {
+      void (async () => {
+        const result = await createDialog("Agent 对话");
         if (result.success && result.data) {
+          activeDialogIdRef.current = result.data.id;
           setDialogId(result.data.id);
+          setCurrentDialog(result.data);
+          if (isConnected) {
+            subscribeToDialog(result.data.id);
+          }
         }
-      });
+      })();
     }
-  }, [dialogId, createDialog]);
+  }, [
+    dialogId,
+    createDialog,
+    isConnected,
+    setCurrentDialog,
+    subscribeToDialog,
+  ]);
 
   // 加载对话框数据并订阅
   useEffect(() => {
@@ -58,7 +80,12 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
 
   // 监控 WebSocket 连接状态
   useEffect(() => {
-    console.log("[EmbeddedDialog] WebSocket status:", status, "isConnected:", isConnected);
+    console.log(
+      "[EmbeddedDialog] WebSocket status:",
+      status,
+      "isConnected:",
+      isConnected,
+    );
   }, [status, isConnected]);
 
   // 当对话框 ID 变化时，重新订阅
@@ -84,13 +111,21 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
           map.set(msg.parent_id, []);
         }
         map.get(msg.parent_id)!.push(msg);
-        console.log(`[EmbeddedDialog] Child message ${msg.id} (type: ${msg.type}) -> parent ${msg.parent_id}`);
+        console.log(
+          `[EmbeddedDialog] Child message ${msg.id} (type: ${msg.type}) -> parent ${msg.parent_id}`,
+        );
       }
       return map;
     }, new Map<string, RealtimeMessage[]>());
 
-    console.log("[EmbeddedDialog] Parent messages:", parentMsgs.map(m => ({ id: m.id, type: m.type })));
-    console.log("[EmbeddedDialog] Child map keys:", Array.from(childMap.keys()));
+    console.log(
+      "[EmbeddedDialog] Parent messages:",
+      parentMsgs.map((m) => ({ id: m.id, type: m.type })),
+    );
+    console.log(
+      "[EmbeddedDialog] Child map keys:",
+      Array.from(childMap.keys()),
+    );
 
     return { parentMessages: parentMsgs, childMap };
   }, [messages]);
@@ -106,19 +141,87 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   })();
 
   // 发送消息
+  const ensureDialogReady = useCallback(async (): Promise<string> => {
+    const currentId = activeDialogIdRef.current || activeDialogId;
+    if (currentId) {
+      return currentId;
+    }
+
+    if (creatingDialogPromiseRef.current) {
+      return creatingDialogPromiseRef.current;
+    }
+
+    creatingDialogPromiseRef.current = (async () => {
+      const result = await createDialog("Agent 对话");
+      if (result.success && result.data) {
+        activeDialogIdRef.current = result.data.id;
+        setDialogId(result.data.id);
+        setCurrentDialog(result.data);
+        if (isConnected) {
+          subscribeToDialog(result.data.id);
+        }
+        return result.data.id;
+      }
+
+      console.error("[EmbeddedDialog] createDialog failed:", result);
+      setSendError(result.message || "创建对话失败，请检查后端服务");
+      return "";
+    })();
+
+    try {
+      return await creatingDialogPromiseRef.current;
+    } finally {
+      creatingDialogPromiseRef.current = null;
+    }
+  }, [
+    activeDialogId,
+    createDialog,
+    isConnected,
+    setCurrentDialog,
+    subscribeToDialog,
+  ]);
+
   const handleSend = async () => {
-    console.log("[EmbeddedDialog] handleSend called, inputValue:", inputValue.trim(), "dialogId:", dialogId);
-    if (!inputValue.trim() || !dialogId) {
-      console.log("[EmbeddedDialog] Send aborted - empty input or no dialog");
+    if (isSending) {
       return;
     }
 
     const content = inputValue.trim();
-    setInputValue("");
+    console.log(
+      "[EmbeddedDialog] handleSend called, inputValue:",
+      content,
+      "dialogId:",
+      activeDialogId,
+    );
 
-    console.log("[EmbeddedDialog] Sending message to API...");
-    const result = await sendMessage(dialogId, content);
-    console.log("[EmbeddedDialog] sendMessage result:", result);
+    if (!content) {
+      console.log("[EmbeddedDialog] Send aborted - empty input");
+      return;
+    }
+
+    setSendError("");
+    setIsSending(true);
+    try {
+      const targetDialogId =
+        activeDialogIdRef.current || (await ensureDialogReady());
+      if (!targetDialogId) {
+        console.log("[EmbeddedDialog] Send aborted - failed to create dialog");
+        return;
+      }
+
+      setInputValue("");
+
+      console.log("[EmbeddedDialog] Sending message to API...");
+      const result = await sendMessage(targetDialogId, content);
+      console.log("[EmbeddedDialog] sendMessage result:", result);
+      if (!result.success) {
+        // Keep user input when API send fails, so users can retry quickly.
+        setInputValue(content);
+        setSendError(result.message || "发送失败，请检查后端接口");
+      }
+    } finally {
+      setIsSending(false);
+    }
   };
 
   // 处理回车发送
@@ -132,11 +235,19 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   // 创建新对话框
   const handleNewDialog = async () => {
     setIsCreating(true);
-    const result = await createDialog("新对话");
-    if (result.success && result.data) {
-      setDialogId(result.data.id);
+    try {
+      const result = await createDialog("新对话");
+      if (result.success && result.data) {
+        activeDialogIdRef.current = result.data.id;
+        setDialogId(result.data.id);
+        setCurrentDialog(result.data);
+        if (isConnected) {
+          subscribeToDialog(result.data.id);
+        }
+      }
+    } finally {
+      setIsCreating(false);
     }
-    setIsCreating(false);
   };
 
   return (
@@ -144,7 +255,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
       className={cn(
         "flex flex-col rounded-xl border border-zinc-200 bg-white shadow-sm",
         "dark:border-zinc-800 dark:bg-zinc-900",
-        className
+        className,
       )}
     >
       {/* Header */}
@@ -159,7 +270,9 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
           <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
             {currentDialog?.title || "实时对话"}
           </h3>
-          <span className="text-xs text-zinc-400">({messages.length} 条消息)</span>
+          <span className="text-xs text-zinc-400">
+            ({messages.length} 条消息)
+          </span>
         </div>
 
         <Button
@@ -196,7 +309,11 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
                   childMessages={childMessages}
                   allMessages={messages}
                   isStreaming={isStreaming}
-                  defaultExpanded={index >= organizedMessages.parentMessages.length - 2}
+                  defaultExpanded={
+                    message.type !== "tool_call" &&
+                    message.type !== "tool_result" &&
+                    index >= organizedMessages.parentMessages.length - 2
+                  }
                 />
               );
             })}
@@ -206,6 +323,11 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
 
       {/* Input Area */}
       <div className="p-3 border-t border-zinc-200 dark:border-zinc-700">
+        {sendError ? (
+          <div className="mb-2 text-xs text-red-600 dark:text-red-400">
+            {sendError}
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <div className="flex-1 relative">
             <textarea
@@ -219,7 +341,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
                 "placeholder:text-zinc-400",
                 "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500",
                 "bg-zinc-50 dark:bg-zinc-800",
-                "border-zinc-200 dark:border-zinc-700"
+                "border-zinc-200 dark:border-zinc-700",
               )}
               rows={1}
               style={{ minHeight: "40px", maxHeight: "120px" }}
@@ -227,13 +349,13 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
           </div>
           <button
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isSending}
             className={cn(
               "flex items-center justify-center w-10 h-10 rounded-lg",
               "bg-blue-500 text-white",
               "hover:bg-blue-600 active:bg-blue-700",
               "disabled:opacity-50 disabled:cursor-not-allowed",
-              "transition-colors"
+              "transition-colors",
             )}
           >
             <Send className="h-4 w-4" />

@@ -1,9 +1,10 @@
-"""
+﻿"""
 FastAPI WebSocket服务器
 
 提供基于FastAPI的WebSocket实时通信服务
 """
 
+from loguru import logger
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,8 +33,7 @@ class ConnectionManager:
         await websocket.accept()
         self.active_connections[client_id] = websocket
         event_manager.add_websocket_client(self._create_client_wrapper(client_id))
-        print(f"Client {client_id} connected")
-
+        logger.info(f"Client {client_id} connected")
     def disconnect(self, client_id: str):
         if client_id in self.active_connections:
             del self.active_connections[client_id]
@@ -42,8 +42,7 @@ class ConnectionManager:
             if client_id in clients:
                 clients.remove(client_id)
         event_manager.remove_websocket_client(self._create_client_wrapper(client_id))
-        print(f"Client {client_id} disconnected")
-
+        logger.info(f"Client {client_id} disconnected")
     def _create_client_wrapper(self, client_id: str):
         """创建客户端包装器用于事件管理器"""
         class ClientWrapper:
@@ -78,7 +77,7 @@ class ConnectionManager:
     async def broadcast_to_dialog(self, dialog_id: str, message: Dict[str, Any]):
         """广播消息到订阅特定对话框的客户端"""
         clients = self.dialog_subscriptions.get(dialog_id, [])
-        print(f"[ConnectionManager] Broadcasting to dialog {dialog_id}, clients: {clients}")
+        logger.info(f"[ConnectionManager] Broadcasting to dialog {dialog_id}, clients: {clients}")
         disconnected = []
 
         for client_id in clients:
@@ -87,12 +86,12 @@ class ConnectionManager:
                     await self.active_connections[client_id].send_text(
                         json.dumps(message, ensure_ascii=False)
                     )
-                    print(f"[ConnectionManager] Message sent to client {client_id}")
+                    logger.info(f"[ConnectionManager] Message sent to client {client_id}")
                 except Exception as e:
-                    print(f"[ConnectionManager] Failed to send to client {client_id}: {e}")
+                    logger.info(f"[ConnectionManager] Failed to send to client {client_id}: {e}")
                     disconnected.append(client_id)
             else:
-                print(f"[ConnectionManager] Client {client_id} not in active connections")
+                logger.info(f"[ConnectionManager] Client {client_id} not in active connections")
                 disconnected.append(client_id)
 
         # 清理断开的连接
@@ -102,15 +101,14 @@ class ConnectionManager:
 
     def subscribe_to_dialog(self, client_id: str, dialog_id: str):
         """订阅对话框"""
-        print(f"[ConnectionManager] Client {client_id} subscribing to dialog {dialog_id}")
+        logger.info(f"[ConnectionManager] Client {client_id} subscribing to dialog {dialog_id}")
         if dialog_id not in self.dialog_subscriptions:
             self.dialog_subscriptions[dialog_id] = []
         if client_id not in self.dialog_subscriptions[dialog_id]:
             self.dialog_subscriptions[dialog_id].append(client_id)
-            print(f"[ConnectionManager] Subscription added. Current subs for {dialog_id}: {self.dialog_subscriptions[dialog_id]}")
+            logger.info(f"[ConnectionManager] Subscription added. Current subs for {dialog_id}: {self.dialog_subscriptions[dialog_id]}")
         else:
-            print(f"[ConnectionManager] Client {client_id} already subscribed to {dialog_id}")
-
+            logger.info(f"[ConnectionManager] Client {client_id} already subscribed to {dialog_id}")
     def unsubscribe_from_dialog(self, client_id: str, dialog_id: str):
         """取消订阅对话框"""
         if dialog_id in self.dialog_subscriptions:
@@ -156,7 +154,7 @@ class MessageHandler:
             await websocket.send_text(json.dumps({
                 "type": "dialog_subscribed",
                 "dialog_id": dialog_id,
-                "dialog": dialog.to_dict() if dialog else None,
+                "dialog": event_manager.to_client_dialog_dict(dialog),
             }))
 
     @staticmethod
@@ -332,16 +330,18 @@ class AgentMessageBridge:
                         msg.stream_tokens.append(token)
                         msg.content = "".join(msg.stream_tokens)
                         # 广播流式更新
-                        await connection_manager.broadcast_to_dialog(
-                            self.dialog_id,
-                            {
-                                "type": "stream_token",
-                                "dialog_id": self.dialog_id,
-                                "message_id": self.current_message_id,
-                                "token": token,
-                                "current_content": msg.content,
-                            }
-                        )
+                        stream_event = {
+                            "type": "stream_token",
+                            "dialog_id": self.dialog_id,
+                            "message_id": self.current_message_id,
+                            "token": token,
+                            "current_content": msg.content,
+                        }
+                        if event_manager.should_push_event(stream_event):
+                            await connection_manager.broadcast_to_dialog(
+                                self.dialog_id,
+                                stream_event,
+                            )
                         # 同时触发消息更新事件，确保消息状态同步
                         event_manager.update_message_in_dialog(
                             self.dialog_id,
@@ -408,6 +408,47 @@ class AgentMessageBridge:
             )
             self.current_message_id = None
 
+    async def append_assistant_text(self, text: str):
+        """追加助手文本（用于非 token 的文本流式场景）。"""
+        if not text:
+            return
+
+        if not self.current_message_id:
+            message = await self.start_assistant_response()
+            self.current_message_id = message.id
+
+        dialog = event_manager.get_dialog(self.dialog_id)
+        if not dialog:
+            return
+
+        current_content = ""
+        for msg in dialog.messages:
+            if msg.id == self.current_message_id:
+                current_content = msg.content or ""
+                break
+
+        event_manager.update_message_in_dialog(
+            self.dialog_id,
+            self.current_message_id,
+            {
+                "content": f"{current_content}{text}",
+                "status": MessageStatus.STREAMING,
+            },
+        )
+
+    async def finalize_streaming_messages(self):
+        """兜底收口：将遗留的 assistant_text(streaming) 统一标记为 completed。"""
+        dialog = event_manager.get_dialog(self.dialog_id)
+        if not dialog:
+            return
+
+        for msg in dialog.messages:
+            if msg.type == MessageType.ASSISTANT_TEXT and msg.status == MessageStatus.STREAMING:
+                updates: Dict[str, Any] = {"status": MessageStatus.COMPLETED}
+                if msg.stream_tokens and not msg.content:
+                    updates["content"] = "".join(msg.stream_tokens)
+                event_manager.update_message_in_dialog(self.dialog_id, msg.id, updates)
+
     async def send_system_event(self, content: str, metadata: Optional[Dict] = None):
         """发送系统事件"""
         message = RealTimeMessage(
@@ -419,3 +460,15 @@ class AgentMessageBridge:
         )
         event_manager.add_message_to_dialog(self.dialog_id, message)
         return message
+
+    async def send_completed_assistant_text(self, content: str) -> RealTimeMessage:
+        """发送一条已完成的 assistant 文本消息（用于非流式兜底）。"""
+        message = RealTimeMessage(
+            id=str(uuid.uuid4()),
+            type=MessageType.ASSISTANT_TEXT,
+            content=content,
+            status=MessageStatus.COMPLETED,
+        )
+        event_manager.add_message_to_dialog(self.dialog_id, message)
+        return message
+

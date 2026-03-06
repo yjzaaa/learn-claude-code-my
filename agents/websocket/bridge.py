@@ -1,19 +1,17 @@
-"""
+﻿"""
 WebSocket桥接器
 
 将Agent循环与WebSocket事件系统集成
 提供回调函数供BaseAgentLoop使用
 """
 
+from loguru import logger
 import asyncio
 from typing import Any, Optional, Dict
 import uuid
 
 from .event_manager import (
     event_manager,
-    RealTimeMessage,
-    MessageType,
-    MessageStatus,
 )
 from .server import AgentMessageBridge
 
@@ -35,7 +33,9 @@ class WebSocketBridge:
 
     async def initialize(self, title: str = "Agent对话"):
         """初始化对话框"""
-        event_manager.create_dialog(self.dialog_id, title)
+        # Do not recreate an existing dialog; recreating wipes in-memory messages.
+        if not event_manager.get_dialog(self.dialog_id):
+            event_manager.create_dialog(self.dialog_id, title)
         self.message_bridge = AgentMessageBridge(self.dialog_id)
         self._loop = asyncio.get_event_loop()
 
@@ -59,12 +59,12 @@ class WebSocketBridge:
         """流式token回调"""
         try:
             if not self.message_bridge or not self._loop:
-                print(f"[WebSocketBridge] on_stream_token skipped: message_bridge={self.message_bridge is not None}, _loop={self._loop is not None}")
+                logger.info(f"[WebSocketBridge] on_stream_token skipped: message_bridge={self.message_bridge is not None}, _loop={self._loop is not None}")
                 return
 
             # 如果没有活动的助手消息，创建一个
             if not self._current_assistant_message_id:
-                print(f"[WebSocketBridge] Creating new assistant message")
+                logger.info(f"[WebSocketBridge] Creating new assistant message")
                 message = asyncio.run_coroutine_threadsafe(
                     self.message_bridge.start_assistant_response(),
                     self._loop
@@ -72,8 +72,7 @@ class WebSocketBridge:
                 self._current_assistant_message_id = message.id
                 # 同步更新 AgentMessageBridge 的 current_message_id
                 self.message_bridge.current_message_id = message.id
-                print(f"[WebSocketBridge] Created message: {message.id}")
-
+                logger.info(f"[WebSocketBridge] Created message: {message.id}")
             # 发送流式token - 使用 run_coroutine_threadsafe 因为这是在同步回调中
             future = asyncio.run_coroutine_threadsafe(
                 self.message_bridge.send_stream_token(token),
@@ -81,30 +80,40 @@ class WebSocketBridge:
             )
             # 不等待结果，避免阻塞
         except Exception as e:
-            print(f"[WebSocketBridge] on_stream_token error: {e}")
+            logger.info(f"[WebSocketBridge] on_stream_token error: {e}")
             import traceback
             traceback.print_exc()
 
     def on_stream_text(self, text: str, block: Any, messages: list[Dict[str, Any]], response: Any):
         """流式文本回调"""
-        # 这里可以处理thinking内容
         if not self.message_bridge or not self._loop:
             return
 
-        # 检测thinking标记
+        # thinking 单独作为 assistant_thinking 子消息发送。
         if "<thinking>" in text or "思考" in text:
-            # 提取thinking内容
             thinking_content = self._extract_thinking(text)
             if thinking_content:
                 asyncio.run_coroutine_threadsafe(
                     self.message_bridge.send_thinking(thinking_content),
                     self._loop
                 )
+                return
+
+        # 普通文本也要映射为 assistant_text，避免关闭 token 流后前端只看到工具消息。
+        if text:
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.message_bridge.append_assistant_text(text),
+                    self._loop,
+                ).result(timeout=5)
+                self._current_assistant_message_id = self.message_bridge.current_message_id
+            except Exception as e:
+                logger.info(f"[WebSocketBridge] on_stream_text append error: {e}")
 
     def on_tool_call(self, tool_name: str, tool_input: Dict[str, Any], messages: list[Dict[str, Any]]):
         """工具调用开始回调"""
         try:
-            print(f"[WebSocketBridge] on_tool_call: {tool_name}")
+            logger.info(f"[WebSocketBridge] on_tool_call: {tool_name}")
             if not self.message_bridge or not self._loop:
                 return
 
@@ -113,9 +122,9 @@ class WebSocketBridge:
                 self._loop
             ).result(timeout=5)
             self._current_tool_call_id = message.id
-            print(f"[WebSocketBridge] Tool call message created: {message.id}")
+            logger.info(f"[WebSocketBridge] Tool call message created: {message.id}")
         except Exception as e:
-            print(f"[WebSocketBridge] on_tool_call error: {e}")
+            logger.info(f"[WebSocketBridge] on_tool_call error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -130,7 +139,7 @@ class WebSocketBridge:
         """
         try:
             tool_name = getattr(block, 'name', 'unknown')
-            print(f"[WebSocketBridge] on_tool_result: {tool_name}, output length={len(output) if output else 0}")
+            logger.info(f"[WebSocketBridge] on_tool_result: {tool_name}, output length={len(output) if output else 0}")
             if not self.message_bridge or not self._loop:
                 return
 
@@ -145,30 +154,43 @@ class WebSocketBridge:
                 ).result(timeout=5)
                 self._current_tool_call_id = None
         except Exception as e:
-            print(f"[WebSocketBridge] on_tool_result error: {e}")
+            logger.info(f"[WebSocketBridge] on_tool_result error: {e}")
             import traceback
             traceback.print_exc()
 
     def on_round_end(self, messages: list[Dict[str, Any]], tool_calls: list[Dict[str, Any]], response: Any):
         """每轮结束回调"""
         try:
-            print(f"[WebSocketBridge] on_round_end called, current_message_id={self._current_assistant_message_id}")
+            logger.info(f"[WebSocketBridge] on_round_end called, current_message_id={self._current_assistant_message_id}")
             if not self.message_bridge or not self._loop:
                 return
 
+            # 获取最终内容
+            final_content = self._extract_final_content(response)
+
             # 如果有活动的助手消息，完成它
             if self._current_assistant_message_id:
-                # 获取最终内容
-                final_content = self._extract_final_content(response)
-                print(f"[WebSocketBridge] Completing message {self._current_assistant_message_id} with content length={len(final_content)}")
+                logger.info(f"[WebSocketBridge] Completing message {self._current_assistant_message_id} with content length={len(final_content)}")
                 asyncio.run_coroutine_threadsafe(
                     self.message_bridge.complete_assistant_response(final_content),
                     self._loop
                 ).result(timeout=5)
                 self._current_assistant_message_id = None
                 self.message_bridge.current_message_id = None
+            elif final_content:
+                # 兜底：某些回合可能没有触发流式 token，需补写最终 assistant 文本
+                asyncio.run_coroutine_threadsafe(
+                    self.message_bridge.send_completed_assistant_text(final_content),
+                    self._loop,
+                ).result(timeout=5)
+
+            # 轮级兜底：即使当前回合没有显式完成，也不要遗留 streaming 状态到前端。
+            asyncio.run_coroutine_threadsafe(
+                self.message_bridge.finalize_streaming_messages(),
+                self._loop,
+            ).result(timeout=5)
         except Exception as e:
-            print(f"[WebSocketBridge] on_round_end error: {e}")
+            logger.info(f"[WebSocketBridge] on_round_end error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -179,20 +201,33 @@ class WebSocketBridge:
     def on_stop(self, messages: list[Dict[str, Any]], response: Any):
         """停止回调"""
         try:
-            print(f"[WebSocketBridge] on_stop called, current_message_id={self._current_assistant_message_id}")
+            logger.info(f"[WebSocketBridge] on_stop called, current_message_id={self._current_assistant_message_id}")
             if not self.message_bridge or not self._loop:
                 return
 
+            final_content = self._extract_final_content(response) if response else ""
+
             # 如果有活动的助手消息，完成它（on_round_end 在这种情况下不会被调用）
             if self._current_assistant_message_id:
-                final_content = self._extract_final_content(response)
-                print(f"[WebSocketBridge] Completing message {self._current_assistant_message_id} in on_stop")
+                logger.info(f"[WebSocketBridge] Completing message {self._current_assistant_message_id} in on_stop")
                 asyncio.run_coroutine_threadsafe(
                     self.message_bridge.complete_assistant_response(final_content),
                     self._loop
                 ).result(timeout=5)
                 self._current_assistant_message_id = None
                 self.message_bridge.current_message_id = None
+            elif final_content:
+                # 兜底：无流式消息时也要把最终回答写入对话
+                asyncio.run_coroutine_threadsafe(
+                    self.message_bridge.send_completed_assistant_text(final_content),
+                    self._loop,
+                ).result(timeout=5)
+
+            # 最终兜底：避免前端残留 assistant_text=streaming 状态
+            asyncio.run_coroutine_threadsafe(
+                self.message_bridge.finalize_streaming_messages(),
+                self._loop
+            ).result(timeout=5)
 
             asyncio.run_coroutine_threadsafe(
                 self.message_bridge.send_system_event(
@@ -202,7 +237,7 @@ class WebSocketBridge:
                 self._loop
             )
         except Exception as e:
-            print(f"[WebSocketBridge] on_stop error: {e}")
+            logger.info(f"[WebSocketBridge] on_stop error: {e}")
             import traceback
             traceback.print_exc()
 
@@ -339,3 +374,4 @@ def set_global_bridge(bridge: WebSocketBridge):
     """设置全局WebSocket桥接器"""
     global _global_bridge
     _global_bridge = bridge
+

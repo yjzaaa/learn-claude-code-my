@@ -1,9 +1,10 @@
-"""
+﻿"""
 事件管理器 - 实现观察者模式
 
 提供发布订阅机制，解耦消息产生和消费
 """
 
+from loguru import logger
 from typing import Callable, Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -111,7 +112,65 @@ class EventManager:
         self._subscribers: Dict[str, List[Callable]] = {}
         self._dialogs: Dict[str, DialogSession] = {}
         self._websocket_clients: List[Any] = []
+        self._push_type_map: Dict[str, bool] = {
+            MessageType.USER_MESSAGE.value: True,
+            MessageType.ASSISTANT_TEXT.value: True,
+            MessageType.ASSISTANT_THINKING.value: True,
+            MessageType.TOOL_CALL.value: True,
+            MessageType.TOOL_RESULT.value: True,
+            MessageType.SYSTEM_EVENT.value: False,
+            MessageType.STREAM_TOKEN.value: False,
+            MessageType.DIALOG_START.value: False,
+            MessageType.DIALOG_END.value: False,
+        }
         self._initialized = True
+
+    def get_push_type_map(self) -> Dict[str, bool]:
+        """获取当前消息类型推送开关。"""
+        return dict(self._push_type_map)
+
+    def update_push_type_map(self, updates: Dict[str, bool]) -> Dict[str, bool]:
+        """更新消息类型推送开关，仅允许已知类型。"""
+        allowed = set(self._push_type_map.keys())
+        for key, value in updates.items():
+            if key not in allowed:
+                raise ValueError(f"Unknown message type for push map: {key}")
+            self._push_type_map[key] = bool(value)
+        return self.get_push_type_map()
+
+    def should_push_event(self, event: Dict[str, Any]) -> bool:
+        """判断当前事件是否需要推送给前端。"""
+        event_type = event.get("type")
+
+        if event_type == "stream_token":
+            return self._push_type_map.get(MessageType.STREAM_TOKEN.value, True)
+
+        if event_type in {"message_added", "message_updated"}:
+            message_type = (event.get("message") or {}).get("type")
+            if not message_type:
+                return True
+            return self._push_type_map.get(message_type, True)
+
+        return True
+
+    def should_push_message_type(self, message_type: str) -> bool:
+        """按消息类型判断是否允许推送到前端。"""
+        return self._push_type_map.get(message_type, True)
+
+    def filter_message_dicts(self, message_dicts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """过滤消息字典列表，仅保留允许推送的消息类型。"""
+        return [
+            m for m in message_dicts
+            if self.should_push_message_type(str(m.get("type", "")))
+        ]
+
+    def to_client_dialog_dict(self, dialog: Optional[DialogSession]) -> Optional[Dict[str, Any]]:
+        """将对话框转换为前端可见数据（按推送 map 过滤消息）。"""
+        if not dialog:
+            return None
+        payload = dialog.to_dict()
+        payload["messages"] = self.filter_message_dicts(payload.get("messages", []))
+        return payload
 
     # ========== 订阅/发布 ==========
 
@@ -151,8 +210,7 @@ class EventManager:
                     else:
                         callback(data)
                 except Exception as e:
-                    print(f"Event callback error: {e}")
-
+                    logger.info(f"Event callback error: {e}")
     # ========== WebSocket客户端管理 ==========
 
     def add_websocket_client(self, client: Any):
@@ -209,10 +267,11 @@ class EventManager:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    loop.create_task(self.broadcast_to_clients(message_data))
-                    # 同时广播给订阅该对话框的客户端
-                    from .server import connection_manager
-                    loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
+                    if self.should_push_event(message_data):
+                        loop.create_task(self.broadcast_to_clients(message_data))
+                        # 同时广播给订阅该对话框的客户端
+                        from .server import connection_manager
+                        loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
                 else:
                     # 如果事件循环不在运行，存储待发送消息
                     pass
@@ -220,8 +279,7 @@ class EventManager:
                 # 没有事件循环，忽略广播
                 pass
             except Exception as e:
-                print(f"[EventManager] Error broadcasting message: {e}")
-
+                logger.info(f"[EventManager] Error broadcasting message: {e}")
     def update_message_in_dialog(self, dialog_id: str, message_id: str, updates: Dict[str, Any]):
         """更新对话框中的消息"""
         dialog = self._dialogs.get(dialog_id)
@@ -240,14 +298,15 @@ class EventManager:
                     try:
                         loop = asyncio.get_event_loop()
                         if loop.is_running():
-                            loop.create_task(self.broadcast_to_clients(message_data))
-                            # 同时广播给订阅该对话框的客户端
-                            from .server import connection_manager
-                            loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
+                            if self.should_push_event(message_data):
+                                loop.create_task(self.broadcast_to_clients(message_data))
+                                # 同时广播给订阅该对话框的客户端
+                                from .server import connection_manager
+                                loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
                     except RuntimeError:
                         pass
                     except Exception as e:
-                        print(f"[EventManager] Error broadcasting message update: {e}")
+                        logger.info(f"[EventManager] Error broadcasting message update: {e}")
                     break
 
     def get_all_dialogs(self) -> List[DialogSession]:
@@ -257,3 +316,4 @@ class EventManager:
 
 # 全局事件管理器实例
 event_manager = EventManager()
+

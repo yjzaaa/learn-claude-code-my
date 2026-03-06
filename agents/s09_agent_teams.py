@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s09_agent_teams.py - 智能体团队
@@ -195,7 +196,7 @@ class TeammateManager:
             for block in response.content:
                 if block.type == "tool_use":
                     output = self._exec(handlers, block.name, block.input)
-                    print(f"  [{name}] {block.name}: {str(output)[:120]}")
+                    logger.info(f"  [{name}] {block.name}: {str(output)[:120]}")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -310,9 +311,7 @@ def _on_before_round(messages: list):
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {str(output)[:200]}")
-
-
+    logger.info(f"> {block.name}: {str(output)[:200]}")
 AGENT_LOOP = BaseAgentLoop(
     client=client,
     model=MODEL,
@@ -338,10 +337,10 @@ if __name__ == "__main__":
         if query.strip().lower() in ("q", "exit", ""):
             break
         if query.strip() == "/team":
-            print(TEAM.list_all())
+            logger.info(TEAM.list_all())
             continue
         if query.strip() == "/inbox":
-            print(json.dumps(BUS.read_inbox("lead"), indent=2))
+            logger.info(json.dumps(BUS.read_inbox("lead"), indent=2))
             continue
         history.append({"role": "user", "content": query})
         agent_loop(history)
@@ -349,7 +348,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

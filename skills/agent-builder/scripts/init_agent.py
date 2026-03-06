@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 Agent Scaffold Script - Create a new agent project with best practices.
@@ -61,7 +62,7 @@ def run(prompt, history=[]):
         results = []
         for b in r.content:
             if b.type == "tool_use":
-                print(f"> {{b.input['command']}}")
+                logger.info(f"> {{b.input['command']}}")
                 try:
                     out = subprocess.run(b.input["command"], shell=True, capture_output=True, text=True, timeout=60)
                     output = (out.stdout + out.stderr).strip() or "(empty)"
@@ -72,9 +73,9 @@ def run(prompt, history=[]):
 
 if __name__ == "__main__":
     h = []
-    print("{name} - Level 0 Agent\\nType 'q' to quit.\\n")
+    logger.info("{name} - Level 0 Agent\\nType 'q' to quit.\\n")
     while (q := input(">> ").strip()) not in ("q", "quit", ""):
-        print(run(q, h), "\\n")
+        logger.info(run(q, h), "\\n")
 ''',
 
     1: '''#!/usr/bin/env python3
@@ -186,15 +187,15 @@ def agent(prompt: str, history: list = None) -> str:
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                print(f"> {{block.name}}: {{str(block.input)[:100]}}")
+                logger.info(f"> {{block.name}}: {{str(block.input)[:100]}}")
                 output = execute(block.name, block.input)
-                print(f"  {{output[:100]}}...")
+                logger.info(f"  {{output[:100]}}...")
                 results.append({{"type": "tool_result", "tool_use_id": block.id, "content": output}})
         history.append({{"role": "user", "content": results}})
 
 if __name__ == "__main__":
-    print(f"{name} - Level 1 Agent at {{WORKDIR}}")
-    print("Type 'q' to quit.\\n")
+    logger.info(f"{name} - Level 1 Agent at {{WORKDIR}}")
+    logger.info("Type 'q' to quit.\\n")
     h = []
     while True:
         try:
@@ -203,7 +204,7 @@ if __name__ == "__main__":
             break
         if query in ("q", "quit", "exit", ""):
             break
-        print(agent(query, h), "\\n")
+        logger.info(agent(query, h), "\\n")
 ''',
 }
 
@@ -218,9 +219,9 @@ def create_agent(name: str, level: int, output_dir: Path):
     """Create a new agent project."""
     # Validate level
     if level not in TEMPLATES and level not in (2, 3, 4):
-        print(f"Error: Level {level} not yet implemented in scaffold.")
-        print("Available levels: 0 (minimal), 1 (4 tools)")
-        print("For levels 2-4, copy from mini-claude-code repository.")
+        logger.info(f"Error: Level {level} not yet implemented in scaffold.")
+        logger.info("Available levels: 0 (minimal), 1 (4 tools)")
+        logger.info("For levels 2-4, copy from mini-claude-code repository.")
         sys.exit(1)
 
     # Create output directory
@@ -231,27 +232,22 @@ def create_agent(name: str, level: int, output_dir: Path):
     agent_file = agent_dir / f"{name}.py"
     template = TEMPLATES.get(level, TEMPLATES[1])
     agent_file.write_text(template.format(name=name))
-    print(f"Created: {agent_file}")
-
+    logger.info(f"Created: {agent_file}")
     # Write .env.example
     env_file = agent_dir / ".env.example"
     env_file.write_text(ENV_TEMPLATE)
-    print(f"Created: {env_file}")
-
+    logger.info(f"Created: {env_file}")
     # Write .gitignore
     gitignore = agent_dir / ".gitignore"
     gitignore.write_text(".env\n__pycache__/\n*.pyc\n")
-    print(f"Created: {gitignore}")
-
-    print(f"\nAgent '{name}' created at {agent_dir}")
-    print(f"\nNext steps:")
-    print(f"  1. cd {agent_dir}")
-    print(f"  2. cp .env.example .env")
-    print(f"  3. Edit .env with your API key")
-    print(f"  4. pip install anthropic python-dotenv")
-    print(f"  5. python {name}.py")
-
-
+    logger.info(f"Created: {gitignore}")
+    logger.info(f"\nAgent '{name}' created at {agent_dir}")
+    logger.info(f"\nNext steps:")
+    logger.info(f"  1. cd {agent_dir}")
+    logger.info(f"  2. cp .env.example .env")
+    logger.info(f"  3. Edit .env with your API key")
+    logger.info(f"  4. pip install anthropic python-dotenv")
+    logger.info(f"  5. python {name}.py")
 def main():
     parser = argparse.ArgumentParser(
         description="Scaffold a new AI coding agent project",
@@ -277,3 +273,4 @@ Levels:
 
 if __name__ == "__main__":
     main()
+

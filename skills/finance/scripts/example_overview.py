@@ -1,3 +1,4 @@
+﻿from loguru import logger
 from allocation_utils import generate_alloc_sql
 
 
@@ -12,4 +13,4 @@ def build_sql() -> str:
 
 
 if __name__ == "__main__":
-    print(build_sql())
+    logger.info(build_sql())

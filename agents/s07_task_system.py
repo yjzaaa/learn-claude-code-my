@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 s07_task_system.py - 任务系统
@@ -160,9 +161,7 @@ TOOLS = OPS.get_tools() + [task_create, task_update, task_list, task_get]
 
 
 def _on_tool_result(block, output: str, results: list, messages: list):
-    print(f"> {block.name}: {str(output)[:200]}")
-
-
+    logger.info(f"> {block.name}: {str(output)[:200]}")
 AGENT_LOOP = BaseAgentLoop(
     client=client,
     model=MODEL,
@@ -192,7 +191,5 @@ if __name__ == "__main__":
         if isinstance(response_content, list):
             for block in response_content:
                 if hasattr(block, "text"):
-                    print(block.text)
-        print()
-
-
+                    logger.info(block.text)
+        logger.info("")

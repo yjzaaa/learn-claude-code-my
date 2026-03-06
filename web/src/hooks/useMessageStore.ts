@@ -29,6 +29,45 @@ export function useMessageStore() {
   const messageBufferRef = useRef<RealtimeMessage[]>([]);
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const mergeMessage = useCallback(
+    (current: RealtimeMessage | undefined, incoming: RealtimeMessage) => {
+      if (!current) return incoming;
+
+      // Prefer richer content/status from current message when incoming is a stale empty add event.
+      const keepCurrentContent =
+        (incoming.content ?? "") === "" && (current.content ?? "") !== "";
+
+      const statusRank: Record<MessageStatus, number> = {
+        pending: 0,
+        streaming: 1,
+        completed: 2,
+        error: 3,
+      };
+
+      const currentStatus = current.status as MessageStatus;
+      const incomingStatus = incoming.status as MessageStatus;
+      const resolvedStatus =
+        statusRank[currentStatus] >= statusRank[incomingStatus]
+          ? current.status
+          : incoming.status;
+
+      const mergedTokens =
+        (current.stream_tokens?.length ?? 0) >=
+        (incoming.stream_tokens?.length ?? 0)
+          ? current.stream_tokens
+          : incoming.stream_tokens;
+
+      return {
+        ...current,
+        ...incoming,
+        content: keepCurrentContent ? current.content : incoming.content,
+        status: resolvedStatus,
+        stream_tokens: mergedTokens,
+      };
+    },
+    [],
+  );
+
   // 批量更新消息
   const flushMessages = useCallback(() => {
     if (messageBufferRef.current.length === 0) return;
@@ -39,7 +78,15 @@ export function useMessageStore() {
     setState((prev) => {
       if (!prev.currentDialog) return prev;
 
-      const updatedMessages = [...prev.currentDialog.messages, ...messages];
+      // Upsert by id so late buffered message_added won't overwrite a newer message_updated.
+      const messageMap = new Map(
+        prev.currentDialog.messages.map((m) => [m.id, m]),
+      );
+      messages.forEach((m) => {
+        const existing = messageMap.get(m.id);
+        messageMap.set(m.id, mergeMessage(existing, m));
+      });
+      const updatedMessages = Array.from(messageMap.values());
       const updatedDialog = {
         ...prev.currentDialog,
         messages: updatedMessages,
@@ -50,37 +97,43 @@ export function useMessageStore() {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d
+          d.id === updatedDialog.id ? updatedDialog : d,
         ),
       };
     });
   }, []);
 
   // 缓冲添加消息
-  const bufferMessage = useCallback((message: RealtimeMessage) => {
-    messageBufferRef.current.push(message);
+  const bufferMessage = useCallback(
+    (message: RealtimeMessage) => {
+      messageBufferRef.current.push(message);
 
-    // 立即刷新流式token，缓冲其他消息
-    if (message.type === "stream_token") {
-      flushMessages();
-    } else if (!flushTimerRef.current) {
-      flushTimerRef.current = setTimeout(() => {
+      // 立即刷新流式token，缓冲其他消息
+      if (message.type === "stream_token") {
         flushMessages();
-        flushTimerRef.current = null;
-      }, 50);
-    }
-  }, [flushMessages]);
+      } else if (!flushTimerRef.current) {
+        flushTimerRef.current = setTimeout(() => {
+          flushMessages();
+          flushTimerRef.current = null;
+        }, 50);
+      }
+    },
+    [flushMessages],
+  );
 
   // 监听WebSocket事件
   useEffect(() => {
     console.log("[MessageStore] Setting up event listeners");
 
     const handleMessageAdded = (event: MessageAddedEvent) => {
+      if (!state.currentDialog || event.dialog_id !== state.currentDialog.id) {
+        return;
+      }
       console.log("[MessageStore] Message added:", {
         id: event.message.id,
         type: event.message.type,
         parent_id: event.message.parent_id,
-        content: event.message.content?.slice(0, 50)
+        content: event.message.content?.slice(0, 50),
       });
       bufferMessage(event.message);
     };
@@ -91,9 +144,19 @@ export function useMessageStore() {
           return prev;
         }
 
-        const updatedMessages = prev.currentDialog.messages.map((msg) =>
-          msg.id === event.message.id ? event.message : msg
+        // Upsert so message_updated can arrive before buffered message_added.
+        const idx = prev.currentDialog.messages.findIndex(
+          (msg) => msg.id === event.message.id,
         );
+        const updatedMessages = [...prev.currentDialog.messages];
+        if (idx >= 0) {
+          updatedMessages[idx] = mergeMessage(
+            updatedMessages[idx],
+            event.message,
+          );
+        } else {
+          updatedMessages.push(event.message);
+        }
 
         const updatedDialog = {
           ...prev.currentDialog,
@@ -105,7 +168,7 @@ export function useMessageStore() {
           ...prev,
           currentDialog: updatedDialog,
           dialogs: prev.dialogs.map((d) =>
-            d.id === updatedDialog.id ? updatedDialog : d
+            d.id === updatedDialog.id ? updatedDialog : d,
           ),
         };
       });
@@ -142,29 +205,41 @@ export function useMessageStore() {
       });
     };
 
-    const handleDialogSubscribed = (event: { dialog: DialogSession | null }) => {
+    const handleDialogSubscribed = (event: {
+      dialog: DialogSession | null;
+    }) => {
       if (event.dialog) {
         setState((prev) => {
           // 检查是否已经有这个对话框
-          const existingDialog = prev.dialogs.find((d) => d.id === event.dialog!.id);
-          
+          const existingDialog = prev.dialogs.find(
+            (d) => d.id === event.dialog!.id,
+          );
+
           // 合并消息：保留现有消息，同时添加服务器上的新消息
           let mergedMessages: RealtimeMessage[] = [];
           if (existingDialog) {
             // 创建现有消息的映射
-            const existingMsgMap = new Map(existingDialog.messages.map(m => [m.id, m]));
+            const existingMsgMap = new Map(
+              existingDialog.messages.map((m) => [m.id, m]),
+            );
             // 遍历服务器消息，保留前端有stream_tokens的版本
-            mergedMessages = event.dialog!.messages.map(serverMsg => {
+            mergedMessages = event.dialog!.messages.map((serverMsg) => {
               const existingMsg = existingMsgMap.get(serverMsg.id);
-              if (existingMsg && existingMsg.stream_tokens && existingMsg.stream_tokens.length > 0) {
+              if (
+                existingMsg &&
+                existingMsg.stream_tokens &&
+                existingMsg.stream_tokens.length > 0
+              ) {
                 // 前端有更完整的流式数据，保留前端版本
                 return existingMsg;
               }
               return serverMsg;
             });
             // 添加前端有但服务器没有的消息（本地乐观更新）
-            const serverMsgIds = new Set(event.dialog!.messages.map(m => m.id));
-            existingDialog.messages.forEach(localMsg => {
+            const serverMsgIds = new Set(
+              event.dialog!.messages.map((m) => m.id),
+            );
+            existingDialog.messages.forEach((localMsg) => {
               if (!serverMsgIds.has(localMsg.id)) {
                 mergedMessages.push(localMsg);
               }
@@ -178,9 +253,11 @@ export function useMessageStore() {
             messages: mergedMessages,
           } as DialogSession;
 
-          const updatedDialogs = prev.dialogs.some((d) => d.id === event.dialog!.id)
+          const updatedDialogs = prev.dialogs.some(
+            (d) => d.id === event.dialog!.id,
+          )
             ? prev.dialogs.map((d) =>
-                d.id === event.dialog!.id ? dialogToUse : d
+                d.id === event.dialog!.id ? dialogToUse : d,
               )
             : [...prev.dialogs, dialogToUse];
 
@@ -195,19 +272,19 @@ export function useMessageStore() {
 
     const unsubscribeAdded = globalEventEmitter.on(
       "message:added",
-      handleMessageAdded
+      handleMessageAdded,
     );
     const unsubscribeUpdated = globalEventEmitter.on(
       "message:updated",
-      handleMessageUpdated
+      handleMessageUpdated,
     );
     const unsubscribeStream = globalEventEmitter.on(
       "stream:token",
-      handleStreamToken
+      handleStreamToken,
     );
     const unsubscribeDialog = globalEventEmitter.on(
       "dialog:subscribed",
-      handleDialogSubscribed
+      handleDialogSubscribed,
     );
 
     return () => {
@@ -216,7 +293,7 @@ export function useMessageStore() {
       unsubscribeStream();
       unsubscribeDialog();
     };
-  }, [bufferMessage]);
+  }, [bufferMessage, mergeMessage, state.currentDialog]);
 
   // 设置当前对话框
   const setCurrentDialog = useCallback((dialog: DialogSession | null) => {
@@ -230,7 +307,7 @@ export function useMessageStore() {
 
       // 检查是否已存在此对话框
       const existingDialog = prev.dialogs.find((d) => d.id === dialog.id);
-      
+
       // 如果已存在，合并消息；否则使用新对话框
       const dialogToSet = existingDialog
         ? { ...dialog, messages: existingDialog.messages }
@@ -264,7 +341,7 @@ export function useMessageStore() {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d
+          d.id === updatedDialog.id ? updatedDialog : d,
         ),
       };
     });
@@ -277,7 +354,7 @@ export function useMessageStore() {
         if (!prev.currentDialog) return prev;
 
         const updatedMessages = prev.currentDialog.messages.map((msg) =>
-          msg.id === messageId ? { ...msg, status } : msg
+          msg.id === messageId ? { ...msg, status } : msg,
         );
 
         const updatedDialog = {
@@ -291,18 +368,18 @@ export function useMessageStore() {
         };
       });
     },
-    []
+    [],
   );
 
   // 获取流式消息的内容
   const getStreamingContent = useCallback(
     (messageId: string) => {
       const message = state.currentDialog?.messages.find(
-        (m) => m.id === messageId
+        (m) => m.id === messageId,
       );
       return message?.content || "";
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   // 获取思考消息
@@ -310,11 +387,11 @@ export function useMessageStore() {
     (parentId: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.type === "assistant_thinking" && m.parent_id === parentId
+          (m) => m.type === "assistant_thinking" && m.parent_id === parentId,
         ) || []
       );
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   // 获取工具调用
@@ -322,11 +399,11 @@ export function useMessageStore() {
     (parentId: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.type === "tool_call" && m.parent_id === parentId
+          (m) => m.type === "tool_call" && m.parent_id === parentId,
         ) || []
       );
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   // 获取工具结果
@@ -334,11 +411,11 @@ export function useMessageStore() {
     (toolCallId: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.type === "tool_result" && m.parent_id === toolCallId
+          (m) => m.type === "tool_result" && m.parent_id === toolCallId,
         ) || []
       );
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   return {

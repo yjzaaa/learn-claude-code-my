@@ -4,21 +4,41 @@ import { useState, useEffect } from "react";
 import { RealtimeDialog } from "@/components/realtime";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAgentApi } from "@/hooks/useAgentApi";
+import type { Dialog } from "@/hooks/useAgentApi";
 import { useMessageStore } from "@/hooks/useMessageStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff, MessageSquare, Loader2, Plus, Trash2, RefreshCw } from "lucide-react";
+import {
+  Wifi,
+  WifiOff,
+  MessageSquare,
+  Loader2,
+  Plus,
+  Trash2,
+  RefreshCw,
+} from "lucide-react";
 
 export function RealtimeDemoClient() {
-  const [dialogs, setDialogs] = useState([]);
-  const [selectedDialogId, setSelectedDialogId] = useState(null);
+  const [dialogs, setDialogs] = useState<Dialog[]>([]);
+  const [selectedDialogId, setSelectedDialogId] = useState<string | null>(null);
   const [newDialogTitle, setNewDialogTitle] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  const { isLoading, getDialogs, createDialog, deleteDialog, getDialog, sendMessage } = useAgentApi();
-  const { status: wsStatus, isConnected: wsConnected, subscribeToDialog } = useWebSocket({});
+  const {
+    isLoading,
+    getDialogs,
+    createDialog,
+    deleteDialog,
+    getDialog,
+    sendMessage,
+  } = useAgentApi();
+  const {
+    status: wsStatus,
+    isConnected: wsConnected,
+    subscribeToDialog,
+  } = useWebSocket({});
   const { currentDialog, setCurrentDialog } = useMessageStore();
 
   const loadDialogs = async () => {

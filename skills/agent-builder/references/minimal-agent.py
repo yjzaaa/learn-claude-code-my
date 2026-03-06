@@ -1,3 +1,4 @@
+﻿from loguru import logger
 #!/usr/bin/env python3
 """
 Minimal Agent Template - Copy and customize this.
@@ -121,9 +122,9 @@ def agent(prompt: str, history: list = None) -> str:
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                print(f"> {block.name}: {block.input}")
+                logger.info(f"> {block.name}: {block.input}")
                 output = execute_tool(block.name, block.input)
-                print(f"  {output[:100]}...")
+                logger.info(f"  {output[:100]}...")
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -134,9 +135,8 @@ def agent(prompt: str, history: list = None) -> str:
 
 
 if __name__ == "__main__":
-    print(f"Minimal Agent - {WORKDIR}")
-    print("Type 'q' to quit.\n")
-
+    logger.info(f"Minimal Agent - {WORKDIR}")
+    logger.info("Type 'q' to quit.\n")
     history = []
     while True:
         try:
@@ -145,5 +145,5 @@ if __name__ == "__main__":
             break
         if query in ("q", "quit", "exit", ""):
             break
-        print(agent(query, history))
-        print()
+        logger.info(agent(query, history))
+        logger.info("")
