@@ -8,12 +8,34 @@ from .toolkit import (
 	scan_tools_and_handlers,
 	ToolDefinitionError,
 )
+from .models import (
+    MessageType,
+    MessageStatus,
+    AgentType,
+    RealtimeMessage,
+    DialogSession,
+    AgentState,
+)
+from .interactive_agent import FrontendBridge, BaseInteractiveAgent
 
 __all__ = [
+    # 基础工具
 	"DefaultCommandGuard",
 	"WorkspaceOps",
+    # Agent 循环
 	"BaseAgentLoop",
 	"run_base_agent_loop",
+    # 交互式 Agent
+    "BaseInteractiveAgent",
+    "FrontendBridge",
+    # 数据模型
+    "MessageType",
+    "MessageStatus",
+    "AgentType",
+    "RealtimeMessage",
+    "DialogSession",
+    "AgentState",
+    # 工具装饰器
 	"tool",
 	"build_tools",
 	"build_tools_and_handlers",
