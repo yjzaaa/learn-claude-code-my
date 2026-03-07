@@ -344,7 +344,7 @@ Analyze data and return key insights summary.""",
 
         # Debug: log should_stop callback
         has_stop = "should_stop" in self._callbacks and self._callbacks["should_stop"] is not None
-        logger.debug(f"[WorkerSubAgent:{worker_type}] should_stop callback present: {has_stop}")
+        logger.info(f"[WorkerSubAgent:{worker_type}] should_stop callback present: {has_stop}")
 
         # 创建子代理的 BaseAgentLoop（不包含 task 工具，避免递归）
         self.loop = BaseAgentLoop(
@@ -557,8 +557,8 @@ Returns:
             - 子代理的完整上下文丢弃
             """
             logger.info(f"> task [{worker_type}]: {objective[:60]}...")
-            logger.debug(f"[task] Worker callbacks keys: {list(self._worker_callbacks.keys())}")
-            logger.debug(f"[task] has should_stop: {'should_stop' in self._worker_callbacks}")
+            logger.info(f"[task] Worker callbacks keys: {list(self._worker_callbacks.keys())}")
+            logger.info(f"[task] has should_stop: {'should_stop' in self._worker_callbacks}")
 
             # 设置当前 agent_type 为 worker 类型
             prev_agent_type = getattr(WebSocketBridge, 'current_agent_type', None)

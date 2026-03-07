@@ -34,8 +34,10 @@ class ConnectionManager:
     def _setup_event_manager(self):
         """设置event_manager的对话框广播处理器"""
         async def broadcast_handler(dialog_id: str, message: Dict[str, Any]):
+            logger.info(f"[ConnectionManager] broadcast_handler called for dialog {dialog_id}")
             await self.broadcast_to_dialog(dialog_id, message)
         event_manager.set_dialog_broadcast_handler(broadcast_handler)
+        logger.info("[ConnectionManager] Event manager broadcast handler set up successfully")
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -85,21 +87,24 @@ class ConnectionManager:
     async def broadcast_to_dialog(self, dialog_id: str, message: Dict[str, Any]):
         """广播消息到订阅特定对话框的客户端"""
         clients = self.dialog_subscriptions.get(dialog_id, [])
-        logger.info(f"[ConnectionManager] Broadcasting to dialog {dialog_id}, clients: {clients}")
+        logger.info(f"[ConnectionManager] broadcast_to_dialog: dialog_id={dialog_id}, clients={clients}, active_connections={list(self.active_connections.keys())}")
         disconnected = []
+
+        if not clients:
+            logger.warning(f"[ConnectionManager] No clients subscribed to dialog {dialog_id}")
 
         for client_id in clients:
             if client_id in self.active_connections:
                 try:
-                    await self.active_connections[client_id].send_text(
-                        json.dumps(message, ensure_ascii=False)
-                    )
-                    logger.info(f"[ConnectionManager] Message sent to client {client_id}")
+                    message_json = json.dumps(message, ensure_ascii=False)
+                    logger.info(f"[ConnectionManager] Sending message to client {client_id}: {message_json[:200]}...")
+                    await self.active_connections[client_id].send_text(message_json)
+                    logger.info(f"[ConnectionManager] Message sent successfully to client {client_id}")
                 except Exception as e:
-                    logger.info(f"[ConnectionManager] Failed to send to client {client_id}: {e}")
+                    logger.error(f"[ConnectionManager] Failed to send to client {client_id}: {e}")
                     disconnected.append(client_id)
             else:
-                logger.info(f"[ConnectionManager] Client {client_id} not in active connections")
+                logger.warning(f"[ConnectionManager] Client {client_id} not in active connections, available: {list(self.active_connections.keys())}")
                 disconnected.append(client_id)
 
         # 清理断开的连接

@@ -343,8 +343,11 @@ def create_app() -> FastAPI:
     @app.post("/api/agent/stop")
     async def stop_agent():
         """停止当前Agent运行"""
-        logger.info(f"[stop_agent] Stop requested! Current is_running={agent_state.get('is_running')}, dialog_id={agent_state.get('current_dialog_id')}")
+        import threading
+        logger.info(f"[stop_agent] Stop requested! Current is_running={agent_state.get('is_running')}, dialog_id={agent_state.get('current_dialog_id')}, thread={threading.current_thread().name}")
+        logger.info(f"[stop_agent] Setting stop_requested=True")
         agent_state["stop_requested"] = True
+        logger.info(f"[stop_agent] Current agent_state['stop_requested'] = {agent_state.get('stop_requested')}")
         return {
             "success": True,
             "message": "Stop requested, Agent will stop at next check point"
@@ -382,6 +385,8 @@ async def process_agent_request(dialog_id: str):
     4. 检查是否有待处理的消息，如有则继续处理
     5. 发送完成事件
     """
+    # Ensure connection_manager is loaded (sets up event manager broadcast handler)
+    logger.info(f"[process_agent_request] connection_manager loaded: {connection_manager is not None}")
     logger.info(f"[process_agent_request] Starting for dialog_id={dialog_id}, is_running={agent_state['is_running']}")
     if agent_state["is_running"] and agent_state["current_dialog_id"] != dialog_id:
         # 如果Agent正在处理其他对话，发送提示
