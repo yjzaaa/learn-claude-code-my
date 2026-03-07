@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Dict, List
+from loguru import logger
 
 # For debug logging
 _check_count = 0
+_check_lock = threading.Lock()
 
 def is_stop_requested(agent_state: Dict[str, Any]) -> bool:
-    """Return whether current agent loop should stop."""
+    """Return whether current agent loop should stop.
+
+    Thread-safe check of the agent_state["stop_requested"] flag.
+    """
     global _check_count
-    _check_count += 1
+
+    # Thread-safe increment
+    with _check_lock:
+        _check_count += 1
+        count = _check_count
+
+    # Use dict.get() which is thread-safe for reading
     result = bool(agent_state.get("stop_requested", False))
-    # Log every 10th check and whenever stop is requested
-    if _check_count % 10 == 0 or result:
-        print(f"[is_stop_requested] check #{_check_count}: stop_requested={result}")
+
+    # Log every check for debugging (can reduce frequency later)
+    logger.info(f"[is_stop_requested] check #{count}: stop_requested={result}, thread={threading.current_thread().name}")
+
     return result
 
 

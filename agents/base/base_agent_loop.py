@@ -229,15 +229,19 @@ class BaseAgentLoop:
 
     def run(self, messages: list[dict[str, Any]]) -> None:
         """执行标准循环，直到模型不再请求工具。"""
+        import threading
         rounds = 0
         while True:
             # 检查是否应该停止
-            if self.should_stop and self.should_stop():
-                logger.info("[BaseAgentLoop] Stop requested, breaking loop")
-                print("[BaseAgentLoop] Stop requested - exiting agent loop")  # Console output for visibility
-                if self.on_stop:
-                    self.on_stop(messages, None)
-                return
+            if self.should_stop:
+                should_stop_result = self.should_stop()
+                logger.info(f"[BaseAgentLoop] should_stop check: result={should_stop_result}, thread={threading.current_thread().name}")
+                if should_stop_result:
+                    logger.info("[BaseAgentLoop] Stop requested, breaking loop")
+                    print("[BaseAgentLoop] Stop requested - exiting agent loop")  # Console output for visibility
+                    if self.on_stop:
+                        self.on_stop(messages, None)
+                    return
 
             # 达到最大轮数时直接停止，避免触发一轮无响应的 before_round 事件。
             if self.max_rounds is not None and rounds >= self.max_rounds:
@@ -273,12 +277,15 @@ class BaseAgentLoop:
                     continue
 
                 # 检查是否应该停止（工具调用前）
-                if self.should_stop and self.should_stop():
-                    logger.info("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
-                    print("[BaseAgentLoop] Stop requested during tool calls - exiting agent loop")
-                    if self.on_stop:
-                        self.on_stop(messages, response)
-                    return
+                if self.should_stop:
+                    should_stop_result = self.should_stop()
+                    logger.info(f"[BaseAgentLoop] should_stop check during tool call: result={should_stop_result}")
+                    if should_stop_result:
+                        logger.info("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
+                        print("[BaseAgentLoop] Stop requested during tool calls - exiting agent loop")
+                        if self.on_stop:
+                            self.on_stop(messages, response)
+                        return
 
                 # 触发工具调用开始回调
                 if self.on_tool_call:

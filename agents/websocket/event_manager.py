@@ -231,14 +231,19 @@ class EventManager:
 
     def _broadcast_to_dialog_subscribers(self, dialog_id: str, message: Dict[str, Any]):
         """广播给订阅该对话框的客户端"""
-        if hasattr(self, '_dialog_broadcast_handler') and self._dialog_broadcast_handler:
+        has_handler = hasattr(self, '_dialog_broadcast_handler') and self._dialog_broadcast_handler
+        logger.info(f"[EventManager] _broadcast_to_dialog_subscribers: dialog_id={dialog_id}, has_handler={has_handler}")
+        if has_handler:
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # 使用 create_task 异步执行
                     loop.create_task(self._async_broadcast_to_dialog(dialog_id, message))
-            except:
-                pass
+                    logger.info(f"[EventManager] Scheduled broadcast to dialog {dialog_id}")
+                else:
+                    logger.warning(f"[EventManager] Event loop not running, cannot broadcast to dialog subscribers")
+            except Exception as e:
+                logger.error(f"[EventManager] Error broadcasting to dialog subscribers: {e}")
 
     async def _async_broadcast_to_dialog(self, dialog_id: str, message: Dict[str, Any]):
         """异步广播给对话框订阅者"""
@@ -247,16 +252,19 @@ class EventManager:
 
     async def broadcast_to_clients(self, message: Dict[str, Any]):
         """广播消息到所有WebSocket客户端"""
+        logger.info(f"[EventManager] broadcast_to_clients: client_count={len(self._websocket_clients)}")
         if not self._websocket_clients:
+            logger.warning(f"[EventManager] No WebSocket clients connected")
             return
 
         dead_clients = []
-        for client in self._websocket_clients:
+        for i, client in enumerate(self._websocket_clients):
             try:
-                import loguru as logger
-                logger.debug(f"[EventManager] Broadcasting message to client: {message}")
+                logger.info(f"[EventManager] Broadcasting message to client {i}")
                 await client.send(json.dumps(message, ensure_ascii=False))
-            except Exception:
+                logger.info(f"[EventManager] Message sent to client {i}")
+            except Exception as e:
+                logger.error(f"[EventManager] Failed to send to client {i}: {e}")
                 dead_clients.append(client)
 
         # 清理断开的客户端
@@ -277,6 +285,7 @@ class EventManager:
 
     def add_message_to_dialog(self, dialog_id: str, message: RealTimeMessage):
         """添加消息到对话框"""
+        logger.info(f"[EventManager] add_message_to_dialog called: dialog_id={dialog_id}, message_type={message.type.value}")
         dialog = self._dialogs.get(dialog_id)
         if dialog:
             dialog.add_message(message)
@@ -286,21 +295,25 @@ class EventManager:
                 "dialog_id": dialog_id,
                 "message": message.to_dict()
             }
+            logger.info(f"[EventManager] Preparing to broadcast message: type={message.type.value}, should_push={self.should_push_event(message_data)}")
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     if self.should_push_event(message_data):
+                        logger.info(f"[EventManager] Broadcasting message to all clients and dialog subscribers")
                         loop.create_task(self.broadcast_to_clients(message_data))
                         # 同时广播给订阅该对话框的客户端
                         self._broadcast_to_dialog_subscribers(dialog_id, message_data)
                 else:
                     # 如果事件循环不在运行，存储待发送消息
-                    pass
-            except RuntimeError:
+                    logger.warning(f"[EventManager] Event loop not running, message not broadcasted")
+            except RuntimeError as e:
                 # 没有事件循环，忽略广播
-                pass
+                logger.warning(f"[EventManager] No event loop: {e}")
             except Exception as e:
                 logger.info(f"[EventManager] Error broadcasting message: {e}")
+        else:
+            logger.warning(f"[EventManager] Dialog {dialog_id} not found, message not added")
     def update_message_in_dialog(self, dialog_id: str, message_id: str, updates: Dict[str, Any]):
         """更新对话框中的消息"""
         dialog = self._dialogs.get(dialog_id)

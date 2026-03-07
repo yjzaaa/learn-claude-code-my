@@ -6,3 +6,4 @@ export { StatusIndicator } from "./status-indicator";
 export { MessageTypeBadge } from "./message-type-badge";
 export { ToolNameLabel } from "./tool-name-label";
 export { ThinkingMessage } from "./thinking-message";
+export { AgentTypeLabel, AgentTypeIcon, AgentTypeSelector } from "./agent-type-label";
