@@ -9,9 +9,10 @@ import { useMessageStore } from "@/hooks/useMessageStore";
 import type { RealtimeMessage } from "@/types/realtime-message";
 import { CollapsibleMessage } from "./collapsible-message";
 import { StatusIndicator } from "./status-indicator";
-import { MessageSquare, Send, Plus, Square } from "lucide-react";
+import { MessageSquare, Send, Plus, Square, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RuntimeFlowchart } from "./runtime-flowchart";
 
 interface EmbeddedDialogProps {
   className?: string;
@@ -24,6 +25,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string>("");
   const [isStopping, setIsStopping] = useState(false);
+  const [showFlowchart, setShowFlowchart] = useState(false);
   const activeDialogIdRef = useRef<string>("");
   const creatingDialogPromiseRef = useRef<Promise<string> | null>(null);
 
@@ -303,6 +305,22 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 流程图按钮 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFlowchart(!showFlowchart)}
+            className={cn(
+              "transition-colors",
+              showFlowchart
+                ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+                : ""
+            )}
+          >
+            <Workflow className="h-4 w-4 mr-1" />
+            流程图
+          </Button>
+
           {/* 停止按钮 - 当Agent正在运行时显示 */}
           <Button
             variant="outline"
@@ -331,6 +349,13 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
           </Button>
         </div>
       </div>
+
+      {/* 运行时流程图卡片 */}
+      <RuntimeFlowchart
+        isOpen={showFlowchart}
+        onClose={() => setShowFlowchart(false)}
+        dialogId={activeDialogId}
+      />
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[400px] max-h-[600px]">
