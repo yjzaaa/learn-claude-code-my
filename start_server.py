@@ -7,11 +7,14 @@
     python start_server.py --port 8000  # 指定端口
     python start_server.py --no-reload  # 关闭热重载
     python start_server.py --host 0.0.0.0 --port 8001
+    python start_server.py --force      # 强制杀死占用端口的旧实例
 """
 
 import argparse
 import sys
 import os
+import subprocess
+import signal
 from pathlib import Path
 from contextlib import suppress
 
@@ -76,12 +79,50 @@ class SingleInstanceGuard:
         self._fh.close()
         self._fh = None
 
-def main():
-    lock = SingleInstanceGuard(Path(__file__).parent / ".runtime" / "start_server.lock")
-    if not lock.acquire():
-        logger.error("检测到已有 start_server.py 实例在运行，已阻止重复启动。")
-        sys.exit(1)
+def kill_process_on_port(port: int) -> bool:
+    """查找并杀死占用指定端口的进程。"""
+    killed = False
+    try:
+        if os.name == 'nt':  # Windows
+            # 查找占用端口的进程
+            result = subprocess.run(
+                ['netstat', '-ano', '|', 'findstr', f':{port}'],
+                capture_output=True, text=True, shell=True
+            )
+            if result.returncode == 0 and result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.strip().split()
+                    if len(parts) >= 5 and f':{port}' in line:
+                        pid = parts[-1]
+                        if pid.isdigit():
+                            try:
+                                subprocess.run(['taskkill', '/F', '/PID', pid], capture_output=True)
+                                logger.warning(f"已终止占用端口 {port} 的进程 PID={pid}")
+                                killed = True
+                            except Exception as e:
+                                logger.error(f"终止进程失败 PID={pid}: {e}")
+        else:  # Linux/Mac
+            # 使用 lsof 查找占用端口的进程
+            result = subprocess.run(
+                ['lsof', '-t', '-i', f':{port}'],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0 and result.stdout:
+                for pid in result.stdout.strip().split('\n'):
+                    pid = pid.strip()
+                    if pid.isdigit():
+                        try:
+                            os.kill(int(pid), signal.SIGTERM)
+                            logger.warning(f"已终止占用端口 {port} 的进程 PID={pid}")
+                            killed = True
+                        except Exception as e:
+                            logger.error(f"终止进程失败 PID={pid}: {e}")
+    except Exception as e:
+        logger.error(f"查找端口占用进程时出错: {e}")
+    return killed
 
+
+def main():
     parser = argparse.ArgumentParser(description="启动 Agent FastAPI 服务器")
     parser.add_argument(
         "--host",
@@ -107,6 +148,12 @@ def main():
         action="store_false",
         help="关闭热重载模式",
     )
+    parser.add_argument(
+        "-f", "--force",
+        action="store_true",
+        default=False,
+        help="强制杀死占用端口的旧实例后启动",
+    )
 
     args = parser.parse_args()
 
@@ -118,6 +165,56 @@ def main():
     logger.info("=" * 60)
     logger.info(f"\n📡 服务器地址: http://{args.host}:{args.port}")
     logger.info(f"🔗 WebSocket: ws://{args.host}:{args.port}/ws/{{client_id}}")
+    logger.info(f"\n⚙️  运行配置:")
+    logger.info(f"   - 主机: {args.host}")
+    logger.info(f"   - 端口: {args.port}")
+    logger.info(f"   - 热重载: {'启用' if args.reload else '禁用'}")
+    logger.info(f"   - 强制模式: {'启用' if args.force else '禁用'}")
+
+    # 强制模式：杀死占用端口的旧实例
+    if args.force:
+        logger.info(f"\n🔍 检查端口 {args.port} 是否被占用...")
+        kill_process_on_port(args.port)
+
+    # 单实例保护
+    lock = SingleInstanceGuard(Path(__file__).parent / ".runtime" / "start_server.lock")
+    if not lock.acquire():
+        if args.force:
+            logger.warning("检测到已有 start_server.py 实例，尝试强制终止...")
+            # 在 Windows 上尝试终止其他 Python 进程
+            try:
+                if os.name == 'nt':
+                    subprocess.run(
+                        ['taskkill', '/F', '/FI', 'IMAGENAME eq python.exe', '/FI', 'WINDOWTITLE eq *start_server*'],
+                        capture_output=True
+                    )
+                else:
+                    # 查找并终止其他 start_server.py 进程
+                    result = subprocess.run(
+                        ['pgrep', '-f', 'start_server.py'],
+                        capture_output=True, text=True
+                    )
+                    if result.returncode == 0:
+                        for pid in result.stdout.strip().split('\n'):
+                            if pid.strip() and pid.strip() != str(os.getpid()):
+                                try:
+                                    os.kill(int(pid.strip()), signal.SIGTERM)
+                                except:
+                                    pass
+            except Exception as e:
+                logger.error(f"强制终止旧实例失败: {e}")
+            # 再次尝试获取锁
+            import time
+            time.sleep(1)
+            if not lock.acquire():
+                logger.error("仍无法获取单实例锁，退出。")
+                sys.exit(1)
+        else:
+            logger.error("检测到已有 start_server.py 实例在运行，已阻止重复启动。")
+            logger.info("\n💡 提示: 使用 --force 参数强制杀死旧实例并启动新实例")
+            logger.info("   命令: python start_server.py --force")
+            sys.exit(1)
+
     logger.info("\n📚 API 端点:")
     logger.info(f"   - GET  http://{args.host}:{args.port}/")
     logger.info(f"   - GET  http://{args.host}:{args.port}/api/dialogs")

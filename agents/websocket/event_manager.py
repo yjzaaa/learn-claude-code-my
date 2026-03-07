@@ -47,6 +47,7 @@ class RealTimeMessage:
     metadata: Dict[str, Any] = field(default_factory=dict)
     parent_id: Optional[str] = None
     stream_tokens: List[str] = field(default_factory=list)
+    agent_type: Optional[str] = None  # 当前运行的代理类型
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -60,6 +61,7 @@ class RealTimeMessage:
             "metadata": self.metadata,
             "parent_id": self.parent_id,
             "stream_tokens": self.stream_tokens,
+            "agent_type": self.agent_type,
         }
 
     def to_json(self) -> str:
@@ -223,6 +225,26 @@ class EventManager:
         if client in self._websocket_clients:
             self._websocket_clients.remove(client)
 
+    def set_dialog_broadcast_handler(self, handler: Callable):
+        """设置对话框广播处理器（由server.py调用）"""
+        self._dialog_broadcast_handler = handler
+
+    def _broadcast_to_dialog_subscribers(self, dialog_id: str, message: Dict[str, Any]):
+        """广播给订阅该对话框的客户端"""
+        if hasattr(self, '_dialog_broadcast_handler') and self._dialog_broadcast_handler:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 使用 create_task 异步执行
+                    loop.create_task(self._async_broadcast_to_dialog(dialog_id, message))
+            except:
+                pass
+
+    async def _async_broadcast_to_dialog(self, dialog_id: str, message: Dict[str, Any]):
+        """异步广播给对话框订阅者"""
+        if hasattr(self, '_dialog_broadcast_handler') and self._dialog_broadcast_handler:
+            await self._dialog_broadcast_handler(dialog_id, message)
+
     async def broadcast_to_clients(self, message: Dict[str, Any]):
         """广播消息到所有WebSocket客户端"""
         if not self._websocket_clients:
@@ -270,8 +292,7 @@ class EventManager:
                     if self.should_push_event(message_data):
                         loop.create_task(self.broadcast_to_clients(message_data))
                         # 同时广播给订阅该对话框的客户端
-                        from .server import connection_manager
-                        loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
+                        self._broadcast_to_dialog_subscribers(dialog_id, message_data)
                 else:
                     # 如果事件循环不在运行，存储待发送消息
                     pass
@@ -301,8 +322,7 @@ class EventManager:
                             if self.should_push_event(message_data):
                                 loop.create_task(self.broadcast_to_clients(message_data))
                                 # 同时广播给订阅该对话框的客户端
-                                from .server import connection_manager
-                                loop.create_task(connection_manager.broadcast_to_dialog(dialog_id, message_data))
+                                self._broadcast_to_dialog_subscribers(dialog_id, message_data)
                     except RuntimeError:
                         pass
                     except Exception as e:

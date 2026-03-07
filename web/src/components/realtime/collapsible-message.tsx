@@ -8,6 +8,7 @@ import { StatusIndicator } from "./status-indicator";
 import { MessageTypeBadge } from "./message-type-badge";
 import { ToolNameLabel } from "./tool-name-label";
 import { ThinkingMessage } from "./thinking-message";
+import { AgentTypeLabel } from "./agent-type-label";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface CollapsibleMessageProps {
@@ -104,6 +105,11 @@ export function CollapsibleMessage({
           {/* 消息类型标签 */}
           <MessageTypeBadge type={message.type} size="sm" />
 
+          {/* 代理类型标签（新增） */}
+          {message.agent_type && message.agent_type !== "default" && (
+            <AgentTypeLabel agentType={message.agent_type} size="sm" />
+          )}
+
           {/* 工具名称（如果是工具调用） */}
           {message.tool_name && (
             <ToolNameLabel toolName={message.tool_name} size="sm" />
@@ -193,7 +199,7 @@ export function CollapsibleMessage({
                   {/* 参数 */}
                   <div>
                     <p className="text-[10px] text-zinc-400 mb-1">参数</p>
-                    <pre className="whitespace-pre-wrap rounded-md bg-purple-900/20 p-3 font-mono text-xs leading-relaxed text-purple-100 border border-purple-700/30">
+                    <pre className="whitespace-pre-wrap rounded-md bg-purple-50 dark:bg-purple-950/20 p-3 font-mono text-xs leading-relaxed text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-900/30">
                       {message.tool_input
                         ? JSON.stringify(message.tool_input, null, 2)
                         : "(无参数)"}
@@ -203,7 +209,7 @@ export function CollapsibleMessage({
                   {currentToolResults.length > 0 && (
                     <div>
                       <p className="text-[10px] text-zinc-400 mb-1">结果</p>
-                      <pre className="whitespace-pre-wrap rounded-md bg-emerald-900/20 p-3 font-mono text-xs leading-relaxed text-emerald-100 border border-emerald-700/30">
+                      <pre className="whitespace-pre-wrap rounded-md bg-emerald-50 dark:bg-emerald-950/20 p-3 font-mono text-xs leading-relaxed text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/30">
                         {currentToolResults[0].content || "(无输出)"}
                       </pre>
                     </div>
@@ -214,7 +220,7 @@ export function CollapsibleMessage({
                 </div>
               ) : isToolResult ? (
                 // 工具结果：在展开状态下详细显示
-                <pre className="whitespace-pre-wrap rounded-md bg-emerald-900/20 p-3 font-mono text-xs leading-relaxed text-emerald-100 border border-emerald-700/30">
+                <pre className="whitespace-pre-wrap rounded-md bg-emerald-50 dark:bg-emerald-950/20 p-3 font-mono text-xs leading-relaxed text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900/30">
                   {message.content || "(无输出)"}
                   {isStreaming && (
                     <span className="inline-block w-2 h-4 bg-blue-500 ml-0.5 animate-pulse" />

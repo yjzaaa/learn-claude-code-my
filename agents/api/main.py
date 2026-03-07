@@ -27,12 +27,12 @@ from ..websocket.server import connection_manager, MessageHandler
 try:
     from ..base import WorkspaceOps, tool
     from ..client import get_client, get_model
-    from ..sql_agent_loop import SQLAgentLoop, SYSTEM, TOOLS
+    from ..sql_agent_loop_v2 import SQLAgentLoopV2, MASTER_SYSTEM
     from ..websocket.bridge import WebSocketBridge
 except ImportError:
     from agents.base import WorkspaceOps, tool
     from agents.client import get_client, get_model
-    from agents.sql_agent_loop import SQLAgentLoop, SYSTEM, TOOLS
+    from agents.sql_agent_loop_v2 import SQLAgentLoopV2, MASTER_SYSTEM
     from agents.websocket.bridge import WebSocketBridge
 
 from ..s05_skill_loading import SKILL_LOADER
@@ -343,6 +343,7 @@ def create_app() -> FastAPI:
     @app.post("/api/agent/stop")
     async def stop_agent():
         """停止当前Agent运行"""
+        logger.info(f"[stop_agent] Stop requested! Current is_running={agent_state.get('is_running')}, dialog_id={agent_state.get('current_dialog_id')}")
         agent_state["stop_requested"] = True
         return {
             "success": True,
@@ -392,8 +393,8 @@ async def process_agent_request(dialog_id: str):
     agent_state["current_dialog_id"] = dialog_id
     agent_state["stop_requested"] = False
     logger.info(f"[process_agent_request] Set is_running=True")
-    # 创建WebSocket桥接器
-    bridge = WebSocketBridge(dialog_id)
+    # 创建WebSocket桥接器，指定主代理类型
+    bridge = WebSocketBridge(dialog_id, agent_type="master")
     await bridge.initialize(title="Skill Agent")
 
     def _on_after_round(messages: List[Dict[str, Any]], response: Any):
@@ -432,14 +433,14 @@ async def process_agent_request(dialog_id: str):
             "[process_agent_request] Processing with context messages: "
             f"count={len(messages)}, last_user={last_user_message[:100]}..."
         )
-        # 创建带WebSocket钩子的Agent循环
-        agent_loop = SQLAgentLoop(
+        # 创建带WebSocket钩子的Agent循环 (V2版本 - Master-Worker架构)
+        agent_loop = SQLAgentLoopV2(
             client=agent_state["client"],
             model=agent_state["model"],
-            system=SYSTEM,
-            tools=TOOLS,
+            system=MASTER_SYSTEM,
             max_tokens=8000,
             max_rounds=30,  # finance 场景会多次读取技能/脚本，适当提高轮数避免提前中断
+            enable_learning=True,  # 启用学习记忆系统
             # WebSocket钩子
             on_before_round=bridge.on_before_round,
             on_stream_token=None,  # 临时关闭按 token 流式推送，改为回合结束后统一落消息

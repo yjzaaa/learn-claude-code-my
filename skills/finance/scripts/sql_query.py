@@ -1,28 +1,28 @@
-"""SQL Server query helper for finance skill."""
+"""PostgreSQL query helper for finance skill."""
 
 import json
 import os
 
 
 def run_sql_query(sql: str, limit: int = 200) -> str:
-    """Execute SQL against configured SQL Server via pyodbc."""
+    """Execute SQL against configured PostgreSQL via psycopg2."""
     try:
-        import pyodbc
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
     except Exception as e:
-        return f"Error: pyodbc is not available: {e}"
+        return f"Error: psycopg2 is not available: {e}"
 
-    # 标准变量：DB_SERVER / DB_NAME / DB_USER / DB_PASSWORD / DB_DRIVER
+    # 标准变量：DB_HOST / DB_NAME / DB_USER / DB_PASSWORD / DB_PORT
     # 兼容旧变量：database_url / database_name / database_username / database_password
-    server = os.getenv("DB_SERVER") or os.getenv("database_url")
-    database = os.getenv("DB_NAME") or os.getenv("database_name")
-    username = os.getenv("DB_USER") or os.getenv("database_username")
-    password = os.getenv("DB_PASSWORD") or os.getenv("database_password")
-    driver = os.getenv("DB_DRIVER", "SQL Server")
-    port = os.getenv("DB_PORT") or os.getenv("database_port")
+    host = os.getenv("DB_HOST") or os.getenv("DB_SERVER") or os.getenv("database_url", "localhost")
+    database = os.getenv("DB_NAME") or os.getenv("database_name", "cost_allocation")
+    username = os.getenv("DB_USER") or os.getenv("database_username", "postgres")
+    password = os.getenv("DB_PASSWORD") or os.getenv("database_password", "123456")
+    port = os.getenv("DB_PORT") or os.getenv("database_port", "5432")
 
     missing = []
-    if not server:
-        missing.append("DB_SERVER")
+    if not host:
+        missing.append("DB_HOST")
     if not database:
         missing.append("DB_NAME")
     if not username:
@@ -33,35 +33,30 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
     if missing:
         return f"Error: Missing DB config in environment: {', '.join(missing)}"
 
-    server_endpoint = f"{server},{port}" if port and "," not in server else server
-
-    conn_str = (
-        f"Driver={{{driver}}};"
-        f"Server={server_endpoint};"
-        f"Database={database};"
-        f"Uid={username};"
-        f"Pwd={password};"
-    )
-
-    cursor = None
     conn = None
+    cursor = None
     try:
-        conn = pyodbc.connect(conn_str, timeout=15)
-        cursor = conn.cursor()
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            database=database,
+            user=username,
+            password=password,
+            connect_timeout=15
+        )
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(sql)
 
         if cursor.description:
-            cols = [col[0] for col in cursor.description]
             rows = cursor.fetchmany(limit)
-            import decimal
-            import datetime
-            data = [dict(zip(cols, [float(x) if isinstance(x, decimal.Decimal) else x.isoformat() if isinstance(x, datetime.datetime) else x for x in row])) for row in rows]
+            # RealDictCursor 返回的是字典类型
+            data = [dict(row) for row in rows]
             payload = {
                 "truncated": len(data) >= limit,
                 "limit": limit,
                 "rows": data,
             }
-            return json.dumps(payload, ensure_ascii=False)
+            return json.dumps(payload, ensure_ascii=False, default=str)
 
         conn.commit()
         return f"OK: {cursor.rowcount} rows affected"

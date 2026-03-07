@@ -19,6 +19,78 @@ export type MessageStatus =
   | "completed"
   | "error";
 
+// 代理类型定义
+export type AgentType =
+  | "master"
+  | "sql_executor"
+  | "schema_explorer"
+  | "data_validator"
+  | "analyzer"
+  | "skill_loader"
+  | "default";
+
+// 代理类型配置
+export const AGENT_TYPE_CONFIG: Record<
+  AgentType,
+  {
+    label: string;
+    description: string;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }
+> = {
+  master: {
+    label: "主控",
+    description: "主代理 - 决策与规划",
+    color: "text-indigo-600",
+    bgColor: "bg-indigo-50",
+    borderColor: "border-indigo-200",
+  },
+  sql_executor: {
+    label: "SQL执行",
+    description: "SQL执行器 - 查询执行",
+    color: "text-blue-600",
+    bgColor: "bg-blue-50",
+    borderColor: "border-blue-200",
+  },
+  schema_explorer: {
+    label: "Schema探索",
+    description: "Schema探索器 - 结构分析",
+    color: "text-cyan-600",
+    bgColor: "bg-cyan-50",
+    borderColor: "border-cyan-200",
+  },
+  data_validator: {
+    label: "数据验证",
+    description: "数据验证器 - 质量检查",
+    color: "text-amber-600",
+    bgColor: "bg-amber-50",
+    borderColor: "border-amber-200",
+  },
+  analyzer: {
+    label: "分析器",
+    description: "分析器 - 数据分析",
+    color: "text-emerald-600",
+    bgColor: "bg-emerald-50",
+    borderColor: "border-emerald-200",
+  },
+  skill_loader: {
+    label: "技能加载",
+    description: "技能加载器",
+    color: "text-violet-600",
+    bgColor: "bg-violet-50",
+    borderColor: "border-violet-200",
+  },
+  default: {
+    label: "默认",
+    description: "默认代理",
+    color: "text-gray-600",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
+  },
+};
+
 export interface RealtimeMessage {
   id: string;
   type: RealtimeMessageType;
@@ -30,6 +102,7 @@ export interface RealtimeMessage {
   metadata?: Record<string, any>;
   parent_id?: string;
   stream_tokens?: string[];
+  agent_type?: AgentType | string; // 新增：当前运行的代理类型（支持 worker:xxx 格式）
 }
 
 export interface DialogSession {

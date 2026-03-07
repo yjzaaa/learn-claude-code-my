@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+# For debug logging
+_check_count = 0
 
 def is_stop_requested(agent_state: Dict[str, Any]) -> bool:
     """Return whether current agent loop should stop."""
-    return bool(agent_state.get("stop_requested", False))
+    global _check_count
+    _check_count += 1
+    result = bool(agent_state.get("stop_requested", False))
+    # Log every 10th check and whenever stop is requested
+    if _check_count % 10 == 0 or result:
+        print(f"[is_stop_requested] check #{_check_count}: stop_requested={result}")
+    return result
 
 
 def get_last_user_message(dialog_messages: list) -> str:
