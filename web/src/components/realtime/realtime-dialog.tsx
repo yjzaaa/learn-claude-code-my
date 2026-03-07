@@ -18,6 +18,8 @@ import {
   X,
   Maximize2,
   Minimize2,
+  Power,
+  Square,
 } from "lucide-react";
 
 interface RealtimeDialogProps {
@@ -74,6 +76,8 @@ export function RealtimeDialog({
   onClose,
 }: RealtimeDialogProps) {
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isSessionClosed, setIsSessionClosed] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -81,7 +85,7 @@ export function RealtimeDialog({
   const { status, subscribeToDialog, isConnected } = useWebSocket();
 
   // HTTP API（用于发送消息和获取对话框）
-  const { sendMessage, getDialog } = useAgentApi();
+  const { sendMessage, getDialog, stopAgent } = useAgentApi();
 
   // 消息存储
   const {
@@ -152,11 +156,46 @@ export function RealtimeDialog({
     return "completed";
   }, [messages]);
 
+  // 调试：打印状态
+  useEffect(() => {
+    console.log("[RealtimeDialog] dialogStatus:", dialogStatus, "messages count:", messages.length);
+    if (messages.length > 0) {
+      console.log("[RealtimeDialog] last message status:", messages[messages.length - 1]?.status);
+    }
+  }, [dialogStatus, messages]);
+
   // 发送消息
   const handleSend = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isSessionClosed) return;
     await sendMessage(dialogId, inputValue.trim());
     setInputValue("");
+  };
+
+  // 停止当前Agent运行
+  const handleStopAgent = async () => {
+    if (dialogStatus !== "streaming" && dialogStatus !== "pending") return;
+    setIsStopping(true);
+    try {
+      const result = await stopAgent();
+      if (result.success) {
+        console.log("[RealtimeDialog] Agent stopped successfully");
+      } else {
+        console.error("[RealtimeDialog] Failed to stop agent:", result.message);
+      }
+    } catch (e) {
+      console.error("[RealtimeDialog] Error stopping agent:", e);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
+  // 关闭会话（保留会话ID但结束当前对话）
+  const handleCloseSession = () => {
+    if (confirm("确定要关闭当前会话吗？会话历史将被保留。")) {
+      setIsSessionClosed(true);
+      // 可选：调用onClose回调通知父组件
+      onClose?.();
+    }
   };
 
   // 处理回车发送
@@ -182,19 +221,28 @@ export function RealtimeDialog({
             "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg",
             "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700",
             "hover:shadow-xl transition-shadow",
+            isSessionClosed && "opacity-70"
           )}
         >
           <StatusIndicator
-            status={dialogStatus as any}
+            status={isSessionClosed ? "completed" : (dialogStatus as any)}
             size="sm"
-            animate={dialogStatus === "streaming"}
+            animate={!isSessionClosed && dialogStatus === "streaming"}
           />
           <MessageSquare className="h-4 w-4 text-zinc-600" />
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            {title}
+          <span className={cn(
+            "text-sm font-medium",
+            isSessionClosed
+              ? "text-zinc-500 line-through"
+              : "text-zinc-700 dark:text-zinc-300"
+          )}>
+            {isSessionClosed ? `${title} (已结束)` : title}
           </span>
           {messages.length > 0 && (
-            <span className="bg-blue-500 text-white text-xs rounded-full px-1.5 py-0.5">
+            <span className={cn(
+              "text-white text-xs rounded-full px-1.5 py-0.5",
+              isSessionClosed ? "bg-zinc-400" : "bg-blue-500"
+            )}>
               {messages.length}
             </span>
           )}
@@ -222,13 +270,18 @@ export function RealtimeDialog({
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 rounded-t-xl bg-zinc-50 dark:bg-zinc-800/50">
         <div className="flex items-center gap-3">
           <StatusIndicator
-            status={dialogStatus as any}
+            status={isSessionClosed ? "completed" : (dialogStatus as any)}
             size="sm"
-            animate={dialogStatus === "streaming"}
+            animate={!isSessionClosed && dialogStatus === "streaming"}
           />
           <MessageSquare className="h-4 w-4 text-zinc-600" />
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
-            {title}
+          <h3 className={cn(
+            "font-semibold",
+            isSessionClosed
+              ? "text-zinc-500 dark:text-zinc-500 line-through"
+              : "text-zinc-800 dark:text-zinc-200"
+          )}>
+            {isSessionClosed ? `${title} (已结束)` : title}
           </h3>
           <span className="text-xs text-zinc-400">
             ({messages.length} 条消息)
@@ -241,6 +294,36 @@ export function RealtimeDialog({
             <Wifi className="h-4 w-4 text-green-500" />
           ) : (
             <WifiOff className="h-4 w-4 text-red-500" />
+          )}
+
+          {/* 停止按钮 - 始终显示但样式根据状态变化 */}
+          <button
+            onClick={handleStopAgent}
+            disabled={isStopping || isSessionClosed}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors border",
+              isSessionClosed
+                ? "bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
+                : (dialogStatus === "streaming" || dialogStatus === "pending")
+                  ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50 animate-pulse"
+                  : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+            )}
+            title={isSessionClosed ? "会话已结束" : "停止当前Agent运行"}
+          >
+            <Square className="h-3.5 w-3.5 fill-current" />
+            <span>{isStopping ? "停止中..." : "停止"}</span>
+          </button>
+
+          {/* 关闭会话按钮 */}
+          {!isSessionClosed && (
+            <button
+              onClick={handleCloseSession}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors text-xs font-medium"
+              title="关闭会话（保留会话ID）"
+            >
+              <Power className="h-3.5 w-3.5" />
+              <span>结束</span>
+            </button>
           )}
 
           {/* 最小化按钮 */}
@@ -267,6 +350,15 @@ export function RealtimeDialog({
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* 会话已关闭提示 */}
+        {isSessionClosed && (
+          <div className="flex items-center justify-center gap-2 py-2 px-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <Power className="h-4 w-4 text-amber-600" />
+            <span className="text-sm text-amber-700 dark:text-amber-400">
+              会话已结束（会话ID: {dialogId.slice(0, 8)}...）
+            </span>
+          </div>
+        )}
         {organizedMessages.parentMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-zinc-400">
             <MessageSquare className="h-12 w-12 mb-3 opacity-30" />
@@ -302,41 +394,48 @@ export function RealtimeDialog({
 
       {/* Input Area */}
       <div className="p-3 border-t border-zinc-200 dark:border-zinc-700">
-        <div className="flex items-end gap-2">
-          <div className="flex-1 relative">
-            <textarea
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="输入消息..."
-              disabled={false}
-              className={cn(
-                "w-full resize-none rounded-lg border px-3 py-2",
-                "text-sm text-zinc-700 dark:text-zinc-300",
-                "placeholder:text-zinc-400",
-                "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500",
-                "bg-zinc-50 dark:bg-zinc-800",
-                "border-zinc-200 dark:border-zinc-700",
-                "disabled:opacity-50 disabled:cursor-not-allowed",
-              )}
-              rows={1}
-              style={{ minHeight: "40px", maxHeight: "120px" }}
-            />
+        {isSessionClosed ? (
+          <div className="flex items-center justify-center gap-2 py-2 text-zinc-500 text-sm">
+            <Power className="h-4 w-4" />
+            <span>会话已结束，无法发送新消息</span>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!inputValue.trim()}
-            className={cn(
-              "flex items-center justify-center w-10 h-10 rounded-lg",
-              "bg-blue-500 text-white",
-              "hover:bg-blue-600 active:bg-blue-700",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              "transition-colors",
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
-        </div>
+        ) : (
+          <div className="flex items-end gap-2">
+            <div className="flex-1 relative">
+              <textarea
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="输入消息..."
+                disabled={false}
+                className={cn(
+                  "w-full resize-none rounded-lg border px-3 py-2",
+                  "text-sm text-zinc-700 dark:text-zinc-300",
+                  "placeholder:text-zinc-400",
+                  "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500",
+                  "bg-zinc-50 dark:bg-zinc-800",
+                  "border-zinc-200 dark:border-zinc-700",
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                )}
+                rows={1}
+                style={{ minHeight: "40px", maxHeight: "120px" }}
+              />
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={!inputValue.trim()}
+              className={cn(
+                "flex items-center justify-center w-10 h-10 rounded-lg",
+                "bg-blue-500 text-white",
+                "hover:bg-blue-600 active:bg-blue-700",
+                "disabled:opacity-50 disabled:cursor-not-allowed",
+                "transition-colors",
+              )}
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
     </motion.div>
   );

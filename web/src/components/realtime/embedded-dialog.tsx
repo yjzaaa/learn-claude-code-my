@@ -9,7 +9,7 @@ import { useMessageStore } from "@/hooks/useMessageStore";
 import type { RealtimeMessage } from "@/types/realtime-message";
 import { CollapsibleMessage } from "./collapsible-message";
 import { StatusIndicator } from "./status-indicator";
-import { MessageSquare, Send, Plus } from "lucide-react";
+import { MessageSquare, Send, Plus, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -23,6 +23,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string>("");
+  const [isStopping, setIsStopping] = useState(false);
   const activeDialogIdRef = useRef<string>("");
   const creatingDialogPromiseRef = useRef<Promise<string> | null>(null);
 
@@ -30,7 +31,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const { status, subscribeToDialog, isConnected } = useWebSocket();
 
   // HTTP API
-  const { sendMessage, createDialog, getDialog } = useAgentApi();
+  const { sendMessage, createDialog, getDialog, stopAgent } = useAgentApi();
 
   // 消息存储
   const { currentDialog, setCurrentDialog, messages } = useMessageStore();
@@ -139,6 +140,14 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     if (lastMessage.status === "error") return "error";
     return "completed";
   })();
+
+  // 检查是否有正在运行的Agent（考虑所有消息，不只是最后一条）
+  const hasRunningAgent = useMemo(() => {
+    return messages.some(msg =>
+      (msg.type === "assistant_text" || msg.type === "tool_call") &&
+      (msg.status === "streaming" || msg.status === "pending")
+    );
+  }, [messages]);
 
   // 发送消息
   const ensureDialogReady = useCallback(async (): Promise<string> => {
@@ -250,6 +259,24 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     }
   };
 
+  // 停止当前Agent运行
+  const handleStopAgent = async () => {
+    if (dialogStatus !== "streaming" && dialogStatus !== "pending") return;
+    setIsStopping(true);
+    try {
+      const result = await stopAgent();
+      if (result.success) {
+        console.log("[EmbeddedDialog] Agent stopped successfully");
+      } else {
+        console.error("[EmbeddedDialog] Failed to stop agent:", result.message);
+      }
+    } catch (e) {
+      console.error("[EmbeddedDialog] Error stopping agent:", e);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -275,15 +302,34 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
           </span>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleNewDialog}
-          disabled={isCreating}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          新建对话
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* 停止按钮 - 当Agent正在运行时显示 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleStopAgent}
+            disabled={isStopping || !hasRunningAgent}
+            className={cn(
+              "transition-colors",
+              hasRunningAgent
+                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100 hover:text-red-700 animate-pulse"
+                : ""
+            )}
+          >
+            <Square className="h-4 w-4 mr-1 fill-current" />
+            {isStopping ? "停止中..." : "停止"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNewDialog}
+            disabled={isCreating}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            新建对话
+          </Button>
+        </div>
       </div>
 
       {/* Messages Area */}

@@ -24,12 +24,26 @@ class WebSocketBridge:
     实时发送到前端
     """
 
-    def __init__(self, dialog_id: Optional[str] = None):
+    # 当前正在运行的代理类型
+    current_agent_type: Optional[str] = None
+
+    def __init__(self, dialog_id: Optional[str] = None, agent_type: Optional[str] = None):
         self.dialog_id = dialog_id or str(uuid.uuid4())
         self.message_bridge: Optional[AgentMessageBridge] = None
         self._current_assistant_message_id: Optional[str] = None
         self._current_tool_call_id: Optional[str] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._agent_type = agent_type or "default"
+
+    @property
+    def agent_type(self) -> str:
+        return self._agent_type
+
+    @agent_type.setter
+    def agent_type(self, value: str):
+        self._agent_type = value
+        WebSocketBridge.current_agent_type = value
+        logger.info(f"[WebSocketBridge] Agent type changed to: {value}")
 
     async def initialize(self, title: str = "Agent对话"):
         """初始化对话框"""

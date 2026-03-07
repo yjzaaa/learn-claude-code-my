@@ -234,6 +234,7 @@ class BaseAgentLoop:
             # 检查是否应该停止
             if self.should_stop and self.should_stop():
                 logger.info("[BaseAgentLoop] Stop requested, breaking loop")
+                print("[BaseAgentLoop] Stop requested - exiting agent loop")  # Console output for visibility
                 if self.on_stop:
                     self.on_stop(messages, None)
                 return
@@ -274,6 +275,7 @@ class BaseAgentLoop:
                 # 检查是否应该停止（工具调用前）
                 if self.should_stop and self.should_stop():
                     logger.info("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
+                    print("[BaseAgentLoop] Stop requested during tool calls - exiting agent loop")
                     if self.on_stop:
                         self.on_stop(messages, response)
                     return

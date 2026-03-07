@@ -28,6 +28,14 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.dialog_subscriptions: Dict[str, List[str]] = {}
+        # 注入广播处理器到event_manager
+        self._setup_event_manager()
+
+    def _setup_event_manager(self):
+        """设置event_manager的对话框广播处理器"""
+        async def broadcast_handler(dialog_id: str, message: Dict[str, Any]):
+            await self.broadcast_to_dialog(dialog_id, message)
+        event_manager.set_dialog_broadcast_handler(broadcast_handler)
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -293,9 +301,21 @@ class AgentMessageBridge:
     用于将Agent循环中的消息发送到WebSocket
     """
 
-    def __init__(self, dialog_id: str):
+    def __init__(self, dialog_id: str, agent_type: Optional[str] = None):
         self.dialog_id = dialog_id
         self.current_message_id: Optional[str] = None
+        self.agent_type = agent_type or "default"
+
+    def _get_agent_type(self) -> str:
+        """获取当前代理类型，优先使用类属性，其次是实例属性"""
+        # 尝试从WebSocketBridge获取当前运行的代理类型
+        try:
+            from .bridge import WebSocketBridge
+            if WebSocketBridge.current_agent_type:
+                return WebSocketBridge.current_agent_type
+        except ImportError:
+            pass
+        return self.agent_type
 
     async def send_user_message(self, content: str) -> RealTimeMessage:
         """发送用户消息"""
@@ -304,6 +324,7 @@ class AgentMessageBridge:
             type=MessageType.USER_MESSAGE,
             content=content,
             status=MessageStatus.COMPLETED,
+            agent_type=self._get_agent_type(),
         )
         event_manager.add_message_to_dialog(self.dialog_id, message)
         return message
@@ -315,6 +336,7 @@ class AgentMessageBridge:
             type=MessageType.ASSISTANT_TEXT,
             content="",
             status=MessageStatus.STREAMING,
+            agent_type=self._get_agent_type(),
         )
         self.current_message_id = message.id
         event_manager.add_message_to_dialog(self.dialog_id, message)
@@ -329,6 +351,8 @@ class AgentMessageBridge:
                     if msg.id == self.current_message_id:
                         msg.stream_tokens.append(token)
                         msg.content = "".join(msg.stream_tokens)
+                        # 更新agent_type
+                        msg.agent_type = self._get_agent_type()
                         # 广播流式更新
                         stream_event = {
                             "type": "stream_token",
@@ -346,7 +370,7 @@ class AgentMessageBridge:
                         event_manager.update_message_in_dialog(
                             self.dialog_id,
                             self.current_message_id,
-                            {"content": msg.content, "stream_tokens": msg.stream_tokens}
+                            {"content": msg.content, "stream_tokens": msg.stream_tokens, "agent_type": msg.agent_type}
                         )
                         break
 
@@ -358,6 +382,7 @@ class AgentMessageBridge:
             content=content,
             status=MessageStatus.COMPLETED,
             parent_id=self.current_message_id,
+            agent_type=self._get_agent_type(),
         )
         event_manager.add_message_to_dialog(self.dialog_id, message)
         return message
@@ -372,6 +397,7 @@ class AgentMessageBridge:
             tool_input=tool_input,
             status=MessageStatus.PENDING,
             parent_id=self.current_message_id,
+            agent_type=self._get_agent_type(),
         )
         event_manager.add_message_to_dialog(self.dialog_id, message)
         return message
@@ -384,6 +410,7 @@ class AgentMessageBridge:
             content=result,
             status=MessageStatus.COMPLETED,
             parent_id=tool_call_id,
+            agent_type=self._get_agent_type(),
         )
         event_manager.add_message_to_dialog(self.dialog_id, message)
 
@@ -398,7 +425,7 @@ class AgentMessageBridge:
     async def complete_assistant_response(self, final_content: Optional[str] = None):
         """完成助手响应"""
         if self.current_message_id:
-            updates = {"status": MessageStatus.COMPLETED}
+            updates = {"status": MessageStatus.COMPLETED, "agent_type": self._get_agent_type()}
             if final_content:
                 updates["content"] = final_content
             event_manager.update_message_in_dialog(
@@ -409,7 +436,7 @@ class AgentMessageBridge:
             self.current_message_id = None
 
     async def append_assistant_text(self, text: str):
-        """追加助手文本（用于非 token 的文本流式场景）。"""
+        """追加助手文本（用于非 token 的文本流式场景）"""
         if not text:
             return
 
