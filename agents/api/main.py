@@ -1,7 +1,8 @@
 ﻿"""
-FastAPI 主应用
+FastAPI 主应用 (OpenAI 风格)
 
 提供 REST API + WebSocket 的统一服务
+使用 ChatMessage 和 ChatEvent 进行前后端通信
 """
 
 from loguru import logger
@@ -10,70 +11,66 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+# 导入 OpenAI 风格类型
+from ..models import ChatMessage, ChatEvent
+
 # 导入WebSocket组件
-from ..websocket.event_manager import (
-    event_manager,
-    RealTimeMessage,
-    MessageType,
-    MessageStatus,
-)
+from ..websocket.event_manager import event_manager
 from ..websocket.server import connection_manager, MessageHandler
+try:
+    from .agent_bridge import AgentWebSocketBridge
+except ImportError:
+    from agents.api.agent_bridge import AgentWebSocketBridge
 
 # 导入Agent组件
 try:
-    from ..base import WorkspaceOps, tool
-    from ..client import get_client, get_model
-    from ..sql_agent_loop_v2 import SQLAgentLoopV2, MASTER_SYSTEM
-    from ..websocket.bridge import WebSocketBridge
+    from ..providers import create_provider_from_env
+    from ..s05_skill_loading import SKILL_LOADER
+    from ..s03_todo_write import TodoAgent
+    from ..utils.agent_helpers import get_last_user_message
 except ImportError:
-    from agents.base import WorkspaceOps, tool
-    from agents.client import get_client, get_model
-    from agents.sql_agent_loop_v2 import SQLAgentLoopV2, MASTER_SYSTEM
-    from agents.websocket.bridge import WebSocketBridge
-
-from ..s05_skill_loading import SKILL_LOADER
-from ..utils import (
-    append_messages_jsonl,
-    build_model_messages_from_dialog,
-    get_last_user_message,
-    is_stop_requested,
-)
+    from agents.providers import create_provider_from_env
+    from agents.s05_skill_loading import SKILL_LOADER
+    from agents.s03_todo_write import TodoAgent
+    from agents.utils.agent_helpers import get_last_user_message
 
 WORKDIR = Path.cwd()
 SKILLS_DIR = WORKDIR / "skills"
-OPS = WorkspaceOps(WORKDIR)
-LOG_DIR = WORKDIR / ".logs"
-LOG_FILE = LOG_DIR / "api_messages.jsonl"
+
+# 初始化 provider
+provider = create_provider_from_env()
 
 # 全局Agent状态
 agent_state = {
     "current_dialog_id": None,
     "is_running": False,
-    "stop_requested": False,  # 新增：请求停止标志
-    "pending_messages": {},   # 新增：等待处理的消息 {dialog_id: [messages]}
-    "client": get_client(),
-    "model": get_model(),
+    "stop_requested": False,
+    "pending_messages": {},
+    "provider": provider,
+    "model": provider.default_model if provider else "deepseek-chat",
+    "current_agent": None,
 }
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时
     logger.info("🚀 FastAPI Server starting...")
     yield
-    # 关闭时
     logger.info("🛑 FastAPI Server shutting down...")
+
+
 def create_app() -> FastAPI:
     """创建FastAPI应用"""
     app = FastAPI(
         title="Agent API",
-        description="Claude Code Agent REST API with WebSocket support",
-        version="1.0.0",
+        description="Claude Code Agent REST API with WebSocket support (OpenAI style)",
+        version="2.0.0",
         lifespan=lifespan,
     )
 
@@ -92,8 +89,8 @@ def create_app() -> FastAPI:
     async def root():
         """根端点"""
         return {
-            "message": "Agent API Server",
-            "version": "1.0.0",
+            "message": "Agent API Server (OpenAI style)",
+            "version": "2.0.0",
             "endpoints": {
                 "dialogs": "/api/dialogs",
                 "skills": "/api/skills",
@@ -170,12 +167,17 @@ def create_app() -> FastAPI:
     @app.post("/api/dialogs/{dialog_id}/messages")
     async def send_message(dialog_id: str, request: Dict[str, Any]):
         """
-        发送消息到对话框
+        发送消息到对话框 (OpenAI 风格)
 
-        如果Agent未运行，会触发Agent处理
-        如果Agent正在运行，会请求停止当前循环并排队新消息
+        请求体:
+            {
+                "content": "用户消息内容",
+                "role": "user"  // 可选，默认为 "user"
+            }
         """
         content = request.get("content", "")
+        role = request.get("role", "user")
+
         if not content:
             raise HTTPException(status_code=400, detail="Content is required")
 
@@ -184,18 +186,14 @@ def create_app() -> FastAPI:
         if not dialog:
             raise HTTPException(status_code=404, detail="Dialog not found")
 
-        # 创建用户消息
-        user_message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.USER_MESSAGE,
-            content=content,
-            status=MessageStatus.COMPLETED,
-        )
-        event_manager.add_message_to_dialog(dialog_id, user_message)
+        # 创建用户消息 (OpenAI 风格)
+        user_message = ChatMessage.user(content)
+
+        # 添加到对话框
+        event_manager.add_chat_message(dialog_id, user_message)
 
         # 检查Agent是否正在运行
         if agent_state["is_running"]:
-            # 如果正在运行，请求停止并排队消息
             logger.info(f"[send_message] Agent is running, requesting stop and queuing message for dialog {dialog_id}")
             agent_state["stop_requested"] = True
 
@@ -207,41 +205,42 @@ def create_app() -> FastAPI:
             return {
                 "success": True,
                 "data": {
-                    "message_id": user_message.id,
+                    "message": user_message.to_dict(),
                     "status": "queued",
                     "message": "Agent is busy, your message has been queued"
                 }
             }
         else:
             # 异步触发Agent处理（不阻塞响应）
-            # 注意：用户消息已添加到对话框，process_agent_request会从对话框读取历史
-            await asyncio.sleep(0.1)  # 延迟100ms确保消息已写入
+            await asyncio.sleep(0.1)
             asyncio.create_task(process_agent_request(dialog_id))
 
             return {
                 "success": True,
                 "data": {
-                    "message_id": user_message.id,
+                    "message": user_message.to_dict(),
                     "status": "processing",
                 }
             }
 
     @app.get("/api/dialogs/{dialog_id}/messages")
     async def get_messages(dialog_id: str):
-        """获取对话框的所有消息"""
+        """获取对话框的所有消息 (OpenAI 风格)"""
         dialog = event_manager.get_dialog(dialog_id)
         if not dialog:
             raise HTTPException(status_code=404, detail="Dialog not found")
 
+        # 直接返回 OpenAI 风格消息
+        messages = [msg.to_dict() for msg in dialog.messages]
+
         return {
             "success": True,
-            "data": event_manager.filter_message_dicts([m.to_dict() for m in dialog.messages])
+            "data": messages
         }
 
     @app.delete("/api/dialogs/{dialog_id}")
     async def delete_dialog(dialog_id: str):
         """删除对话框"""
-        # 这里可以实现删除逻辑
         await connection_manager.broadcast({
             "type": "dialog_deleted",
             "dialog_id": dialog_id
@@ -345,9 +344,23 @@ def create_app() -> FastAPI:
         """停止当前Agent运行"""
         import threading
         logger.info(f"[stop_agent] Stop requested! Current is_running={agent_state.get('is_running')}, dialog_id={agent_state.get('current_dialog_id')}, thread={threading.current_thread().name}")
-        logger.info(f"[stop_agent] Setting stop_requested=True")
+
+        # 1. 设置全局停止标志
         agent_state["stop_requested"] = True
-        logger.info(f"[stop_agent] Current agent_state['stop_requested'] = {agent_state.get('stop_requested')}")
+        logger.info(f"[stop_agent] Setting stop_requested=True")
+
+        # 2. 调用当前Agent的request_stop()方法（如果存在）
+        current_agent = agent_state.get("current_agent")
+        if current_agent:
+            logger.info(f"[stop_agent] Calling request_stop() on {type(current_agent).__name__}")
+            try:
+                current_agent.request_stop()
+                logger.info("[stop_agent] request_stop() called successfully")
+            except Exception as e:
+                logger.error(f"[stop_agent] Error calling request_stop(): {e}")
+        else:
+            logger.info("[stop_agent] No current_agent found")
+
         return {
             "success": True,
             "message": "Stop requested, Agent will stop at next check point"
@@ -357,7 +370,7 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws/{client_id}")
     async def websocket_endpoint(websocket: WebSocket, client_id: str):
-        """WebSocket连接端点"""
+        """WebSocket连接端点 (OpenAI 风格)"""
         await connection_manager.connect(websocket, client_id)
         try:
             while True:
@@ -365,7 +378,7 @@ def create_app() -> FastAPI:
                 try:
                     import json
                     message = json.loads(data)
-                    await MessageHandler.handle_message(websocket, client_id, message)
+                    await handle_websocket_message(websocket, client_id, message)
                 except json.JSONDecodeError:
                     await websocket.send_text('{"type": "error", "message": "Invalid JSON"}')
         except WebSocketDisconnect:
@@ -374,9 +387,49 @@ def create_app() -> FastAPI:
     return app
 
 
+async def handle_websocket_message(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    """处理 WebSocket 消息 (OpenAI 风格)"""
+    msg_type = message.get("type")
+
+    if msg_type == "chat.message":
+        # 用户发送消息
+        dialog_id = message.get("dialog_id")
+        chat_message = message.get("message", {})
+
+        if dialog_id and chat_message.get("content"):
+            # 创建 ChatEvent
+            event = ChatEvent(
+                type="message",
+                dialog_id=dialog_id,
+                message=ChatMessage.from_dict(chat_message),
+            )
+
+            # 广播事件
+            await connection_manager.broadcast({
+                "type": "chat:event",
+                "event": event.to_dict(),
+            })
+
+    elif msg_type == "chat.subscribe":
+        # 订阅对话框
+        dialog_id = message.get("dialog_id")
+        if dialog_id:
+            dialog = event_manager.get_dialog(dialog_id)
+            if dialog:
+                await websocket.send_json({
+                    "type": "dialog:subscribed",
+                    "dialog_id": dialog_id,
+                    "dialog": event_manager.to_client_dialog_dict(dialog),
+                })
+
+    else:
+        # 委托给旧的消息处理器
+        await MessageHandler.handle_message(websocket, client_id, message)
+
+
 async def process_agent_request(dialog_id: str):
     """
-    异步处理Agent请求
+    异步处理Agent请求 (OpenAI 风格)
 
     处理流程：
     1. 发送系统事件（开始处理）
@@ -385,11 +438,9 @@ async def process_agent_request(dialog_id: str):
     4. 检查是否有待处理的消息，如有则继续处理
     5. 发送完成事件
     """
-    # Ensure connection_manager is loaded (sets up event manager broadcast handler)
-    logger.info(f"[process_agent_request] connection_manager loaded: {connection_manager is not None}")
     logger.info(f"[process_agent_request] Starting for dialog_id={dialog_id}, is_running={agent_state['is_running']}")
+
     if agent_state["is_running"] and agent_state["current_dialog_id"] != dialog_id:
-        # 如果Agent正在处理其他对话，发送提示
         logger.info(f"[process_agent_request] Agent is busy with other dialog, skipping")
         await _send_system_event(dialog_id, "Agent正在处理其他对话，请稍候...")
         return
@@ -397,22 +448,10 @@ async def process_agent_request(dialog_id: str):
     agent_state["is_running"] = True
     agent_state["current_dialog_id"] = dialog_id
     agent_state["stop_requested"] = False
-    logger.info(f"[process_agent_request] Set is_running=True")
-    # 创建WebSocket桥接器，指定主代理类型
-    bridge = WebSocketBridge(dialog_id, agent_type="master")
-    await bridge.initialize(title="Skill Agent")
-
-    def _on_after_round(messages: List[Dict[str, Any]], response: Any):
-        bridge.on_after_round(messages, response)
-        append_messages_jsonl(messages, LOG_DIR, LOG_FILE)
-
-    def _on_stop(messages: List[Dict[str, Any]], response: Any):
-        bridge.on_stop(messages, response)
-        append_messages_jsonl(messages, LOG_DIR, LOG_FILE)
 
     try:
         # 发送开始事件
-        await _send_system_event(dialog_id, "开始处理请求", {"step": "start"})
+        await _send_system_event(dialog_id, "开始处理请求")
 
         # 从对话框获取最后一条用户消息
         dialog = event_manager.get_dialog(dialog_id)
@@ -420,108 +459,117 @@ async def process_agent_request(dialog_id: str):
             raise ValueError(f"Dialog {dialog_id} not found")
 
         # 调试：打印所有消息
-        logger.info(f"[process_agent_request] Dialog has {len(dialog.messages)} messages:")
-        for i, msg in enumerate(dialog.messages):
-            logger.info(f"  [{i}] type={msg.type}, content={msg.content[:50] if msg.content else '(empty)'}...")
-        # 获取最后一条用户消息用于日志与基础校验
+        logger.info(f"[process_agent_request] Dialog has {len(dialog.messages)} messages")
+
+        # 获取最后一条用户消息
         last_user_message = get_last_user_message(dialog.messages)
-        logger.info(f"[process_agent_request] Last user message: {last_user_message[:100] if last_user_message else 'NOT FOUND'}")
+        content_preview = last_user_message[:100] if last_user_message else 'NOT FOUND'
+        logger.info(f"[process_agent_request] Last user message: {content_preview}")
+
         if not last_user_message:
             raise ValueError("No user message found in dialog")
 
-        # 构建多轮上下文，避免跨轮对话丢失。
-        messages = build_model_messages_from_dialog(dialog.messages, max_messages=20)
-        if not messages:
-            messages = [{"role": "user", "content": last_user_message}]
+        # 从 Agent 类动态获取名称（避免创建两次实例）
+        agent_name = TodoAgent.__name__
 
-        logger.info(
-            "[process_agent_request] Processing with context messages: "
-            f"count={len(messages)}, last_user={last_user_message[:100]}..."
-        )
-        # 创建带WebSocket钩子的Agent循环 (V2版本 - Master-Worker架构)
-        agent_loop = SQLAgentLoopV2(
-            client=agent_state["client"],
-            model=agent_state["model"],
-            system=MASTER_SYSTEM,
-            max_tokens=8000,
-            max_rounds=30,  # finance 场景会多次读取技能/脚本，适当提高轮数避免提前中断
-            enable_learning=True,  # 启用学习记忆系统
-            # WebSocket钩子
-            on_before_round=bridge.on_before_round,
-            on_stream_token=None,  # 临时关闭按 token 流式推送，改为回合结束后统一落消息
-            on_stream_text=bridge.on_stream_text,
-            on_tool_call=bridge.on_tool_call,
-            on_tool_result=bridge.on_tool_result,
-            on_round_end=bridge.on_round_end,
-            on_after_round=_on_after_round,
-            on_stop=_on_stop,
-            should_stop=lambda: is_stop_requested(agent_state),  # 新增：停止检查回调
-        )
+        # 创建 WebSocket Bridge，传入 agent_name
+        bridge = AgentWebSocketBridge(dialog_id=dialog_id, agent_name=agent_name)
 
-        # 在线程中运行Agent（避免阻塞事件循环）
+        # 创建 TodoAgent，传入 bridge 的钩子函数
+        agent = TodoAgent(
+            **bridge.get_hook_kwargs()
+        )
+        agent_state["current_agent"] = agent
+        logger.info(f"[process_agent_request] Agent instance saved to agent_state")
+
+        # 在线程中运行Agent
         try:
-            logger.info(f"[process_agent_request] Starting agent loop...")
-            await asyncio.to_thread(agent_loop.run, messages)
-            logger.info(f"[process_agent_request] Agent loop completed")
+            logger.info(f"[process_agent_request] Starting TodoAgent...")
+            messages = _build_messages_from_dialog(dialog)
+            logger.info(f"[process_agent_request] Built messages from dialog history: {len(messages)} messages")
+            await asyncio.to_thread(agent.run_with_inbox, messages)
+            logger.info(f"[process_agent_request] TodoAgent completed")
         except Exception as e:
             logger.info(f"[process_agent_request] Agent error: {e}")
             import traceback
             traceback.print_exc()
+            bridge.on_error(e)
             await _send_system_event(dialog_id, f"Agent error: {str(e)}")
 
         # 发送完成事件
-        await _send_system_event(dialog_id, "处理完成", {"step": "complete"})
+        await _send_system_event(dialog_id, "处理完成")
 
     except Exception as e:
         logger.info(f"[process_agent_request] Outer error: {e}")
         import traceback
         traceback.print_exc()
-        # 发送错误事件
-        await _send_system_event(dialog_id, f"错误: {str(e)}", {"error": str(e)})
+        await _send_system_event(dialog_id, f"错误: {str(e)}")
 
     finally:
         logger.info(f"[process_agent_request] Cleaning up, setting is_running=False")
-
-        # 最终兜底：异常/中断路径也要收口 streaming 消息，避免前端一直显示生成中。
-        try:
-            if bridge.message_bridge and bridge._loop:
-                asyncio.run_coroutine_threadsafe(
-                    bridge.message_bridge.finalize_streaming_messages(),
-                    bridge._loop,
-                ).result(timeout=5)
-        except Exception as e:
-            logger.info(f"[process_agent_request] finalize_streaming_messages in finally failed: {e}")
-
         agent_state["is_running"] = False
         agent_state["current_dialog_id"] = None
+        agent_state["current_agent"] = None
 
         # 检查是否有待处理的消息
         pending = agent_state.get("pending_messages", {}).get(dialog_id, [])
         if pending:
             logger.info(f"[process_agent_request] Processing {len(pending)} pending messages")
-            # 清空已处理的消息
             agent_state["pending_messages"][dialog_id] = []
             agent_state["stop_requested"] = False
 
-            # 处理待处理的消息（用户消息已在send_message中添加）
             if pending:
-                await _send_system_event(dialog_id, "处理新的用户消息", {"step": "new_message"})
-                # 递归调用处理新消息
+                await _send_system_event(dialog_id, "处理新的用户消息")
                 asyncio.create_task(process_agent_request(dialog_id))
 
 
-# ========== 辅助函数 ==========
+def _build_messages_from_dialog(dialog) -> list:
+    """从对话框历史构建消息列表，供Agent使用（OpenAI格式）"""
+    messages = []
+    for msg in dialog.messages:
+        if msg.role == "user":
+            messages.append({"role": "user", "content": msg.content or ""})
+        elif msg.role == "assistant":
+            assistant_msg = {"role": "assistant", "content": msg.content or ""}
+            # 添加工具调用（如果有）
+            if msg.tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.get("name", "unknown"),
+                            "arguments": tc.function.get("arguments", "{}"),
+                        }
+                    }
+                    for tc in msg.tool_calls
+                ]
+            messages.append(assistant_msg)
+        elif msg.role == "tool":
+            messages.append({
+                "role": "tool",
+                "tool_call_id": msg.tool_call_id,
+                "content": msg.content or ""
+            })
+    return messages
+
 
 async def _send_system_event(dialog_id: str, content: str, metadata: Optional[Dict] = None):
-    """发送系统事件"""
-    message = RealTimeMessage(
-        id=str(uuid.uuid4()),
-        type=MessageType.SYSTEM_EVENT,
-        content=content,
-        status=MessageStatus.COMPLETED,
-        metadata=metadata or {},
+    """发送系统事件 (OpenAI 风格)"""
+    # 创建系统消息
+    system_message = ChatMessage.system(content)
+    event_manager.add_chat_message(dialog_id, system_message)
+
+    # 同时发送 OpenAI 风格事件
+    event = ChatEvent(
+        type="system",
+        dialog_id=dialog_id,
+        message=system_message,
     )
-    event_manager.add_message_to_dialog(dialog_id, message)
+    await connection_manager.broadcast({
+        "type": "chat:event",
+        "event": event.to_dict(),
+    })
 
 
 # 创建全局应用实例
@@ -546,4 +594,3 @@ async def start_api_server(host: str = "0.0.0.0", port: int = 8001, reload: bool
 if __name__ == "__main__":
     import asyncio
     asyncio.run(start_api_server())
-

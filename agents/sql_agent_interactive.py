@@ -20,8 +20,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from .base import BaseInteractiveAgent, tool
-from .base.models import MessageType, MessageStatus, AgentType
+from .base import StreamingAgent, tool
 from .sql_agent_loop_v2 import (
     LearningMemory,
     ToolCallMonitor,
@@ -31,11 +30,11 @@ from .sql_agent_loop_v2 import (
 from .s05_skill_loading import TOOLS as S05_TOOLS
 
 
-class InteractiveSQLAgent(BaseInteractiveAgent):
+class InteractiveSQLAgent(StreamingAgent):
     """
     交互式 SQL Agent
 
-    继承 BaseInteractiveAgent，自动处理前端交互
+    继承 StreamingAgent，自动处理前端交互 (通过 Transport 层)
     内置 LearningMemory 和 Master-Worker 架构
     """
 

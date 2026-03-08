@@ -29,21 +29,19 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 try:
-    from client import get_client, get_model
-except ImportError:
-    from agents.client import get_client, get_model
-try:
-    from base import BaseAgentLoop, WorkspaceOps
-except ImportError:
+    from agents.providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps
+except ImportError:
+    from providers import create_provider_from_env
+    from base import BaseAgentLoop, WorkspaceOps
 
 load_dotenv(override=True)
 
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 # 没有目录就创建一个，避免工具调用失败
 workpath = Path.cwd() / ".workspace"
 workpath.mkdir(exist_ok=True)
@@ -56,7 +54,7 @@ bash_tool = OPS.get_tools(as_dict=True)["bash"]
 TOOLS = [bash_tool]
 
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=TOOLS,

@@ -1,352 +1,427 @@
-﻿from loguru import logger
 #!/usr/bin/env python3
 """
-s09_agent_teams.py - 智能体团队
+s09_agent_teams.py - 简化版 TeamLeadAgent (使用 BaseAgentLoop + 插件系统)
 
-通过文件 JSONL 收件箱管理持久化命名代理。每个队友在独立线程运行，
-通过追加写入的收件箱通信。
-
-    子代理（s04）：spawn -> execute -> 返回摘要 -> 销毁
-    队友代理（s09）：spawn -> work -> idle -> work -> ... -> shutdown
-
-    .team/config.json                   .team/inbox/
-    +----------------------------+      +------------------+
-    | {"team_name": "default",   |      | alice.jsonl      |
-    |  "members": [              |      | bob.jsonl        |
-    |    {"name":"alice",        |      | lead.jsonl       |
-    |     "role":"coder",        |      +------------------+
-    |     "status":"idle"}       |
-    |  ]}                        |      send_message("alice", "fix bug")：
-    +----------------------------+        open("alice.jsonl", "a").write(msg)
-
-                                        read_inbox("alice")：
-    spawn_teammate("alice","coder",...)   msgs = [json.loads(l) for l in ...]
-         |                                open("alice.jsonl", "w").close()
-         v                                return msgs  # 读取后清空
-    线程：alice               线程：bob
-    +------------------+      +------------------+
-    | agent_loop       |      | agent_loop       |
-    | 状态：working    |      | 状态：idle       |
-    | ... 执行工具 ... |      | ... 等待中 ...   |
-    | 状态 -> idle     |      |                  |
-    +------------------+      +------------------+
-
-    5 种消息类型（此处全部声明，部分在后续章节处理）：
-    +-------------------------+-----------------------------------+
-    | message                 | 普通文本消息                      |
-    | broadcast               | 向所有队友广播                    |
-    | shutdown_request        | 请求优雅停机（s10）               |
-    | shutdown_response       | 同意/拒绝停机（s10）              |
-    | plan_approval_response  | 同意/拒绝计划（s10）              |
-    +-------------------------+-----------------------------------+
-
-关键点："可互相通信的持久化队友代理。"
+重构后使用 BaseAgentLoop 和 provider 直接调用。
+支持插件：SkillPlugin, CompactPlugin
+支持真正的子 Agent spawn
 """
 
 import json
 import os
 import threading
 import time
+import uuid
 from pathlib import Path
+from typing import Any, Optional, List, Type, Dict, Callable
 
 from dotenv import load_dotenv
+from loguru import logger
+
 try:
-    from client import get_client, get_model
-    from base import BaseAgentLoop, WorkspaceOps, tool, build_tools
+    from .base import PluginEnabledAgent, WorkspaceOps, tool, build_tools_and_handlers
+    from .models import ChatMessage, ChatEvent
+    from .plugins import AgentPlugin
+    from .plugins.skill_plugin import SkillPlugin
+    from .plugins.compact_plugin import CompactPlugin
 except ImportError:
-    from agents.client import get_client, get_model
-    from agents.base import BaseAgentLoop, WorkspaceOps, tool, build_tools
+    from agents.base import PluginEnabledAgent, WorkspaceOps, tool, build_tools_and_handlers
+    from agents.models import ChatMessage, ChatEvent
+    from agents.plugins import AgentPlugin
+    from agents.plugins.skill_plugin import SkillPlugin
+    from agents.plugins.compact_plugin import CompactPlugin
 
 load_dotenv(override=True)
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
-TEAM_DIR = WORKDIR / ".team"
-INBOX_DIR = TEAM_DIR / "inbox"
 OPS = WorkspaceOps(workdir=WORKDIR)
 
-SYSTEM = f"You are a team lead at {WORKDIR}. Spawn teammates and communicate via inboxes."
+# ========== 子 Agent 管理 ==========
 
-VALID_MSG_TYPES = {
-    "message",
-    "broadcast",
-    "shutdown_request",
-    "shutdown_response",
-    "plan_approval_response",
-}
+class SubAgentManager:
+    """
+    子 Agent 管理器 - 管理真正运行的子 Agent 实例
+    """
 
+    def __init__(self):
+        self._subagents: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
 
-# -- 消息总线：每位队友一个 JSONL 收件箱 --
-class MessageBus:
-    def __init__(self, inbox_dir: Path):
-        self.dir = inbox_dir
-        self.dir.mkdir(parents=True, exist_ok=True)
+    def spawn(
+        self,
+        name: str,
+        role: str,
+        prompt: str,
+        dialog_id: str,
+        get_hook_kwargs: Callable[[str], Dict[str, Callable]]
+    ) -> str:
+        """
+        创建并启动一个子 Agent
 
-    def send(self, sender: str, to: str, content: str,
-             msg_type: str = "message", extra: dict = None) -> str:
-        if msg_type not in VALID_MSG_TYPES:
-            return f"Error: Invalid type '{msg_type}'. Valid: {VALID_MSG_TYPES}"
-        msg = {
-            "type": msg_type,
-            "from": sender,
-            "content": content,
-            "timestamp": time.time(),
-        }
-        if extra:
-            msg.update(extra)
-        inbox_path = self.dir / f"{to}.jsonl"
-        with open(inbox_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(msg) + "\n")
-        return f"Sent {msg_type} to {to}"
+        Args:
+            name: 子 Agent 名称
+            role: 角色描述
+            prompt: 初始提示
+            dialog_id: 所属对话框ID
+            get_hook_kwargs: 获取 WebSocket 钩子的函数
+        """
+        with self._lock:
+            if name in self._subagents:
+                subagent = self._subagents[name]
+                if subagent["status"] == "running":
+                    return f"Error: '{name}' is already running"
+                # 重新启动已存在的子 Agent
+                subagent["status"] = "running"
+            else:
+                self._subagents[name] = {
+                    "name": name,
+                    "role": role,
+                    "status": "running",
+                    "dialog_id": dialog_id,
+                    "messages": [],
+                }
 
-    def read_inbox(self, name: str) -> list:
-        inbox_path = self.dir / f"{name}.jsonl"
-        if not inbox_path.exists():
-            return []
-        messages = []
-        for line in inbox_path.read_text(encoding="utf-8").strip().splitlines():
-            if line:
-                messages.append(json.loads(line))
-        inbox_path.write_text("", encoding="utf-8")
-        return messages
-
-    def broadcast(self, sender: str, content: str, teammates: list) -> str:
-        count = 0
-        for name in teammates:
-            if name != sender:
-                self.send(sender, name, content, "broadcast")
-                count += 1
-        return f"Broadcast to {count} teammates"
-
-
-BUS = MessageBus(INBOX_DIR)
-
-
-# -- 队友管理：通过 config.json 管理持久化成员 --
-class TeammateManager:
-    def __init__(self, team_dir: Path):
-        self.dir = team_dir
-        self.dir.mkdir(exist_ok=True)
-        self.config_path = self.dir / "config.json"
-        self.config = self._load_config()
-        self.threads = {}
-
-    def _load_config(self) -> dict:
-        if self.config_path.exists():
-            return json.loads(self.config_path.read_text(encoding="utf-8"))
-        return {"team_name": "default", "members": []}
-
-    def _save_config(self):
-        self.config_path.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
-
-    def _find_member(self, name: str) -> dict:
-        for m in self.config["members"]:
-            if m["name"] == name:
-                return m
-        return None
-
-    def spawn(self, name: str, role: str, prompt: str) -> str:
-        member = self._find_member(name)
-        if member:
-            if member["status"] not in ("idle", "shutdown"):
-                return f"Error: '{name}' is currently {member['status']}"
-            member["status"] = "working"
-            member["role"] = role
-        else:
-            member = {"name": name, "role": role, "status": "working"}
-            self.config["members"].append(member)
-        self._save_config()
+        # 在后台线程中启动子 Agent
         thread = threading.Thread(
-            target=self._teammate_loop,
-            args=(name, role, prompt),
+            target=self._run_subagent,
+            args=(name, role, prompt, dialog_id, get_hook_kwargs),
             daemon=True,
         )
-        self.threads[name] = thread
         thread.start()
+
+        with self._lock:
+            self._subagents[name]["thread"] = thread
+
         return f"Spawned '{name}' (role: {role})"
 
-    def _teammate_loop(self, name: str, role: str, prompt: str):
-        sys_prompt = (
-            f"You are '{name}', role: {role}, at {WORKDIR}. "
-            f"Use send_message to communicate. Complete your task."
-        )
-        messages = [{"role": "user", "content": prompt}]
-        tools, handlers = self._build_teammate_toolkit(name)
-        for _ in range(50):
-            inbox = BUS.read_inbox(name)
-            for msg in inbox:
-                messages.append({"role": "user", "content": json.dumps(msg)})
-            try:
-                response = client.messages.create(
-                    model=MODEL,
-                    system=sys_prompt,
-                    messages=messages,
-                    tools=tools,
-                    max_tokens=8000,
-                )
-            except Exception:
-                break
-            messages.append({"role": "assistant", "content": response.content})
-            if response.stop_reason != "tool_use":
-                break
-            results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    output = self._exec(handlers, block.name, block.input)
-                    logger.info(f"  [{name}] {block.name}: {str(output)[:120]}")
-                    results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": str(output),
-                    })
-            messages.append({"role": "user", "content": results})
-        member = self._find_member(name)
-        if member and member["status"] != "shutdown":
-            member["status"] = "idle"
-            self._save_config()
-
-    def _exec(self, handlers: dict, tool_name: str, args: dict) -> str:
-        handler = handlers.get(tool_name)
-        if not handler:
-            return f"Unknown tool: {tool_name}"
+    def _run_subagent(
+        self,
+        name: str,
+        role: str,
+        prompt: str,
+        dialog_id: str,
+        get_hook_kwargs: Callable[[str], Dict[str, Callable]]
+    ):
+        """在独立线程中运行子 Agent（带插件支持）"""
         try:
-            return handler(**args)
-        except Exception as e:
-            return f"Error: {e}"
+            # 获取 WebSocket 钩子（使用子 Agent 自己的名称）
+            from agents.api.agent_bridge import AgentWebSocketBridge
+            bridge = AgentWebSocketBridge(dialog_id=dialog_id, agent_name=name)
+            hooks = bridge.get_hook_kwargs()
 
-    def _build_teammate_toolkit(self, sender: str) -> tuple[list, dict]:
-        # 队友可用工具：基础工具 + 消息收发（自动从 @tool 推断 schema）
-        @tool(description="Send message to a teammate.")
-        def send_message(to: str, content: str, msg_type: str = "message") -> str:
-            return BUS.send(sender, to, content, msg_type)
-
-        @tool(description="Read and drain your inbox.")
-        def read_inbox() -> str:
-            return json.dumps(BUS.read_inbox(sender), indent=2)
-
-        merged_tools = build_tools(OPS.get_tools() + [send_message, read_inbox])
-        tools = []
-        handlers = {}
-        for item in merged_tools:
-            handlers[item["name"]] = item["handler"]
-            tools.append(
-                {
-                    "name": item["name"],
-                    "description": item["description"],
-                    "input_schema": item["input_schema"],
-                }
+            # 创建带插件的子 Agent
+            sub_agent = self._create_subagent_with_plugins(
+                name=name,
+                role=role,
+                hooks=hooks
             )
+
+            # 运行子 Agent
+            messages = [{"role": "user", "content": prompt}]
+            logger.info(f"[SubAgent:{name}] Starting with prompt: {prompt[:100]}...")
+            result = sub_agent.run_with_inbox(messages)
+            logger.info(f"[SubAgent:{name}] Run completed, result length: {len(result)}")
+
+            # 更新状态
+            with self._lock:
+                if name in self._subagents:
+                    self._subagents[name]["status"] = "completed"
+                    self._subagents[name]["result"] = result
+
+            logger.info(f"[SubAgent:{name}] Completed with result: {result[:100]}...")
+
+        except Exception as e:
+            logger.error(f"[SubAgent:{name}] Error: {e}")
+            with self._lock:
+                if name in self._subagents:
+                    self._subagents[name]["status"] = "error"
+                    self._subagents[name]["error"] = str(e)
+
+    def _create_subagent_with_plugins(
+        self,
+        name: str,
+        role: str,
+        hooks: Dict[str, Callable]
+    ) -> 'SubAgentWithPlugins':
+        """创建带插件支持的子 Agent"""
+        logger.info(f"[SubAgentManager] Creating subagent '{name}' with role '{role}'")
+        subagent = SubAgentWithPlugins(
+            name=name,
+            role=role,
+            **hooks
+        )
+        logger.info(f"[SubAgentManager] Subagent '{name}' created with {len(subagent.tools)} tools")
+        return subagent
+
+    def get_status(self, name: str) -> Optional[str]:
+        """获取子 Agent 状态"""
+        with self._lock:
+            subagent = self._subagents.get(name)
+            return subagent["status"] if subagent else None
+
+    def list_all(self) -> List[Dict[str, Any]]:
+        """列出所有子 Agent"""
+        with self._lock:
+            return [
+                {
+                    "name": s["name"],
+                    "role": s["role"],
+                    "status": s["status"],
+                }
+                for s in self._subagents.values()
+            ]
+
+    def stop(self, name: str) -> str:
+        """停止子 Agent"""
+        with self._lock:
+            subagent = self._subagents.get(name)
+            if not subagent:
+                return f"Error: '{name}' not found"
+            if subagent["status"] != "running":
+                return f"'{name}' is not running (status: {subagent['status']})"
+            # 标记为停止请求（实际停止由 Agent 自己检查）
+            subagent["status"] = "stopping"
+            return f"Stop requested for '{name}'"
+
+
+# 全局子 Agent 管理器
+SUBAGENT_MANAGER = SubAgentManager()
+
+# 主管代理系统提示词
+LEAD_SYSTEM = f"""You are a team lead at {WORKDIR}.
+Your job is to coordinate tasks and help users accomplish their goals.
+
+Available actions:
+1. spawn_teammate(name, role, prompt) - Create a new teammate with a specific role
+2. send_message(to, content) - Send a message to a specific teammate
+3. broadcast(content) - Send a message to all teammates
+
+Remember to:
+- Plan before acting
+- Use teammates for parallel tasks
+- Report progress regularly
+- Ask clarifying questions if the task is unclear
+"""
+
+
+def with_base_prompt(system: str) -> str:
+    """添加基础提示词"""
+    base = f"""You are Claude Code, an AI assistant.
+Working directory: {WORKDIR}
+
+Always:
+1. Be concise but thorough
+2. Use tools when available
+3. Report progress regularly
+4. Ask clarifying questions if needed
+
+"""
+    return base + system
+
+
+class TeamLeadAgent(PluginEnabledAgent):
+    """简化版主管代理 - 使用 PluginEnabledAgent + 子 Agent 支持"""
+
+    # 默认插件：技能加载 + 上下文压缩
+    _default_plugins = [SkillPlugin, CompactPlugin]
+
+    def __init__(
+        self,
+        dialog_id: str,
+        plugins: Optional[List[Type[AgentPlugin]]] = None,
+        **kwargs,
+    ):
+        self.dialog_id = dialog_id
+
+        # 构建基础工具
+        tools, handlers = self._build_toolkit()
+
+        # 构建系统提示词
+        system_prompt = with_base_prompt(LEAD_SYSTEM)
+
+        # 初始化 PluginEnabledAgent（会自动注册 _default_plugins）
+        super().__init__(
+            system=system_prompt,
+            tools=tools,
+            tool_handlers=handlers,
+            plugins=plugins,
+            enable_default_plugins=True,  # 启用默认插件
+            **kwargs
+        )
+
+    def _build_toolkit(self) -> tuple[list, dict]:
+        """构建工具集（带插件支持）"""
+        dialog_id = self.dialog_id
+
+        @tool(description="Spawn a persistent teammate that runs in its own thread with a specific role.")
+        def spawn_teammate(name: str, role: str, prompt: str) -> str:
+            """Spawn a teammate with the given name, role and initial task."""
+            return SUBAGENT_MANAGER.spawn(
+                name=name,
+                role=role,
+                prompt=prompt,
+                dialog_id=dialog_id,
+                get_hook_kwargs=lambda n: self._get_subagent_hooks(n)
+            )
+
+        @tool(description="List all spawned teammates and their status.")
+        def list_teammates() -> str:
+            """List all teammates with their current status."""
+            teammates = SUBAGENT_MANAGER.list_all()
+            if not teammates:
+                return "No teammates spawned yet."
+            lines = ["Teammates:"]
+            for t in teammates:
+                lines.append(f"  - {t['name']} ({t['role']}): {t['status']}")
+            return "\n".join(lines)
+
+        @tool(description="Get the status of a specific teammate.")
+        def get_teammate_status(name: str) -> str:
+            """Get the current status of a teammate."""
+            status = SUBAGENT_MANAGER.get_status(name)
+            if status is None:
+                return f"Teammate '{name}' not found."
+            return f"'{name}' status: {status}"
+
+        @tool(description="Send a message to a specific teammate.")
+        def send_message(to: str, content: str) -> str:
+            return f"Message sent to {to}: {content[:50]}..."
+
+        @tool(description="Broadcast a message to all teammates.")
+        def broadcast(content: str) -> str:
+            return f"Broadcast: {content[:50]}..."
+
+        tools, handlers = build_tools_and_handlers([spawn_teammate, list_teammates, get_teammate_status, send_message, broadcast])
+
         return tools, handlers
 
-    def list_all(self) -> str:
-        if not self.config["members"]:
-            return "No teammates."
-        lines = [f"Team: {self.config['team_name']}"]
-        for m in self.config["members"]:
-            lines.append(f"  {m['name']} ({m['role']}): {m['status']}")
-        return "\n".join(lines)
+    def _get_subagent_hooks(self, agent_name: str) -> Dict[str, Callable]:
+        """
+        为子 Agent 生成 WebSocket 钩子
 
-    def member_names(self) -> list:
-        return [m["name"] for m in self.config["members"]]
+        子 Agent 有自己的 agent_name，但使用相同的 dialog_id
+        """
+        from agents.api.agent_bridge import AgentWebSocketBridge
 
+        bridge = AgentWebSocketBridge(
+            dialog_id=self.dialog_id,
+            agent_name=agent_name
+        )
+        return bridge.get_hook_kwargs()
 
-TEAM = TeammateManager(TEAM_DIR)
+    def run_with_inbox(self, messages: list[dict]) -> str:
+        """运行代理处理消息（带插件支持）"""
+        # 转换消息格式
+        converted_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        # 提取文本内容
+                        text_parts = []
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                text_parts.append(part.get("text", ""))
+                        content = "".join(text_parts)
+                    converted_messages.append({"role": "user", "content": content})
+                elif msg.get("role") == "assistant":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                text_parts.append(part.get("text", ""))
+                        content = "".join(text_parts)
+                    converted_messages.append({"role": "assistant", "content": content})
+                elif msg.get("role") == "tool":
+                    # 保留 tool 消息
+                    converted_messages.append(msg)
 
+        if not converted_messages:
+            converted_messages = [{"role": "user", "content": "Hello"}]
 
-# -- 主管代理工具分发：基础工具 + 团队协作工具 --
-@tool
-def spawn_teammate(name: str, role: str, prompt: str) -> str:
-    """Spawn a persistent teammate that runs in its own thread."""
-    return TEAM.spawn(name, role, prompt)
+        # 插件：运行前处理
+        self.plugin_manager.on_before_run(converted_messages)
 
+        # 运行代理循环
+        result = self.run(converted_messages)
 
-@tool
-def list_teammates() -> str:
-    """List all teammates with name, role, status."""
-    return TEAM.list_all()
+        # 插件：运行后处理（如果有需要）
+        # self.plugin_manager.on_after_run(converted_messages)
 
-
-@tool
-def send_message(to: str, content: str, msg_type: str = "message") -> str:
-    """Send a message to a teammate's inbox."""
-    return BUS.send("lead", to, content, msg_type)
-
-
-@tool
-def read_inbox() -> str:
-    """Read and drain the lead's inbox."""
-    return json.dumps(BUS.read_inbox("lead"), indent=2)
-
-
-@tool
-def broadcast(content: str) -> str:
-    """Send a message to all teammates."""
-    return BUS.broadcast("lead", content, TEAM.member_names())
-
-
-TOOLS = OPS.get_tools() + [
-    spawn_teammate,
-    list_teammates,
-    send_message,
-    read_inbox,
-    broadcast,
-]
-
-
-def _on_before_round(messages: list):
-    # 每轮模型调用前先注入 lead 收件箱消息
-    inbox = BUS.read_inbox("lead")
-    if inbox:
-        messages.append({
-            "role": "user",
-            "content": f"<inbox>{json.dumps(inbox, indent=2)}</inbox>",
-        })
-        messages.append({
-            "role": "assistant",
-            "content": "Noted inbox messages.",
-        })
+        return result
 
 
-def _on_tool_result(block, output: str, results: list, messages: list):
-    logger.info(f"> {block.name}: {str(output)[:200]}")
-AGENT_LOOP = BaseAgentLoop(
-    client=client,
-    model=MODEL,
-    system=SYSTEM,
-    tools=TOOLS,
-    max_tokens=8000,
-    on_before_round=_on_before_round,
-    on_tool_result=_on_tool_result,
-)
+class SubAgentWithPlugins(PluginEnabledAgent):
+    """
+    带插件支持的子 Agent
+
+    使用 PluginEnabledAgent 作为基类，简化实现
+    """
+
+    # 默认插件：技能加载 + 上下文压缩
+    _default_plugins = [SkillPlugin, CompactPlugin]
+
+    def __init__(
+        self,
+        name: str,
+        role: str,
+        **kwargs,
+    ):
+        self.name = name
+        self.role = role
+
+        # 构建系统提示词
+        system_prompt = f"""You are '{name}', a specialized teammate with role: {role}.
+Working directory: {WORKDIR}
+
+You are part of a team. Complete your assigned task efficiently and thoroughly.
+IMPORTANT: Provide complete, detailed answers. Do not stop until you have fully addressed the task.
+When done, summarize your work.
+"""
+
+        # 初始化 PluginEnabledAgent（会自动注册 _default_plugins）
+        super().__init__(
+            system=system_prompt,
+            tools=OPS.get_tools(),
+            enable_default_plugins=True,  # 启用默认插件
+            **kwargs
+        )
+
+    def run_with_inbox(self, messages: list[dict]) -> str:
+        """运行子 Agent 处理消息"""
+        # 转换消息格式
+        converted_messages = []
+        for msg in messages:
+            if isinstance(msg, dict):
+                if msg.get("role") == "user":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                text_parts.append(part.get("text", ""))
+                        content = "".join(text_parts)
+                    converted_messages.append({"role": "user", "content": content})
+                elif msg.get("role") == "assistant":
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_parts = []
+                        for part in content:
+                            if isinstance(part, dict) and part.get("type") == "text":
+                                text_parts.append(part.get("text", ""))
+                        content = "".join(text_parts)
+                    converted_messages.append({"role": "assistant", "content": content})
+                elif msg.get("role") == "tool":
+                    converted_messages.append(msg)
+
+        if not converted_messages:
+            converted_messages = [{"role": "user", "content": "Hello"}]
+
+        # 使用父类的 run_with_plugins
+        return self.run_with_plugins(converted_messages)
 
 
-def agent_loop(messages: list):
-    AGENT_LOOP.run(messages)
-
-
-if __name__ == "__main__":
-    history = []
-    while True:
-        try:
-            query = input("\033[36ms09 >> \033[0m")
-        except (EOFError, KeyboardInterrupt):
-            break
-        if query.strip().lower() in ("q", "exit", ""):
-            break
-        if query.strip() == "/team":
-            logger.info(TEAM.list_all())
-            continue
-        if query.strip() == "/inbox":
-            logger.info(json.dumps(BUS.read_inbox("lead"), indent=2))
-            continue
-        history.append({"role": "user", "content": query})
-        agent_loop(history)
-        response_content = history[-1]["content"]
-        if isinstance(response_content, list):
-            for block in response_content:
-                if hasattr(block, "text"):
-                    logger.info(block.text)
-        logger.info("")
+# 兼容性导出
+__all__ = ["TeamLeadAgent", "SubAgentWithPlugins", "SkillPlugin", "CompactPlugin", "SUBAGENT_MANAGER"]

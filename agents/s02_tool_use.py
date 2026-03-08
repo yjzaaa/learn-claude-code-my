@@ -22,12 +22,13 @@ s01 的代理循环本身没有变化，只是把工具加入 tools 数组，
 import os
 from pathlib import Path
 
-from client import get_client, get_model
 from dotenv import load_dotenv
 try:
-    from base import BaseAgentLoop, WorkspaceOps
-except ImportError:
+    from agents.providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps
+except ImportError:
+    from providers import create_provider_from_env
+    from base import BaseAgentLoop, WorkspaceOps
 
 load_dotenv(override=True)
 
@@ -35,8 +36,8 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks. Act, don't explain."
@@ -45,7 +46,7 @@ SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks. Act, d
 TOOLS = OPS.get_tools()
 
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=TOOLS,

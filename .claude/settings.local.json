@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(D:/learn-claude-code-my/.venv/Scripts/python.exe:*)",
+      "Bash(D:/learn-claude-code-my/.venv/Scripts/pip.exe install:*)",
+      "Bash(pip install:*)",
+      "Bash(c:/programdata/miniconda3/python.exe:*)",
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(grep:*)",
+      "Bash(sed:*)",
+      "Bash(taskkill:*)",
+      "mcp__ide__executeCode",
+      "Bash(cd D:learn-claude-code-myweb:*)",
+      "Read(//mnt/d/**)",
+      "Bash(sed -i 's/\\\\r$//' wsl-claude-setup.sh wsl-proxy-setup.sh)",
+      "Bash(ls:*)",
+      "Bash(bash:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(openspec init:*)",
+      "Bash(openspec new:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec instructions:*)",
+      "Bash(openspec list:*)",
+      "Read(//d/countbot/countbot/backend/modules/providers/**)",
+      "WebSearch",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}

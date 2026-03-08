@@ -334,7 +334,7 @@ Check data integrity and return validation summary.""",
 Analyze data and return key insights summary.""",
     }
 
-    def __init__(self, worker_type: str, client: Any, model: str,
+    def __init__(self, worker_type: str, provider: Any, model: str,
                  tools: list, callbacks: dict[str, Any] | None = None):
         if worker_type not in self.WORKER_PROMPTS:
             raise ValueError(f"Unknown worker type: {worker_type}")
@@ -348,7 +348,7 @@ Analyze data and return key insights summary.""",
 
         # 创建子代理的 BaseAgentLoop（不包含 task 工具，避免递归）
         self.loop = BaseAgentLoop(
-            client=client,
+            provider=provider,
             model=model,
             system=self.WORKER_PROMPTS[worker_type],
             tools=tools,
@@ -480,7 +480,7 @@ class SQLAgentLoopV2(BaseAgentLoop):
     def __init__(
         self,
         *,
-        client: Any,
+        provider: Any,
         model: str,
         system: str = MASTER_SYSTEM,
         tools: list[Any] | None = None,
@@ -497,7 +497,7 @@ class SQLAgentLoopV2(BaseAgentLoop):
         base_tools = list(tools or S05_TOOLS)
 
         # 保存客户端配置供子代理使用
-        self._client = client
+        self._client = provider
         self._model = model
 
         # 保存回调供子代理使用
@@ -523,7 +523,7 @@ class SQLAgentLoopV2(BaseAgentLoop):
 
         # 初始化基类
         super().__init__(
-            client=client,
+            provider=provider,
             model=model,
             system=system,
             tools=base_tools,
@@ -599,7 +599,7 @@ Returns:
 
 def build_sql_agent_loop_v2(
     *,
-    client: Any,
+    provider: Any,
     model: str,
     enable_learning: bool = True,
     memory_dir: Path | None = None,
@@ -607,7 +607,7 @@ def build_sql_agent_loop_v2(
 ) -> SQLAgentLoopV2:
     """工厂函数：创建 SQLAgentLoopV2 实例"""
     return SQLAgentLoopV2(
-        client=client,
+        provider=provider,
         model=model,
         enable_learning=enable_learning,
         memory_dir=memory_dir,
