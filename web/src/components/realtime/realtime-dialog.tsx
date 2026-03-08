@@ -383,6 +383,7 @@ export function RealtimeDialog({
                   !!message.id &&
                   message.id === streamState.currentMessageId;
 
+<<<<<<< HEAD
                 const shouldHidePendingAssistantPlaceholder =
                   isMessageStreaming &&
                   message.role === "assistant" &&
@@ -419,6 +420,24 @@ export function RealtimeDialog({
                 );
               },
             )}
+=======
+              return (
+                <CollapsibleMessage
+                  key={index}
+                  message={message}
+                  isStreaming={isMessageStreaming}
+                  streamingContent={isMessageStreaming ? streamingContent : undefined}
+                  streamingReasoning={isMessageStreaming ? streamingReasoning : undefined}
+                  defaultExpanded={
+                    // 用户消息和助手消息默认展开
+                    // 工具结果默认折叠
+                    message.role === "user" ||
+                    (message.role === "assistant" && index >= messages.length - 2)
+                  }
+                />
+              );
+            })}
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
             <div ref={messagesEndRef} />
           </>
         )}

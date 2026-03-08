@@ -157,9 +157,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case "agent:content_delta":
             case "agent:reasoning_delta":
             case "agent:tool_call":
+            case "agent:tool_result":
             case "agent:message_complete":
             case "agent:run_summary":
             case "agent:error":
+<<<<<<< HEAD
             case "agent:stopped":
               globalEventEmitter.emit(
                 "agent:event",
@@ -169,7 +171,14 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
                 message.type,
                 message as unknown as AgentEvent,
               );
+=======
+            case "agent:stopped": {
+              const agentEvent = message as unknown as AgentEvent;
+              globalEventEmitter.emit("agent:event", agentEvent);
+              globalEventEmitter.emit(message.type, agentEvent);
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
               break;
+            }
           }
 
           optionsRef.current.onMessage?.(message);
