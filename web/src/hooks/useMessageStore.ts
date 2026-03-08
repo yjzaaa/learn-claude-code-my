@@ -200,7 +200,11 @@ export function useMessageStore() {
           }
 
           const dialogToUse: ChatSession = {
+<<<<<<< HEAD
             ...normalizedDialog,
+=======
+            ...event.dialog!,
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
             messages: mergedMessages,
           };
 
@@ -341,6 +345,29 @@ export function useMessageStore() {
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages }
+                : null,
+            };
+          }
+
+          case "agent:tool_result": {
+            const { tool_call_id, tool_name, result } = event.data;
+
+            // 创建工具结果消息
+            const toolResultMessage: ChatMessage = {
+              id: `tool_result_${Date.now()}`,
+              role: "tool",
+              content: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+              tool_call_id: tool_call_id,
+              name: tool_name,
+            };
+
+            // 添加到消息列表
+            const messages = [...(prev.currentDialog?.messages || []), toolResultMessage];
+
+            return {
+              ...prev,
+              currentDialog: prev.currentDialog
+                ? { ...prev.currentDialog, messages, updated_at: Date.now() }
                 : null,
             };
           }

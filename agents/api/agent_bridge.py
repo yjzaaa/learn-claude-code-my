@@ -51,6 +51,14 @@ class StreamingBuffer:
             "after_run_rounds": 0,
         }
 
+    def to_dict(self) -> dict:
+        """转换为字典格式，用于序列化"""
+        return {
+            "content": self.content,
+            "reasoning_content": self.reasoning_content,
+            "tool_calls": self.tool_calls,
+        }
+
 
 class AgentWebSocketBridge(FullAgentHooks):
     """
@@ -245,6 +253,7 @@ class AgentWebSocketBridge(FullAgentHooks):
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_tool_call: {e}")
 
+<<<<<<< HEAD
     def on_tool_result(
         self,
         name: str,
@@ -258,6 +267,44 @@ class AgentWebSocketBridge(FullAgentHooks):
         _ = result
 
     def on_complete(self, content: str) -> None:
+=======
+    def on_tool_result(self, tool_name: str, arguments: dict, result: Any, tool_call_id: str = None):
+        """
+        处理工具执行结果
+
+        BaseAgentLoop 在工具执行完成后会调用此钩子
+        """
+        try:
+            # 生成工具结果消息 ID
+            result_message_id = f"{self._get_next_message_id()}_result"
+
+            # 广播工具执行结果
+            self._safe_broadcast("tool_result", {
+                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
+                "tool_call_id": tool_call_id or f"call_{result_message_id}",
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "result": result if isinstance(result, (dict, list)) else str(result),
+                "timestamp": asyncio.get_event_loop().time() if self._loop else 0,
+            })
+
+            # 创建工具结果消息并保存到对话框历史
+            from ..models import ChatMessage
+            tool_result_msg = ChatMessage.tool(
+                content=str(result),
+                tool_call_id=tool_call_id or f"call_{result_message_id}",
+                name=tool_name,
+            )
+            tool_result_msg.id = result_message_id
+            event_manager.add_chat_message(self.dialog_id, tool_result_msg)
+
+            logger.info(f"[AgentBridge] Tool result broadcast: {tool_name} -> {str(result)[:100]}...")
+
+        except Exception as e:
+            logger.error(f"[AgentBridge] Error in on_tool_result: {e}")
+
+    def on_complete(self, final_content: str):
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
         """
         处理完成事件
 
@@ -285,7 +332,7 @@ class AgentWebSocketBridge(FullAgentHooks):
 
             # 保存消息和 usage 到 JSONL
             with open(output_file, "w", encoding="utf-8") as f:
-                f.write(json.dumps(self.buffer, ensure_ascii=False, default=str) + "\n")
+                f.write(json.dumps(self.buffer.to_dict(), ensure_ascii=False, default=str) + "\n")
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_complete: {e}")
@@ -402,6 +449,7 @@ class AgentWebSocketBridge(FullAgentHooks):
         return {
             "on_stream_token": self.on_stream_token,
             "on_tool_call": self.on_tool_call,
+            "on_tool_result": self.on_tool_result,
             "on_complete": self.on_complete,
             "on_reasoning": self.on_reasoning,
             "on_before_run": self.on_before_run,

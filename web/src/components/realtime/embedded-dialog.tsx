@@ -303,6 +303,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
       )}
     >
       {/* Header */}
+<<<<<<< HEAD
       <div className="shrink-0 border-b border-[#d6deeb] bg-white/90 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -324,6 +325,23 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
               ({messages.length} 条消息)
             </span>
           </div>
+=======
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 shrink-0">
+        <div className="flex items-center gap-3">
+          <StatusIndicator
+            status={dialogStatus as any}
+            size="sm"
+            animate={dialogStatus === "streaming"}
+          />
+          <MessageSquare className="h-4 w-4 text-zinc-600" />
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
+            {"实时对话"}
+          </h3>
+          <span className="text-xs text-zinc-400">
+            ({messages.length} 条消息)
+          </span>
+        </div>
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 
           <div className="flex items-center gap-2">
             {/* 流程图按钮 */}

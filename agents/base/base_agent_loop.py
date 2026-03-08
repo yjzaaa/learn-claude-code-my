@@ -41,6 +41,18 @@ class BaseAgentLoop(AgentLifecycleHooks):
         tool_handlers: dict | None = None,
         max_tokens: int = 8000,
         max_rounds: int = 25,
+<<<<<<< HEAD
+=======
+        # 钩子函数（可选）
+        on_tool_call: Callable[[str, dict], None] | None = None,
+        on_tool_result: Callable[[str, dict, Any], None] | None = None,
+        on_stream_token: Callable[[str], None] | None = None,
+        on_complete: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+        on_stop: Callable[[], None] | None = None,
+
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
     ):
         self.provider = provider or create_provider_from_env()
         self.model = model or (self.provider.default_model if self.provider else "deepseek-chat")
@@ -49,7 +61,19 @@ class BaseAgentLoop(AgentLifecycleHooks):
         self.tool_handlers = tool_handlers or {}
         self.max_tokens = max_tokens
         self.max_rounds = max_rounds
+<<<<<<< HEAD
         self._hook_delegate: AgentLifecycleHooks | None = None
+=======
+
+        # 保存钩子
+        self._on_tool_call = on_tool_call
+        self._on_tool_result = on_tool_result
+        self._on_stream_token = on_stream_token
+        self._on_complete = on_complete
+        self._on_reasoning = on_reasoning
+        self._on_error = on_error
+        self._on_stop = on_stop
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 
         # 运行状态
         self._stopped = False
@@ -151,8 +175,19 @@ class BaseAgentLoop(AgentLifecycleHooks):
                     except RuntimeError:
                         asyncio.run(_chat())
 
+<<<<<<< HEAD
                     if stream_results["has_error"]:
                         raise RuntimeError(stream_results["errors"])
+=======
+                    # 广播工具执行结果
+                    self._emit("tool_result", tc.name, tc.arguments, result, tc.id)
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": str(result),
+                    })
+>>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 
                     content = stream_results["content"]
                     tool_calls = stream_results["tool_calls"]
