@@ -44,10 +44,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 try:
-    from client import get_client, get_model
+    from agents.providers import create_provider_from_env
     from base import BaseAgentLoop, WorkspaceOps, tool, build_tools
 except ImportError:
-    from agents.client import get_client, get_model
+    from providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps, tool, build_tools
 
 load_dotenv(override=True)
@@ -55,8 +55,8 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 TEAM_DIR = WORKDIR / ".team"
 INBOX_DIR = TEAM_DIR / "inbox"
 TASKS_DIR = WORKDIR / ".tasks"
@@ -366,13 +366,15 @@ class TeammateManager:
         handlers = {}
         for item in merged_tools:
             handlers[item["name"]] = item["handler"]
-            tools.append(
-                {
+            # OpenAI format
+            tools.append({
+                "type": "function",
+                "function": {
                     "name": item["name"],
                     "description": item["description"],
-                    "input_schema": item["input_schema"],
+                    "parameters": item["parameters"],
                 }
-            )
+            })
         return tools, handlers
 
     def list_all(self) -> str:
@@ -513,7 +515,7 @@ def _on_before_round(messages: list):
 def _on_tool_result(block, output: str, results: list, messages: list):
     logger.info(f"> {block.name}: {str(output)[:200]}")
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=TOOLS,

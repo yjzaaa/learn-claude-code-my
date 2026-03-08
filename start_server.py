@@ -101,22 +101,22 @@ def kill_process_on_port(port: int) -> bool:
                                 killed = True
                             except Exception as e:
                                 logger.error(f"终止进程失败 PID={pid}: {e}")
-        else:  # Linux/Mac
-            # 使用 lsof 查找占用端口的进程
-            result = subprocess.run(
-                ['lsof', '-t', '-i', f':{port}'],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0 and result.stdout:
-                for pid in result.stdout.strip().split('\n'):
-                    pid = pid.strip()
-                    if pid.isdigit():
-                        try:
-                            os.kill(int(pid), signal.SIGTERM)
-                            logger.warning(f"已终止占用端口 {port} 的进程 PID={pid}")
-                            killed = True
-                        except Exception as e:
-                            logger.error(f"终止进程失败 PID={pid}: {e}")
+            else:  # Linux/Mac
+                # 使用 lsof 查找占用端口的进程
+                result = subprocess.run(
+                    ['lsof', '-t', '-i', f':{port}'],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0 and result.stdout:
+                    for pid in result.stdout.strip().split('\n'):
+                        pid = pid.strip()
+                        if pid.isdigit():
+                            try:
+                                os.kill(int(pid), signal.SIGTERM)
+                                logger.warning(f"已终止占用端口 {port} 的进程 PID={pid}")
+                                killed = True
+                            except Exception as e:
+                                logger.error(f"终止进程失败 PID={pid}: {e}")
     except Exception as e:
         logger.error(f"查找端口占用进程时出错: {e}")
     return killed
@@ -157,23 +157,9 @@ def main():
 
     args = parser.parse_args()
 
-    logger.info("=" * 60)
-    if args.reload:
-        logger.info("🚀 启动 FastAPI Agent 服务器 [热重载模式]")
-    else:
-        logger.info("🚀 启动 FastAPI Agent 服务器")
-    logger.info("=" * 60)
-    logger.info(f"\n📡 服务器地址: http://{args.host}:{args.port}")
-    logger.info(f"🔗 WebSocket: ws://{args.host}:{args.port}/ws/{{client_id}}")
-    logger.info(f"\n⚙️  运行配置:")
-    logger.info(f"   - 主机: {args.host}")
-    logger.info(f"   - 端口: {args.port}")
-    logger.info(f"   - 热重载: {'启用' if args.reload else '禁用'}")
-    logger.info(f"   - 强制模式: {'启用' if args.force else '禁用'}")
-
     # 强制模式：杀死占用端口的旧实例
     if args.force:
-        logger.info(f"\n🔍 检查端口 {args.port} 是否被占用...")
+        logger.info(f"🔍 检查端口 {args.port} 是否被占用...")
         kill_process_on_port(args.port)
 
     # 单实例保护
@@ -211,10 +197,17 @@ def main():
                 sys.exit(1)
         else:
             logger.error("检测到已有 start_server.py 实例在运行，已阻止重复启动。")
-            logger.info("\n💡 提示: 使用 --force 参数强制杀死旧实例并启动新实例")
-            logger.info("   命令: python start_server.py --force")
+            logger.info("提示: 使用 --force 参数强制杀死旧实例并启动新实例")
             sys.exit(1)
 
+    logger.info("=" * 60)
+    if args.reload:
+        logger.info("🚀 启动 FastAPI Agent 服务器 [热重载模式]")
+    else:
+        logger.info("🚀 启动 FastAPI Agent 服务器")
+    logger.info("=" * 60)
+    logger.info(f"\n📡 服务器地址: http://{args.host}:{args.port}")
+    logger.info(f"🔗 WebSocket: ws://{args.host}:{args.port}/ws/{{client_id}}")
     logger.info("\n📚 API 端点:")
     logger.info(f"   - GET  http://{args.host}:{args.port}/")
     logger.info(f"   - GET  http://{args.host}:{args.port}/api/dialogs")

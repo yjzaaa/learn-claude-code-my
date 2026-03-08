@@ -1,4 +1,8 @@
-﻿from loguru import logger
+﻿from tkinter import BOTH
+
+from loguru import logger
+
+from agents.prompts import with_base_prompt
 #!/usr/bin/env python3
 """
 s03_todo_write.py - 任务清单写入
@@ -30,21 +34,26 @@ s03_todo_write.py - 任务清单写入
 import os
 from pathlib import Path
 
-from client import get_client, get_model
 from dotenv import load_dotenv
 try:
-    from base import BaseAgentLoop, WorkspaceOps, tool
+    from agents.providers import create_provider_from_env
 except ImportError:
+    from providers import create_provider_from_env
+try:
+    from base import BaseAgentLoop, WorkspaceOps, tool
+    from agents.s05_skill_loading  import SYSTEM as SKILL_SYSTEM, load_skill, load_skill_reference, load_skill_script
+except ImportError:
+    from .s05_skill_loading  import SYSTEM as SKILL_SYSTEM, load_skill, load_skill_reference, load_skill_script
     from agents.base import BaseAgentLoop, WorkspaceOps, tool
-
+from .base import build_tools_and_handlers
 load_dotenv(override=True)
 
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"""You are a coding agent at {WORKDIR}.
@@ -89,47 +98,86 @@ class TodoManager:
         lines.append(f"\n({done}/{len(self.items)} completed)")
         return "\n".join(lines)
 
+SKILL_SYSTEM =  with_base_prompt(SKILL_SYSTEM)
 
+TODO_SYSTEM = with_base_prompt(SYSTEM)
+
+BOTH_SYSTEM = f"{SKILL_SYSTEM}\n\n{TODO_SYSTEM}"
 TODO = TodoManager()
 
 
-@tool(name="todo", description="Update task list. Track progress on multi-step tasks.")
-def todo(items: list) -> str:
-    return TODO.update(items)
+class TodoAgent(BaseAgentLoop):
+    """
+    带任务清单功能的 Agent
+
+    使用 PluginEnabledAgent 作为基类，自动获得技能和上下文压缩支持。
+    """
+
+    def __init__(self, **kwargs):
+        # 初始化 TodoManager
+        self.todo_manager = TodoManager()
+        self._loop_state = {"rounds_since_todo": 0, "used_todo": False}
+
+        # 构建工具
+        tools, handlers = self._build_toolkit()
+        skill_tools, skill_handlers = build_tools_and_handlers([load_skill, load_skill_reference, load_skill_script])
+        # 包装工具处理器以追踪 todo 使用
+        wrapped_handlers = self._wrap_handlers(skill_handlers | handlers)
+        # 初始化 PluginEnabledAgent
+        super().__init__(
+            system=BOTH_SYSTEM,
+            tools=skill_tools + tools,
+            tool_handlers=wrapped_handlers   ,
+            max_tokens=8000,
+            **kwargs
+        )
+
+    def _build_toolkit(self) -> tuple[list, dict]:
+        """构建工具集"""
+        
+
+        @tool(name="todo", description="Update task list. Track progress on multi-step tasks.")
+        def todo(items: list) -> str:
+            return self.todo_manager.update(items)
+
+        tools, handlers = build_tools_and_handlers(OPS.get_tools() + [todo])
+        return tools, handlers
+
+    def _wrap_handlers(self, handlers: dict) -> dict:
+        """包装工具处理器以追踪 todo 使用"""
+        wrapped = {}
+        for name, handler in handlers.items():
+            if name == "todo":
+                def make_todo_wrapper(h):
+                    def todo_wrapper(**kwargs):
+                        result = h(**kwargs)
+                        self._loop_state["used_todo"] = True
+                        return result
+                    return todo_wrapper
+                wrapped[name] = make_todo_wrapper(handler)
+            else:
+                wrapped[name] = handler
+        return wrapped
+
+    def run_with_inbox(self, messages: list[dict]) -> str:
+        """运行 Agent 处理消息"""
+        # 重置状态
+        self._loop_state["used_todo"] = False
+
+        # 运行（父类会自动调用插件钩子）
+        result = self.run(messages)
+
+        # 更新轮次计数（用于提醒机制）
+        if self._loop_state["used_todo"]:
+            self._loop_state["rounds_since_todo"] = 0
+        else:
+            self._loop_state["rounds_since_todo"] += 1
+
+        return result
 
 
-TOOLS = OPS.get_tools() + [todo]
-
-_LOOP_STATE = {"rounds_since_todo": 0, "used_todo": False}
-
-
-def _on_tool_result(block, output: str, results: list, messages: list):
-    logger.info(f"> {block.name}: {output[:200]}")
-    if block.name == "todo":
-        _LOOP_STATE["used_todo"] = True
-
-
-def _on_round_end(results: list, messages: list, response):
-    if _LOOP_STATE["used_todo"]:
-        _LOOP_STATE["rounds_since_todo"] = 0
-    else:
-        _LOOP_STATE["rounds_since_todo"] += 1
-
-    if _LOOP_STATE["rounds_since_todo"] >= 3:
-        results.insert(0, {"type": "text", "text": "<reminder>Update your todos.</reminder>"})
-
-    _LOOP_STATE["used_todo"] = False
-
-
-AGENT_LOOP = BaseAgentLoop(
-    client=client,
-    model=MODEL,
-    system=SYSTEM,
-    tools=TOOLS,
-    max_tokens=8000,
-    on_tool_result=_on_tool_result,
-    on_round_end=_on_round_end,
-)
+# 向后兼容的全局实例
+AGENT_LOOP = TodoAgent()
 
 
 def agent_loop(messages: list):

@@ -26,8 +26,11 @@ s04_subagent.py - 子代理
 import os
 from pathlib import Path
 
-from client import get_client, get_model
 from dotenv import load_dotenv
+try:
+    from agents.providers import create_provider_from_env
+except ImportError:
+    from providers import create_provider_from_env
 try:
     from base import BaseAgentLoop, WorkspaceOps, tool
 except ImportError:
@@ -39,8 +42,8 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use the task tool to delegate exploration or subtasks."
@@ -52,7 +55,7 @@ CHILD_TOOLS = OPS.get_tools()
 
 # -- 子代理：独立上下文、受限工具、仅返回摘要 --
 CHILD_AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SUBAGENT_SYSTEM,
     tools=CHILD_TOOLS,
@@ -113,7 +116,7 @@ PARENT_TOOLS = CHILD_TOOLS + [task]
 def _on_tool_result(block, output: str, results: list, messages: list):
     logger.info(f"  {output[:200]}")
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=PARENT_TOOLS,

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
-import type { MessageStatus, RealtimeMessage } from "@/types/realtime-message";
+import type { ChatMessage, ChatRole } from "@/types/openai";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
@@ -15,8 +15,8 @@ export interface ApiResponse<T = any> {
 export interface Dialog {
   id: string;
   title: string;
-  messages: RealtimeMessage[];
-  status: MessageStatus;
+  messages: ChatMessage[];
+  status: string;
   created_at: string;
   updated_at: string;
 }

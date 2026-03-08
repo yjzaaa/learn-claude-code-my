@@ -6,10 +6,7 @@ WebSocket实时消息系统
 
 from .event_manager import (
     event_manager,
-    RealTimeMessage,
     DialogSession,
-    MessageType,
-    MessageStatus,
 )
 from .server import (
     connection_manager,
@@ -19,10 +16,7 @@ from .server import (
 
 __all__ = [
     'event_manager',
-    'RealTimeMessage',
     'DialogSession',
-    'MessageType',
-    'MessageStatus',
     'connection_manager',
     'MessageHandler',
     'AgentMessageBridge',

@@ -1,0 +1,132 @@
+[
+  {
+    "file": "analyze_purchase_changes.py",
+    "path": ".\\.workspace\\analyze_purchase_changes.py",
+    "size": 4158
+  },
+  {
+    "file": "correct_hr_budget_query.py",
+    "path": ".\\.workspace\\correct_hr_budget_query.py",
+    "size": 8000
+  },
+  {
+    "file": "finance_query_tool.py",
+    "path": ".\\.workspace\\finance_query_tool.py",
+    "size": 17987
+  },
+  {
+    "file": "find_budget.py",
+    "path": ".\\.workspace\\find_budget.py",
+    "size": 2522
+  },
+  {
+    "file": "hr_budget_analysis.md",
+    "path": ".\\.workspace\\hr_budget_analysis.md",
+    "size": 3135
+  },
+  {
+    "file": "hr_budget_report.py",
+    "path": ".\\.workspace\\hr_budget_report.py",
+    "size": 3302
+  },
+  {
+    "file": "hr_budget_sql_statements.sql",
+    "path": ".\\.workspace\\hr_budget_sql_statements.sql",
+    "size": 2127
+  },
+  {
+    "file": "query_detailed_hr_budget.py",
+    "path": ".\\.workspace\\query_detailed_hr_budget.py",
+    "size": 2671
+  },
+  {
+    "file": "query_fy26_hr_budget.py",
+    "path": ".\\.workspace\\query_fy26_hr_budget.py",
+    "size": 1655
+  },
+  {
+    "file": "query_fy26_hr_budget_fixed.py",
+    "path": ".\\.workspace\\query_fy26_hr_budget_fixed.py",
+    "size": 1719
+  },
+  {
+    "file": "query_hr_budget.py",
+    "path": ".\\.workspace\\query_hr_budget.py",
+    "size": 3735
+  },
+  {
+    "file": "query_purchase_comparison.py",
+    "path": ".\\.workspace\\query_purchase_comparison.py",
+    "size": 2078
+  },
+  {
+    "file": "search_finance.py",
+    "path": ".\\.workspace\\search_finance.py",
+    "size": 2086
+  },
+  {
+    "file": "analyze_purchase_changes.py",
+    "path": ".workspace\\analyze_purchase_changes.py",
+    "size": 4158
+  },
+  {
+    "file": "correct_hr_budget_query.py",
+    "path": ".workspace\\correct_hr_budget_query.py",
+    "size": 8000
+  },
+  {
+    "file": "finance_query_tool.py",
+    "path": ".workspace\\finance_query_tool.py",
+    "size": 17987
+  },
+  {
+    "file": "find_budget.py",
+    "path": ".workspace\\find_budget.py",
+    "size": 2522
+  },
+  {
+    "file": "hr_budget_analysis.md",
+    "path": ".workspace\\hr_budget_analysis.md",
+    "size": 3135
+  },
+  {
+    "file": "hr_budget_report.py",
+    "path": ".workspace\\hr_budget_report.py",
+    "size": 3302
+  },
+  {
+    "file": "hr_budget_sql_statements.sql",
+    "path": ".workspace\\hr_budget_sql_statements.sql",
+    "size": 2127
+  },
+  {
+    "file": "query_detailed_hr_budget.py",
+    "path": ".workspace\\query_detailed_hr_budget.py",
+    "size": 2671
+  },
+  {
+    "file": "query_fy26_hr_budget.py",
+    "path": ".workspace\\query_fy26_hr_budget.py",
+    "size": 1655
+  },
+  {
+    "file": "query_fy26_hr_budget_fixed.py",
+    "path": ".workspace\\query_fy26_hr_budget_fixed.py",
+    "size": 1719
+  },
+  {
+    "file": "query_hr_budget.py",
+    "path": ".workspace\\query_hr_budget.py",
+    "size": 3735
+  },
+  {
+    "file": "query_purchase_comparison.py",
+    "path": ".workspace\\query_purchase_comparison.py",
+    "size": 2078
+  },
+  {
+    "file": "search_finance.py",
+    "path": ".workspace\\search_finance.py",
+    "size": 2086
+  }
+]

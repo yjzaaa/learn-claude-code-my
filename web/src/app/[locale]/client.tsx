@@ -8,7 +8,6 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import versionsData from "@/data/generated/versions.json";
 import { MessageFlow } from "@/components/architecture/message-flow";
-import { EmbeddedDialog } from "@/components/realtime";
 
 const LAYER_BORDER_COLORS = {
   tools: "border-blue-500/30 hover:border-blue-500/60",

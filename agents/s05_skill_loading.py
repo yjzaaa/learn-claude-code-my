@@ -20,7 +20,7 @@ s05_skill_loading.py - 技能加载
     | Skills available:                    |
     |   - pdf: Process PDF files...        |  <-- 第 1 层：仅元数据
     |   - code-review: Review code...      |
-    +--------------------------------------+
+    +--------------------------------------+ba
 
     当模型调用 load_skill("pdf") 时：
     +--------------------------------------+
@@ -43,9 +43,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 try:
-    from client import get_client, get_model
+    from agents.providers import create_provider_from_env
 except ImportError:
-    from agents.client import get_client, get_model
+    from providers import create_provider_from_env
 try:
     # 直接运行脚本：python agents/s05_skill_loading.py
     from base import WorkspaceOps, BaseAgentLoop, tool
@@ -60,8 +60,8 @@ load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
-client = get_client()  # 共享客户端，提供 OpenAI 兼容接口
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 SKILLS_DIR = WORKDIR / "skills"
 OPS = WorkspaceOps(WORKDIR)
 
@@ -408,7 +408,7 @@ def _on_stream_token(token: str, block, messages: list, response):
 
 
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=TOOLS,

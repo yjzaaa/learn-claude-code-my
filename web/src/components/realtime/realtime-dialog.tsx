@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMessageStore } from "@/hooks/useMessageStore";
 import { useAgentApi } from "@/hooks/useAgentApi";
-import type { RealtimeMessage, DialogSession } from "@/types/realtime-message";
+import type { ChatMessage, ChatSession } from "@/types/openai";
 import { CollapsibleMessage } from "./collapsible-message";
 import { StatusIndicator } from "./status-indicator";
 import {
@@ -92,9 +92,9 @@ export function RealtimeDialog({
     currentDialog,
     setCurrentDialog,
     messages,
-    getStreamingContent,
-    getThinkingMessages,
-    getToolCalls,
+    isStreaming,
+    streamingContent,
+    streamingReasoning,
   } = useMessageStore();
 
   // 加载对话框数据
@@ -102,7 +102,12 @@ export function RealtimeDialog({
     if (dialogId) {
       getDialog(dialogId).then((result) => {
         if (result.success && result.data) {
-          setCurrentDialog(result.data);
+          // 转换 Dialog 为 ChatSession 类型
+          setCurrentDialog({
+            ...result.data,
+            created_at: Date.parse(result.data.created_at) || Date.now(),
+            updated_at: Date.parse(result.data.updated_at) || Date.now(),
+          } as ChatSession);
         }
       });
     }
@@ -122,45 +127,19 @@ export function RealtimeDialog({
     }
   }, [messages, isMinimized]);
 
-  // 组织消息层次结构
-  const organizedMessages = useMemo(() => {
-    const parentMap = new Map<string, RealtimeMessage[]>();
-    const parentMessages: RealtimeMessage[] = [];
-
-    messages.forEach((msg) => {
-      if (msg.parent_id) {
-        // 这是子消息
-        if (!parentMap.has(msg.parent_id)) {
-          parentMap.set(msg.parent_id, []);
-        }
-        parentMap.get(msg.parent_id)!.push(msg);
-      } else {
-        // 这是父消息
-        parentMessages.push(msg);
-      }
-    });
-
-    return {
-      parentMessages,
-      childMap: parentMap,
-    };
-  }, [messages]);
-
-  // 获取对话框状态
+  // 获取对话框状态 (使用 Agent 流式状态)
   const dialogStatus = useMemo(() => {
+    if (isStreaming) return "streaming";
     const lastMessage = messages[messages.length - 1];
     if (!lastMessage) return "completed";
-    if (lastMessage.status === "streaming") return "streaming";
-    if (lastMessage.status === "pending") return "pending";
-    if (lastMessage.status === "error") return "error";
     return "completed";
-  }, [messages]);
+  }, [isStreaming, messages]);
 
   // 调试：打印状态
   useEffect(() => {
     console.log("[RealtimeDialog] dialogStatus:", dialogStatus, "messages count:", messages.length);
     if (messages.length > 0) {
-      console.log("[RealtimeDialog] last message status:", messages[messages.length - 1]?.status);
+      console.log("[RealtimeDialog] last message role:", messages[messages.length - 1]?.role);
     }
   }, [dialogStatus, messages]);
 
@@ -359,30 +338,27 @@ export function RealtimeDialog({
             </span>
           </div>
         )}
-        {organizedMessages.parentMessages.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-zinc-400">
             <MessageSquare className="h-12 w-12 mb-3 opacity-30" />
             <p className="text-sm">等待消息...</p>
           </div>
         ) : (
           <>
-            {organizedMessages.parentMessages.map((message, index) => {
-              const childMessages =
-                organizedMessages.childMap.get(message.id) || [];
-              const isStreaming =
-                message.status === "streaming" &&
-                index === organizedMessages.parentMessages.length - 1;
+            {messages.map((message, index) => {
+              const isLastMessage = index === messages.length - 1;
+              const isMessageStreaming = isStreaming && isLastMessage;
 
               return (
                 <CollapsibleMessage
-                  key={message.id}
+                  key={index}
                   message={message}
-                  childMessages={childMessages}
-                  isStreaming={isStreaming}
+                  isStreaming={isMessageStreaming}
+                  streamingContent={isMessageStreaming ? streamingContent : undefined}
+                  streamingReasoning={isMessageStreaming ? streamingReasoning : undefined}
                   defaultExpanded={
-                    message.type !== "tool_call" &&
-                    message.type !== "tool_result" &&
-                    index >= organizedMessages.parentMessages.length - 2
+                    !(message.role === "assistant" && message.tool_calls && message.tool_calls.length > 0) &&
+                    index >= messages.length - 2
                   }
                 />
               );

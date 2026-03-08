@@ -43,8 +43,8 @@ def _map_python_type_to_json_schema(annotation: Any) -> dict[str, Any]:
     return {"type": "string"}
 
 
-def _build_input_schema_from_signature(func: Callable[..., Any]) -> dict[str, Any]:
-    """根据函数签名自动构建工具的 input_schema。"""
+def _build_parameters_from_signature(func: Callable[..., Any]) -> dict[str, Any]:
+    """根据函数签名自动构建工具的 parameters（OpenAI 格式）。"""
     sig = inspect.signature(func)
     properties: dict[str, Any] = {}
     required: list[str] = []
@@ -81,9 +81,9 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
-    input_schema: dict[str, Any] | None = None,
+    parameters: dict[str, Any] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
-    """将普通函数标记为工具。
+    """将普通函数标记为工具（OpenAI 格式）。
 
     支持两种写法：
     1) `@tool`
@@ -93,7 +93,7 @@ def tool(
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         tool_name = name or func.__name__
         tool_description = description or _summary_from_docstring(func) or f"Tool: {tool_name}"
-        schema = input_schema or _build_input_schema_from_signature(func)
+        params = parameters or _build_parameters_from_signature(func)
 
         setattr(
             func,
@@ -101,7 +101,7 @@ def tool(
             {
                 "name": tool_name,
                 "description": tool_description,
-                "input_schema": schema,
+                "parameters": params,
             },
         )
         return func
@@ -112,7 +112,7 @@ def tool(
 
 
 def build_tools_and_handlers(functions: list[Callable[..., Any]]) -> tuple[list[dict[str, Any]], dict[str, Callable[..., Any]]]:
-    """从工具函数列表自动构建 TOOLS 和 TOOL_HANDLERS。"""
+    """从工具函数列表自动构建 TOOLS 和 TOOL_HANDLERS（OpenAI 格式）。"""
     merged_tools = build_tools(functions)
     tools: list[dict[str, Any]] = []
     handlers: dict[str, Callable[..., Any]] = {}
@@ -120,20 +120,22 @@ def build_tools_and_handlers(functions: list[Callable[..., Any]]) -> tuple[list[
     for item in merged_tools:
         name = item["name"]
         handler = item["handler"]
-        tools.append(
-            {
+        # OpenAI format: {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+        tools.append({
+            "type": "function",
+            "function": {
                 "name": item["name"],
                 "description": item["description"],
-                "input_schema": item["input_schema"],
+                "parameters": item["parameters"],
             }
-        )
+        })
         handlers[name] = handler
 
     return tools, handlers
 
 
 def build_tools(functions: list[Callable[..., Any]]) -> list[dict[str, Any]]:
-    """从工具函数列表构建合并后的 tools（每项内含 handler）。"""
+    """从工具函数列表构建合并后的 tools（每项内含 handler，OpenAI 格式）。"""
     tools: list[dict[str, Any]] = []
     names: set[str] = set()
 
@@ -153,7 +155,7 @@ def build_tools(functions: list[Callable[..., Any]]) -> list[dict[str, Any]]:
             {
                 "name": name,
                 "description": spec["description"],
-                "input_schema": spec["input_schema"],
+                "parameters": spec["parameters"],
                 "handler": func,
             }
         )

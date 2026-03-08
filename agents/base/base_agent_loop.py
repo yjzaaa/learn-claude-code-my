@@ -1,360 +1,260 @@
-﻿from __future__ import annotations
+﻿"""
+BaseAgentLoop - 极简 Agent 循环
 
-import re
+使用函数参数传递钩子，无 Mixin、无抽象类、最简实现。
+"""
+
+from __future__ import annotations
+
+from asyncio import constants
+from email import errors
+import json
+import asyncio
+from pathlib import Path
 from typing import Any, Callable
 from loguru import logger
 
+from ..providers import LiteLLMProvider, create_provider_from_env
+
 
 class BaseAgentLoop:
-    """通用 Agent 循环基类。
+    """极简 Agent 循环基类
 
-    目标：把“模型返回 tool_use -> 执行工具 -> 回传 tool_result”的通用流程抽出来，
-    供不同脚本复用，减少重复代码。
+    钩子通过函数参数传递，无需继承或 Mixin。
+
+    示例:
+        agent = BaseAgentLoop(
+            provider=provider,
+            system="You are a helpful assistant",
+            tools=[...],
+            on_tool_call=lambda name, inp: print(f"Tool: {name}"),
+            on_stream_token=lambda t: print(t, end=""),
+        )
+        agent.run([{"role": "user", "content": "Hello"}])
     """
 
     def __init__(
         self,
-        client: Any,
-        model: str,
-        system: str,
-        tools: list[Any],
-        tool_handlers: dict[str, Callable[..., Any]] | None = None,
+        provider: LiteLLMProvider | None = None,
+        model: str | None = None,
+        system: str = "",
+        tools: list | None = None,
+        tool_handlers: dict | None = None,
         max_tokens: int = 8000,
-        max_rounds: int | None = 25,
-        on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
-        on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
-        on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
-        on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-        on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-        on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
-        on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
-        on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
-        should_stop: Callable[[], bool] | None = None,
+        max_rounds: int = 25,
+        # 钩子函数（可选）
+        on_tool_call: Callable[[str, dict], None] | None = None,
+        on_stream_token: Callable[[str], None] | None = None,
+        on_complete: Callable[[str], None] | None = None,
+        on_reasoning: Callable[[str], None] | None = None,  
+        on_error: Callable[[Exception], None] | None = None,
+        on_stop: Callable[[], None] | None = None,
+
     ):
-        self.client = client
-        self.model = model
+        self.provider = provider or create_provider_from_env()
+        self.model = model or (self.provider.default_model if self.provider else "deepseek-chat")
         self.system = system
-        self.tools, self.tool_handlers = self._normalize_tools(tools, tool_handlers)
+        self.tools = tools or []
+        self.tool_handlers = tool_handlers or {}
         self.max_tokens = max_tokens
         self.max_rounds = max_rounds
-        self.on_before_round = on_before_round
-        self.on_tool_call = on_tool_call
-        self.on_tool_result = on_tool_result
-        self.on_stream_token = on_stream_token
-        self.on_stream_text = on_stream_text
-        self.on_round_end = on_round_end
-        self.on_after_round = on_after_round
-        self.on_stop = on_stop
-        self.should_stop = should_stop
 
-    @classmethod
-    def from_namespace(
-        cls,
-        *,
-        client: Any,
-        model: str,
-        system: str,
-        namespace: dict[str, Any],
-        max_tokens: int = 8000,
-        max_rounds: int | None = 25,
-        on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
-        on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
-        on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
-        on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-        on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-        on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
-        on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
-        on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
-        should_stop: Callable[[], bool] | None = None,
-    ) -> "BaseAgentLoop":
-        """从命名空间中自动扫描 @tool 函数并创建循环实例。"""
-        from .toolkit import scan_tools
+        # 保存钩子
+        self._on_tool_call = on_tool_call
+        self._on_stream_token = on_stream_token
+        self._on_complete = on_complete
+        self._on_reasoning = on_reasoning
+        self._on_error = on_error
+        self._on_stop = on_stop
 
-        tools = scan_tools(namespace)
-        return cls(
-            client=client,
-            model=model,
-            system=system,
-            tools=tools,
-            tool_handlers=None,
-            max_tokens=max_tokens,
-            max_rounds=max_rounds,
-            on_before_round=on_before_round,
-            on_tool_result=on_tool_result,
-            on_stream_token=on_stream_token,
-            on_stream_text=on_stream_text,
-            on_round_end=on_round_end,
-            on_after_round=on_after_round,
-            on_stop=on_stop,
-            should_stop=should_stop,
-        )
+        # 运行状态
+        self._stopped = False
 
-    @staticmethod
-    def _iter_tokens(text: str) -> list[str]:
-        """将文本拆分为 token 片段（保留空白），用于流式输出。"""
-        if not text:
-            return []
-        return re.findall(r"\S+|\s+", text)
-
-    def _emit_stream_tokens(self, text: str, block: Any, messages: list[dict[str, Any]], response: Any) -> None:
-        """触发 token 流式钩子。"""
-        logger.info(f"[BaseAgentLoop] _emit_stream_tokens called, text length={len(text)}, on_stream_token={self.on_stream_token is not None}")
-        if not self.on_stream_token:
-            logger.info("[BaseAgentLoop] on_stream_token is None, skipping")
-            return
-        tokens = self._iter_tokens(text)
-        logger.info(f"[BaseAgentLoop] Emitting {len(tokens)} tokens")
-        for token in tokens:
+    def _emit(self, name: str, *args) -> None:
+        """调用钩子（静默忽略错误）"""
+        hook = getattr(self, f"_on_{name}", None)
+        if hook:
             try:
-                self.on_stream_token(token, block, messages, response)
-            except Exception as e:
-                # token 流式回调仅用于展示，不应影响主流程。
-                logger.info(f"[BaseAgentLoop] on_stream_token error: {e}")
-                import traceback
-                traceback.print_exc()
-                pass
-
-    def _emit_stream_text(self, response: Any, messages: list[dict[str, Any]]) -> None:
-        """触发流式文本钩子：按响应中的文本块顺序回调。"""
-        logger.info(f"[BaseAgentLoop] _emit_stream_text called, on_stream_text={self.on_stream_text is not None}, on_stream_token={self.on_stream_token is not None}")
-        if not self.on_stream_text and not self.on_stream_token:
-            logger.info("[BaseAgentLoop] Both callbacks are None, skipping")
-            return
-
-        content = getattr(response, "content", None)
-        logger.info(f"[BaseAgentLoop] response.content type={type(content)}")
-        if isinstance(content, str):
-            if content:
-                logger.info(f"[BaseAgentLoop] Emitting string content, length={len(content)}")
-                self._emit_stream_tokens(content, None, messages, response)
-                try:
-                    if self.on_stream_text:
-                        self.on_stream_text(content, None, messages, response)
-                except Exception as e:
-                    logger.info(f"[BaseAgentLoop] on_stream_text error: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    pass
-            else:
-                logger.info("[BaseAgentLoop] String content is empty")
-            return
-
-        if not isinstance(content, list):
-            return
-
-        for block in content:
-            text = None
-
-            block_type = getattr(block, "type", None)
-            if block_type == "text":
-                text = getattr(block, "text", None)
-
-            if text is None and isinstance(block, dict):
-                if block.get("type") == "text":
-                    text = block.get("text")
-
-            if not text:
-                continue
-
-            self._emit_stream_tokens(str(text), block, messages, response)
-
-            try:
-                if self.on_stream_text:
-                    self.on_stream_text(str(text), block, messages, response)
+                hook(*args)
             except Exception:
-                # 流式回调仅用于展示，不应影响主流程。
                 pass
 
-    @staticmethod
-    def _normalize_tools(
-        tools: list[Any],
-        tool_handlers: dict[str, Callable[..., Any]] | None,
-    ) -> tuple[list[dict[str, Any]], dict[str, Callable[..., Any]]]:
-        """规范化工具定义。
+    def stop(self) -> None:
+        """请求停止"""
+        self._stopped = True
 
-        支持两种输入：
-        1) 传统模式：`tools` + `tool_handlers`
-        2) 合并模式：`tools` 中每项可直接包含 `handler`
-        3) 函数模式：`tools` 列表中放 `@tool` 标记函数
+    def request_stop(self) -> None:
+        """请求停止（别名，兼容性）"""
+        self.stop()
+        self._emit("stop")
+
+    def run(self, messages: list[dict]) -> str:
+        """执行 Agent 循环
+
+        Args:
+            messages: 消息列表，OpenAI 格式
+
+        Returns:
+            最终响应内容
         """
-        handlers: dict[str, Callable[..., Any]] = dict(tool_handlers or {})
-        normalized_tools: list[dict[str, Any]] = []
-        seen_names: set[str] = set()
-
-        for item in tools:
-            if callable(item):
-                spec = getattr(item, "__tool_spec__", None)
-                if not spec:
-                    raise ValueError(
-                        f"Callable tool '{getattr(item, '__name__', '<anonymous>')}' is missing @tool decorator"
-                    )
-
-                name = spec.get("name")
-                if not name:
-                    raise ValueError("Callable tool has empty name in __tool_spec__")
-                if name in seen_names:
-                    raise ValueError(f"Duplicate tool name: '{name}'")
-                seen_names.add(name)
-
-                handlers[name] = item
-                normalized_tools.append(
-                    {
-                        "name": name,
-                        "description": spec.get("description", f"Tool: {name}"),
-                        "input_schema": spec.get("input_schema", {"type": "object", "properties": {}, "required": []}),
-                    }
-                )
-                continue
-
-            if not isinstance(item, dict):
-                raise ValueError(f"Unsupported tool entry type: {type(item).__name__}")
-
-            tool_item = dict(item)
-            name = tool_item.get("name")
-            if not name:
-                raise ValueError("Each tool must include a non-empty 'name'")
-            if name in seen_names:
-                raise ValueError(f"Duplicate tool name: '{name}'")
-            seen_names.add(name)
-
-            merged_handler = tool_item.pop("handler", None)
-            if merged_handler is not None:
-                if not callable(merged_handler):
-                    raise ValueError(f"Tool '{name}' has non-callable handler")
-                handlers[name] = merged_handler
-
-            normalized_tools.append(tool_item)
-
-        return normalized_tools, handlers
-
-    def run(self, messages: list[dict[str, Any]]) -> None:
-        """执行标准循环，直到模型不再请求工具。"""
-        import threading
+        import logging
+        logging.getLogger(__name__).debug(f"[BaseAgentLoop] Starting run with max_tokens={self.max_tokens}, max_rounds={self.max_rounds}, tools={len(self.tools)}")
         rounds = 0
-        while True:
-            # 检查是否应该停止
-            if self.should_stop:
-                should_stop_result = self.should_stop()
-                logger.info(f"[BaseAgentLoop] should_stop check: result={should_stop_result}, thread={threading.current_thread().name}")
-                if should_stop_result:
-                    logger.info("[BaseAgentLoop] Stop requested, breaking loop")
-                    print("[BaseAgentLoop] Stop requested - exiting agent loop")  # Console output for visibility
-                    if self.on_stop:
-                        self.on_stop(messages, None)
-                    return
+        final_content = ""
 
-            # 达到最大轮数时直接停止，避免触发一轮无响应的 before_round 事件。
-            if self.max_rounds is not None and rounds >= self.max_rounds:
-                logger.info(f"[BaseAgentLoop] Reached max_rounds={self.max_rounds}, stopping")
-                if self.on_stop:
-                    self.on_stop(messages, None)
-                return
-
-            if self.on_before_round:
-                self.on_before_round(messages)
-
-            response = self.client.messages.create(
-                model=self.model,
-                system=self.system,
-                messages=messages,
-                tools=self.tools,
-                max_tokens=self.max_tokens,
-            )
+        while not self._stopped and rounds < self.max_rounds:
             rounds += 1
 
-            self._emit_stream_text(response, messages)
+            try:
+                # 使用列表存储流式结果，避免在闭包中修改外部变量的问题
+                stream_results = {
+                    "content": "",
+                    "tool_calls": [],
+                    "thinking": "",
+                    "errors": "",
+                    "final": "",
+                    "done": False,
+                    "has_error": False,
+                    "usage": None,
+                }
 
-            messages.append({"role": "assistant", "content": response.content})
+                async def _chat():
+                    # 构建消息列表
+                    chat_messages = messages.copy()
+                    if self.system:
+                        chat_messages = [{"role": "system", "content": self.system}] + chat_messages
 
-            if response.stop_reason != "tool_use":
-                if self.on_stop:
-                    self.on_stop(messages, response)
-                return
+                    async for chunk in self.provider.chat_stream(
+                        messages=chat_messages,
+                        tools=self.tools or None,
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                    ):
+                        self._emit("stream_token", chunk)
+                        # 内容块
+                        if chunk.is_content:
+                            stream_results["content"] += chunk.content
+                            # if self._on_stream_token:
+                            #     self._emit("stream_token", "is_content", chunk.content)
+                        
+                        # 工具调用
+                        elif chunk.is_tool_call:
+                            stream_results["tool_calls"].append(chunk.tool_call)
+                            # if self._on_tool_call:
+                                # self._emit("stream_token", "is_tool_call", chunk.tool_call)
+                        
+                        # 完成
+                        elif chunk.is_done:
+                            stream_results["final"] += stream_results["content"]
+                            stream_results["done"] = True
+                            logger.debug(f"[BaseAgentLoop] Chunk is_done, finish_reason={chunk.finish_reason}, content_len={len(stream_results['content'])}")
+                            # if self._on_complete:
+                            #     self._emit("stream_token", "is_done", chunk.finish_reason)
+                        
+                        # 错误
+                        elif chunk.is_error:
+                            stream_results["errors"] += chunk.error
+                            stream_results["has_error"] = True
+                            # if self._on_error:
+                            #     self._emit("stream_token", "is_error", chunk.error)
+                        
+                        # 推理内容
+                        elif chunk.is_reasoning:
+                            stream_results["thinking"] += chunk.reasoning_content
+                            # if self._on_reasoning:
+                            #     self._emit("stream_token", "is_reasoning", chunk.reasoning_content)
+                        #token用量
+                        elif chunk.usage:
+                            stream_results["usage"] = chunk.usage
+                            # self._emit("stream_token", "usage", chunk.usage)
 
-            results: list[dict[str, Any]] = []
-            for block in response.content:
-                if getattr(block, "type", None) != "tool_use":
-                    continue
-
-                # 检查是否应该停止（工具调用前）
-                if self.should_stop:
-                    should_stop_result = self.should_stop()
-                    logger.info(f"[BaseAgentLoop] should_stop check during tool call: result={should_stop_result}")
-                    if should_stop_result:
-                        logger.info("[BaseAgentLoop] Stop requested during tool calls, breaking loop")
-                        print("[BaseAgentLoop] Stop requested during tool calls - exiting agent loop")
-                        if self.on_stop:
-                            self.on_stop(messages, response)
-                        return
-
-                # 触发工具调用开始回调
-                if self.on_tool_call:
-                    try:
-                        self.on_tool_call(block.name, block.input, messages)
-                    except Exception as e:
-                        logger.info(f"[BaseAgentLoop] on_tool_call error: {e}")
-                handler = self.tool_handlers.get(block.name)
+                # 运行异步
                 try:
-                    output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
-                except Exception as e:
-                    output = f"Error: {e}"
+                    loop = asyncio.get_running_loop()
+                    asyncio.run_coroutine_threadsafe(_chat(), loop).result(timeout=120)
+                except RuntimeError:
+                    asyncio.run(_chat())
 
-                results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": str(output),
-                    }
-                )
+                # 检查错误
+                if stream_results["has_error"]:
+                    raise RuntimeError(stream_results["errors"])
 
-                if self.on_tool_result:
-                    self.on_tool_result(block, str(output), results, messages)
+                content = stream_results["content"]
+                tool_calls = stream_results["tool_calls"]
 
-            if self.on_round_end:
-                self.on_round_end(results, messages, response)
+                # 构建 assistant 消息
+                assistant_msg: dict = {"role": "assistant", "content": content, "reasoning_content": stream_results["thinking"]}
+                if tool_calls:
+                    assistant_msg["tool_calls"] = [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.name,
+                                "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                            },
+                        }
+                        for tc in tool_calls
+                    ]
 
-            messages.append({"role": "user", "content": results})
+                messages.append(assistant_msg)
+                final_content = content
 
-            if self.on_after_round:
-                self.on_after_round(messages, response)
+                # 检查是否完成
+                if not tool_calls:
+                    import logging
+                    logging.getLogger(__name__).debug(f"[BaseAgentLoop] No tool calls, returning final_content (len={len(final_content)})")
+                    self._emit("complete", final_content)
+                    return final_content
+
+                # 执行工具调用
+                for tc in tool_calls:
+                    self._emit("tool_call", tc.name, tc.arguments)
+
+                    handler = self.tool_handlers.get(tc.name)
+                    try:
+                        result = handler(**tc.arguments) if handler else f"Unknown tool: {tc.name}"
+                    except Exception as e:
+                        result = f"Error executing {tc.name}: {str(e)}"
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": str(result),
+                    })
+
+            except Exception as e:
+                self._emit("error", str(e))
+                raise
+
+        return final_content
 
 
-def run_base_agent_loop(
-    client: Any,
-    model: str,
-    system: str,
-    tools: list[Any],
-    tool_handlers: dict[str, Callable[..., Any]] | None,
-    messages: list[dict[str, Any]],
-    max_tokens: int = 8000,
-    max_rounds: int | None = None,
-    on_before_round: Callable[[list[dict[str, Any]]], None] | None = None,
-    on_tool_call: Callable[[str, dict[str, Any], list[dict[str, Any]]], None] | None = None,
-    on_tool_result: Callable[[Any, str, list[dict[str, Any]], list[dict[str, Any]]], None] | None = None,
-    on_stream_token: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-    on_stream_text: Callable[[str, Any, list[dict[str, Any]], Any], None] | None = None,
-    on_round_end: Callable[[list[dict[str, Any]], list[dict[str, Any]], Any], None] | None = None,
-    on_after_round: Callable[[list[dict[str, Any]], Any], None] | None = None,
-    on_stop: Callable[[list[dict[str, Any]], Any], None] | None = None,
-    should_stop: Callable[[], bool] | None = None,
-) -> None:
-    """函数式入口：快速执行一次基础 Agent 循环。"""
-    loop = BaseAgentLoop(
-        client=client,
-        model=model,
+def run_agent(
+    messages: list[dict],
+    system: str = "",
+    tools: list | None = None,
+    tool_handlers: dict | None = None,
+    on_tool_call: Callable | None = None,
+    on_stream_token: Callable | None = None,
+) -> str:
+    """函数式接口 - 一行代码运行 Agent
+
+    示例:
+        result = run_agent(
+            messages=[{"role": "user", "content": "Hello"}],
+            system="You are helpful",
+            on_stream_token=lambda t: print(t, end=""),
+        )
+    """
+    agent = BaseAgentLoop(
         system=system,
         tools=tools,
         tool_handlers=tool_handlers,
-        max_tokens=max_tokens,
-        max_rounds=max_rounds,
-        on_before_round=on_before_round,
         on_tool_call=on_tool_call,
-        on_tool_result=on_tool_result,
         on_stream_token=on_stream_token,
-        on_stream_text=on_stream_text,
-        on_round_end=on_round_end,
-        on_after_round=on_after_round,
-        on_stop=on_stop,
-        should_stop=should_stop,
     )
-    loop.run(messages)
+    return agent.run(messages)
+
+
+__all__ = ["BaseAgentLoop", "run_agent"]

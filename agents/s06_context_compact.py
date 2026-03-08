@@ -39,8 +39,11 @@ import os
 import time
 from pathlib import Path
 
-from client import get_client, get_model
 from dotenv import load_dotenv
+try:
+    from agents.providers import create_provider_from_env
+except ImportError:
+    from providers import create_provider_from_env
 try:
     from base import BaseAgentLoop, WorkspaceOps, tool
 except ImportError:
@@ -52,8 +55,8 @@ if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 WORKDIR = Path.cwd()
-client = get_client()
-MODEL = get_model()
+provider = create_provider_from_env()
+MODEL = provider.default_model if provider else "deepseek-chat"
 OPS = WorkspaceOps(workdir=WORKDIR)
 
 SYSTEM = f"You are a coding agent at {WORKDIR}. Use tools to solve tasks."
@@ -159,7 +162,7 @@ def _on_after_round(messages: list, response):
 
 
 AGENT_LOOP = BaseAgentLoop(
-    client=client,
+    provider=provider,
     model=MODEL,
     system=SYSTEM,
     tools=TOOLS,

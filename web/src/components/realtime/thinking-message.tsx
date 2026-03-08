@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import type { RealtimeMessage } from "@/types/realtime-message";
+import type { ChatMessage } from "@/types/openai";
 import { Brain, ChevronDown } from "lucide-react";
 
 interface ThinkingMessageProps {
-  message: RealtimeMessage;
+  message: ChatMessage;
   className?: string;
 }
 

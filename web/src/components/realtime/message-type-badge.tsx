@@ -1,8 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { RealtimeMessageType } from "@/types/realtime-message";
-import { MESSAGE_TYPE_CONFIG } from "@/types/realtime-message";
+import type { ChatRole } from "@/types/openai";
 import {
   User,
   Bot,
@@ -13,56 +12,72 @@ import {
   Zap,
   Play,
   Square,
+  Settings,
 } from "lucide-react";
 
 interface MessageTypeBadgeProps {
-  type: RealtimeMessageType;
+  role: ChatRole;
   showIcon?: boolean;
   showLabel?: boolean;
   size?: "sm" | "md" | "lg";
   className?: string;
 }
 
-const ICON_MAP = {
-  User,
-  Bot,
-  Brain,
-  Wrench,
-  CheckCircle,
-  AlertCircle,
-  Zap,
-  Play,
-  Square,
+const ROLE_CONFIG: Record<ChatRole, { label: string; icon: React.ComponentType<{ className?: string }>; bgColor: string; color: string }> = {
+  system: {
+    label: "系统",
+    icon: Settings,
+    bgColor: "bg-gray-100",
+    color: "text-gray-700",
+  },
+  user: {
+    label: "用户",
+    icon: User,
+    bgColor: "bg-blue-100",
+    color: "text-blue-700",
+  },
+  assistant: {
+    label: "助手",
+    icon: Bot,
+    bgColor: "bg-purple-100",
+    color: "text-purple-700",
+  },
+  tool: {
+    label: "工具",
+    icon: Wrench,
+    bgColor: "bg-cyan-100",
+    color: "text-cyan-700",
+  },
 };
 
 const SIZE_CONFIG = {
   sm: {
     badge: "px-1.5 py-0.5 text-[10px]",
-    icon: 10,
+    icon: "h-2.5 w-2.5",
     gap: "gap-1",
   },
   md: {
     badge: "px-2 py-0.5 text-xs",
-    icon: 12,
+    icon: "h-3 w-3",
     gap: "gap-1.5",
   },
   lg: {
     badge: "px-2.5 py-1 text-sm",
-    icon: 14,
+    icon: "h-3.5 w-3.5",
     gap: "gap-2",
   },
 };
 
 export function MessageTypeBadge({
-  type,
+  role,
   showIcon = true,
   showLabel = true,
   size = "md",
   className,
 }: MessageTypeBadgeProps) {
-  const config = MESSAGE_TYPE_CONFIG[type];
+  const config = ROLE_CONFIG[role] || ROLE_CONFIG.assistant;
   const sizeConfig = SIZE_CONFIG[size];
-  const Icon = ICON_MAP[config.icon as keyof typeof ICON_MAP];
+  const Icon = config.icon;
 
   return (
     <span
@@ -75,7 +90,7 @@ export function MessageTypeBadge({
         className
       )}
     >
-      {showIcon && Icon && <Icon size={sizeConfig.icon} />}
+      {showIcon && <Icon className={sizeConfig.icon} />}
       {showLabel && <span>{config.label}</span>}
     </span>
   );

@@ -11,7 +11,8 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
         from psycopg2.extras import RealDictCursor
     except Exception as e:
         return f"Error: psycopg2 is not available: {e}"
-
+    if not sql.strip():
+        return "Error: Empty SQL query"
     # 标准变量：DB_HOST / DB_NAME / DB_USER / DB_PASSWORD / DB_PORT
     # 兼容旧变量：database_url / database_name / database_username / database_password
     host = os.getenv("DB_HOST") or os.getenv("DB_SERVER") or os.getenv("database_url", "localhost")

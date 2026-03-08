@@ -1,67 +1,36 @@
 """
-Agents Models Package
+Agents Models Package - OpenAI 原生风格
 
-统一管理所有数据模型，确保前后端类型对齐。
+所有类型与 OpenAI API 完全兼容。
+参考: https://platform.openai.com/docs/api-reference/chat
 """
 
-from .message import (
-    MessageType,
-    MessageStatus,
-    RealtimeMessage,
-    MessageAddedEvent,
-    MessageUpdatedEvent,
-    StreamTokenEvent,
-)
-from .agent import AgentType, AgentState
-from .dialog import DialogSession
-from .events import WebSocketEvent, DialogEvent
-from .response import (
-    ApiResponse,
-    PaginatedData,
-    DialogListResponse,
-    DialogDetailResponse,
-    SkillInfoResponse,
-    SkillListResponse,
-    AgentStatusResponse,
-    MessageSendResponse,
-    ConfigUpdateResponse,
-    ErrorDetail,
-    ValidationErrorResponse,
-    success_response,
-    error_response,
-    paginated_response,
+from .openai_types import (
+    # 基础类型
+    ChatRole,
+    ChatMessage,
+    ChatCompletionMessageToolCall,
+    # 工具
+    ChatCompletionTool,
+    # 流式响应
+    ChatCompletionChunk,
+    # 会话
+    ChatSession,
+    # 事件
+    ChatEvent,
 )
 
 __all__ = [
-    # Message models
-    "MessageType",
-    "MessageStatus",
-    "RealtimeMessage",
-    "MessageAddedEvent",
-    "MessageUpdatedEvent",
-    "StreamTokenEvent",
-    # Agent models
-    "AgentType",
-    "AgentState",
-    # Dialog models
-    "DialogSession",
-    # Event models
-    "WebSocketEvent",
-    "DialogEvent",
-    # Response models
-    "ApiResponse",
-    "PaginatedData",
-    "DialogListResponse",
-    "DialogDetailResponse",
-    "SkillInfoResponse",
-    "SkillListResponse",
-    "AgentStatusResponse",
-    "MessageSendResponse",
-    "ConfigUpdateResponse",
-    "ErrorDetail",
-    "ValidationErrorResponse",
-    # Response helpers
-    "success_response",
-    "error_response",
-    "paginated_response",
+    # 基础类型
+    "ChatRole",
+    "ChatMessage",
+    "ChatCompletionMessageToolCall",
+    # 工具
+    "ChatCompletionTool",
+    # 流式响应
+    "ChatCompletionChunk",
+    # 会话
+    "ChatSession",
+    # 事件
+    "ChatEvent",
 ]

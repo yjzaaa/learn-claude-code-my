@@ -15,11 +15,9 @@ from datetime import datetime
 
 from .event_manager import (
     event_manager,
-    RealTimeMessage,
     DialogSession,
-    MessageType,
-    MessageStatus,
 )
+from ..models import ChatMessage, ChatEvent
 
 
 class ConnectionManager:
@@ -28,16 +26,6 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
         self.dialog_subscriptions: Dict[str, List[str]] = {}
-        # 注入广播处理器到event_manager
-        self._setup_event_manager()
-
-    def _setup_event_manager(self):
-        """设置event_manager的对话框广播处理器"""
-        async def broadcast_handler(dialog_id: str, message: Dict[str, Any]):
-            logger.info(f"[ConnectionManager] broadcast_handler called for dialog {dialog_id}")
-            await self.broadcast_to_dialog(dialog_id, message)
-        event_manager.set_dialog_broadcast_handler(broadcast_handler)
-        logger.info("[ConnectionManager] Event manager broadcast handler set up successfully")
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -188,15 +176,9 @@ class MessageHandler:
         content = message.get("content")
 
         if dialog_id and content:
-            # 创建用户消息
-            user_message = RealTimeMessage(
-                id=str(uuid.uuid4()),
-                type=MessageType.USER_MESSAGE,
-                content=content,
-                status=MessageStatus.COMPLETED,
-            )
-
-            event_manager.add_message_to_dialog(dialog_id, user_message)
+            # 创建用户消息 (OpenAI 格式)
+            user_message = ChatMessage.user(content)
+            event_manager.add_chat_message(dialog_id, user_message)
 
             # 触发用户输入事件
             event_manager.emit("user_input", {
@@ -301,206 +283,133 @@ async def start_websocket_server(host: str = "0.0.0.0", port: int = 8001):
 
 class AgentMessageBridge:
     """
-    Agent消息桥接器
+    Agent消息桥接器 (OpenAI 风格)
 
     用于将Agent循环中的消息发送到WebSocket
     """
 
     def __init__(self, dialog_id: str, agent_type: Optional[str] = None):
         self.dialog_id = dialog_id
-        self.current_message_id: Optional[str] = None
+        self.current_message: Optional[ChatMessage] = None
         self.agent_type = agent_type or "default"
 
-    def _get_agent_type(self) -> str:
-        """获取当前代理类型，优先使用类属性，其次是实例属性"""
-        # 尝试从WebSocketBridge获取当前运行的代理类型
-        try:
-            from .bridge import WebSocketBridge
-            if WebSocketBridge.current_agent_type:
-                return WebSocketBridge.current_agent_type
-        except ImportError:
-            pass
-        return self.agent_type
-
-    async def send_user_message(self, content: str) -> RealTimeMessage:
+    async def send_user_message(self, content: str) -> ChatMessage:
         """发送用户消息"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.USER_MESSAGE,
-            content=content,
-            status=MessageStatus.COMPLETED,
-            agent_type=self._get_agent_type(),
+        message = ChatMessage.user(content)
+        event_manager.add_chat_message(self.dialog_id, message)
+
+        # 广播事件
+        event = ChatEvent(
+            type="message",
+            dialog_id=self.dialog_id,
+            message=message,
         )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
+        await event_manager.broadcast_to_clients({
+            "type": "chat:event",
+            "event": event.to_dict(),
+        })
         return message
 
-    async def start_assistant_response(self) -> RealTimeMessage:
+    async def start_assistant_response(self) -> ChatMessage:
         """开始助手响应"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.ASSISTANT_TEXT,
-            content="",
-            status=MessageStatus.STREAMING,
-            agent_type=self._get_agent_type(),
-        )
-        self.current_message_id = message.id
-        event_manager.add_message_to_dialog(self.dialog_id, message)
+        message = ChatMessage.assistant("")
+        self.current_message = message
+        event_manager.add_chat_message(self.dialog_id, message)
         return message
 
     async def send_stream_token(self, token: str):
         """发送流式token"""
-        if self.current_message_id:
-            dialog = event_manager.get_dialog(self.dialog_id)
-            if dialog:
-                for msg in dialog.messages:
-                    if msg.id == self.current_message_id:
-                        msg.stream_tokens.append(token)
-                        msg.content = "".join(msg.stream_tokens)
-                        # 更新agent_type
-                        msg.agent_type = self._get_agent_type()
-                        # 广播流式更新
-                        stream_event = {
-                            "type": "stream_token",
-                            "dialog_id": self.dialog_id,
-                            "message_id": self.current_message_id,
-                            "token": token,
-                            "current_content": msg.content,
-                        }
-                        if event_manager.should_push_event(stream_event):
-                            await connection_manager.broadcast_to_dialog(
-                                self.dialog_id,
-                                stream_event,
-                            )
-                        # 同时触发消息更新事件，确保消息状态同步
-                        event_manager.update_message_in_dialog(
-                            self.dialog_id,
-                            self.current_message_id,
-                            {"content": msg.content, "stream_tokens": msg.stream_tokens, "agent_type": msg.agent_type}
-                        )
-                        break
+        if self.current_message:
+            # 追加内容
+            current_content = self.current_message.content or ""
+            self.current_message.content = current_content + token
 
-    async def send_thinking(self, content: str):
-        """发送思考过程"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.ASSISTANT_THINKING,
-            content=content,
-            status=MessageStatus.COMPLETED,
-            parent_id=self.current_message_id,
-            agent_type=self._get_agent_type(),
-        )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
-        return message
+            # 广播流式更新
+            await connection_manager.broadcast_to_dialog(
+                self.dialog_id,
+                {
+                    "type": "stream_token",
+                    "dialog_id": self.dialog_id,
+                    "message_id": self.current_message.id,
+                    "token": token,
+                    "current_content": self.current_message.content,
+                },
+            )
 
-    async def send_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> RealTimeMessage:
+    async def send_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> ChatMessage:
         """发送工具调用"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.TOOL_CALL,
-            content=f"调用工具: {tool_name}",
-            tool_name=tool_name,
-            tool_input=tool_input,
-            status=MessageStatus.PENDING,
-            parent_id=self.current_message_id,
-            agent_type=self._get_agent_type(),
+        import json
+        tool_call = {
+            "id": str(uuid.uuid4()),
+            "type": "function",
+            "function": {
+                "name": tool_name,
+                "arguments": json.dumps(tool_input),
+            }
+        }
+        message = ChatMessage.assistant("", tool_calls=[tool_call])
+        event_manager.add_chat_message(self.dialog_id, message)
+
+        # 广播事件
+        event = ChatEvent(
+            type="tool_call",
+            dialog_id=self.dialog_id,
+            message=message,
         )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
+        await event_manager.broadcast_to_clients({
+            "type": "chat:event",
+            "event": event.to_dict(),
+        })
         return message
 
     async def send_tool_result(self, tool_call_id: str, result: str):
         """发送工具结果"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.TOOL_RESULT,
-            content=result,
-            status=MessageStatus.COMPLETED,
-            parent_id=tool_call_id,
-            agent_type=self._get_agent_type(),
-        )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
+        message = ChatMessage.tool(tool_call_id, result)
+        event_manager.add_chat_message(self.dialog_id, message)
 
-        # 更新工具调用状态
-        event_manager.update_message_in_dialog(
-            self.dialog_id,
-            tool_call_id,
-            {"status": MessageStatus.COMPLETED}
+        # 广播事件
+        event = ChatEvent(
+            type="tool_result",
+            dialog_id=self.dialog_id,
+            message=message,
         )
+        await event_manager.broadcast_to_clients({
+            "type": "chat:event",
+            "event": event.to_dict(),
+        })
         return message
 
     async def complete_assistant_response(self, final_content: Optional[str] = None):
         """完成助手响应"""
-        if self.current_message_id:
-            updates = {"status": MessageStatus.COMPLETED, "agent_type": self._get_agent_type()}
-            if final_content:
-                updates["content"] = final_content
-            event_manager.update_message_in_dialog(
-                self.dialog_id,
-                self.current_message_id,
-                updates
+        if self.current_message and final_content:
+            self.current_message.content = final_content
+
+            # 广播完成事件
+            event = ChatEvent(
+                type="message",
+                dialog_id=self.dialog_id,
+                message=self.current_message,
             )
-            self.current_message_id = None
-
-    async def append_assistant_text(self, text: str):
-        """追加助手文本（用于非 token 的文本流式场景）"""
-        if not text:
-            return
-
-        if not self.current_message_id:
-            message = await self.start_assistant_response()
-            self.current_message_id = message.id
-
-        dialog = event_manager.get_dialog(self.dialog_id)
-        if not dialog:
-            return
-
-        current_content = ""
-        for msg in dialog.messages:
-            if msg.id == self.current_message_id:
-                current_content = msg.content or ""
-                break
-
-        event_manager.update_message_in_dialog(
-            self.dialog_id,
-            self.current_message_id,
-            {
-                "content": f"{current_content}{text}",
-                "status": MessageStatus.STREAMING,
-            },
-        )
-
-    async def finalize_streaming_messages(self):
-        """兜底收口：将遗留的 assistant_text(streaming) 统一标记为 completed。"""
-        dialog = event_manager.get_dialog(self.dialog_id)
-        if not dialog:
-            return
-
-        for msg in dialog.messages:
-            if msg.type == MessageType.ASSISTANT_TEXT and msg.status == MessageStatus.STREAMING:
-                updates: Dict[str, Any] = {"status": MessageStatus.COMPLETED}
-                if msg.stream_tokens and not msg.content:
-                    updates["content"] = "".join(msg.stream_tokens)
-                event_manager.update_message_in_dialog(self.dialog_id, msg.id, updates)
+            await event_manager.broadcast_to_clients({
+                "type": "chat:event",
+                "event": event.to_dict(),
+            })
+        self.current_message = None
 
     async def send_system_event(self, content: str, metadata: Optional[Dict] = None):
         """发送系统事件"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.SYSTEM_EVENT,
-            content=content,
-            status=MessageStatus.COMPLETED,
-            metadata=metadata or {},
-        )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
-        return message
+        message = ChatMessage.system(content)
+        event_manager.add_chat_message(self.dialog_id, message)
 
-    async def send_completed_assistant_text(self, content: str) -> RealTimeMessage:
-        """发送一条已完成的 assistant 文本消息（用于非流式兜底）。"""
-        message = RealTimeMessage(
-            id=str(uuid.uuid4()),
-            type=MessageType.ASSISTANT_TEXT,
-            content=content,
-            status=MessageStatus.COMPLETED,
+        # 广播事件
+        event = ChatEvent(
+            type="system",
+            dialog_id=self.dialog_id,
+            message=message,
         )
-        event_manager.add_message_to_dialog(self.dialog_id, message)
+        await event_manager.broadcast_to_clients({
+            "type": "chat:event",
+            "event": event.to_dict(),
+        })
         return message
 

@@ -342,7 +342,7 @@ def _extract_final_text(content) -> str:
     return "\n".join(parts)
 
 
-def _create_subagent_loop(client: Any, model: str) -> BaseAgentLoop:
+def _create_subagent_loop(provider: Any, model: str) -> BaseAgentLoop:
     """创建子代理循环（不含task工具，避免递归）。"""
     # 子代理拥有基础技能工具，但不包含task
     subagent_tools = list(S05_TOOLS) + [
@@ -350,7 +350,7 @@ def _create_subagent_loop(client: Any, model: str) -> BaseAgentLoop:
         compact,
     ]
     return BaseAgentLoop(
-        client=client,
+        provider=provider,
         model=model,
         system=_SUBAGENT_SYSTEM,
         tools=subagent_tools,
@@ -359,9 +359,9 @@ def _create_subagent_loop(client: Any, model: str) -> BaseAgentLoop:
     )
 
 
-def _run_subagent(prompt: str, client: Any, model: str) -> str:
+def _run_subagent(prompt: str, provider: Any, model: str) -> str:
     """运行子代理并返回摘要。"""
-    subagent = _create_subagent_loop(client, model)
+    subagent = _create_subagent_loop(provider, model)
     sub_messages = [{"role": "user", "content": prompt}]  # 全新上下文
     subagent.run(sub_messages)
 
@@ -374,27 +374,27 @@ def _run_subagent(prompt: str, client: Any, model: str) -> str:
 
 
 def _run_subagent_with_active_loop(prompt: str, desc: str) -> str:
-    """使用当前活跃的loop的client/model运行子代理。"""
+    """使用当前活跃的loop的provider/model运行子代理。"""
     # 尝试获取活跃的loop
     for loop in _active_loops:
         if hasattr(loop, "_client") and hasattr(loop, "_model"):
-            client = loop._client
+            provider = loop._client
             model = loop._model
-            result = _run_subagent(prompt, client, model)
+            result = _run_subagent(prompt, provider, model)
             logger.info(f"< task ({desc}): {result[:200]}...")
             return result
 
     # 如果没有活跃的loop，使用环境变量配置
-    logger.warning("[task] No active SQLAgentLoop found, using fallback client")
+    logger.warning("[task] No active SQLAgentLoop found, using fallback provider")
     try:
-        from client import get_client, get_model
-        client = get_client()
-        model = get_model()
-        result = _run_subagent(prompt, client, model)
+        from agents.providers import create_provider_from_env
+        provider = create_provider_from_env()
+        model = provider.default_model if provider else "deepseek-chat"
+        result = _run_subagent(prompt, provider, model)
         logger.info(f"< task ({desc}): {result[:200]}...")
         return result
     except ImportError:
-        return "[Error] Cannot create subagent: no active loop and client module not available"
+        return "[Error] Cannot create subagent: no active loop and providers module not available"
 
 
 @tool(
@@ -448,7 +448,7 @@ class SQLAgentLoop(BaseAgentLoop):
     def __init__(
         self,
         *,
-        client: Any,
+        provider: Any,
         model: str,
         system: str = SYSTEM,
         tools: list[Any] | None = None,
@@ -479,7 +479,7 @@ class SQLAgentLoop(BaseAgentLoop):
         self._compact_requested = False  # 标记是否收到compact工具调用
 
         # 保存引用供压缩使用
-        self._client = client
+        self._client = provider
         self._model = model
 
         # 组合用户自定义回调与内部回调以实现增强功能
@@ -489,7 +489,7 @@ class SQLAgentLoop(BaseAgentLoop):
         self._user_on_after_round = on_after_round
 
         super().__init__(
-            client=client,
+            provider=provider,
             model=model,
             system=system,
             tools=list(tools or TOOLS),
@@ -592,11 +592,11 @@ class SQLAgentLoop(BaseAgentLoop):
 
 def build_sql_agent_loop(
     *,
-    client: Any,
+    provider: Any,
     model: str,
     **kwargs: Any,
 ) -> SQLAgentLoop:
-    return SQLAgentLoop(client=client, model=model, **kwargs)
+    return SQLAgentLoop(provider=provider, model=model, **kwargs)
 
 
 __all__ = ["SYSTEM", "TOOLS", "SQLAgentLoop", "build_sql_agent_loop"]

@@ -9,6 +9,7 @@ import type {
   MessageUpdatedEvent,
   DialogSubscribedEvent,
 } from "@/types/realtime-message";
+import type { AgentEvent } from "@/types/agent-event";
 
 export type WebSocketStatus =
   | "connecting"
@@ -149,6 +150,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
               break;
             case "dialog_deleted":
               globalEventEmitter.emit("dialog:deleted", message);
+              break;
+
+            // Agent 流式事件
+            case "agent:message_start":
+            case "agent:content_delta":
+            case "agent:reasoning_delta":
+            case "agent:tool_call":
+            case "agent:message_complete":
+            case "agent:error":
+            case "agent:stopped":
+              globalEventEmitter.emit("agent:event", message as AgentEvent);
+              globalEventEmitter.emit(message.type, message as AgentEvent);
               break;
           }
 

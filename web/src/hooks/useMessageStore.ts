@@ -3,19 +3,45 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
 import type {
-  RealtimeMessage,
-  DialogSession,
-  StreamTokenMessage,
-  MessageAddedEvent,
-  MessageUpdatedEvent,
-  MessageStatus,
-} from "@/types/realtime-message";
+  ChatMessage,
+  ChatEvent,
+  ChatEventType,
+} from "@/types/openai";
+import type { AgentEvent, AgentStreamState } from "@/types/agent-event";
 
 interface MessageStoreState {
-  dialogs: DialogSession[];
-  currentDialog: DialogSession | null;
+  dialogs: ChatSession[];
+  currentDialog: ChatSession | null;
   isLoading: boolean;
   error: string | null;
+  /** Agent 流式状态 */
+  streamState: AgentStreamState;
+}
+
+interface ChatSession {
+  id: string;
+  messages: ChatMessage[];
+  model?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+/** 流式消息映射 (message_id -> 累积内容) */
+/** 流式消息映射 (message_id -> 累积内容) */
+interface StreamingMessages {
+  [messageId: string]: {
+    content: string;
+    reasoning?: string;
+    toolCalls?: unknown[];
+    agentName?: string;
+  };
+}
+
+interface ChatEventPayload {
+  type: ChatEventType;
+  dialog_id: string;
+  message: ChatMessage;
+  timestamp: number;
 }
 
 export function useMessageStore() {
@@ -24,92 +50,80 @@ export function useMessageStore() {
     currentDialog: null,
     isLoading: false,
     error: null,
+    streamState: {
+      isStreaming: false,
+      currentMessageId: null,
+      accumulatedContent: "",
+      accumulatedReasoning: "",
+      toolCalls: [],
+      showReasoning: false,
+    },
   });
 
-  const messageBufferRef = useRef<RealtimeMessage[]>([]);
+  const messageBufferRef = useRef<ChatEventPayload[]>([]);
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const mergeMessage = useCallback(
-    (current: RealtimeMessage | undefined, incoming: RealtimeMessage) => {
-      if (!current) return incoming;
-
-      // Prefer richer content/status from current message when incoming is a stale empty add event.
-      const keepCurrentContent =
-        (incoming.content ?? "") === "" && (current.content ?? "") !== "";
-
-      const statusRank: Record<MessageStatus, number> = {
-        pending: 0,
-        streaming: 1,
-        completed: 2,
-        error: 3,
-      };
-
-      const currentStatus = current.status as MessageStatus;
-      const incomingStatus = incoming.status as MessageStatus;
-      const resolvedStatus =
-        statusRank[currentStatus] >= statusRank[incomingStatus]
-          ? current.status
-          : incoming.status;
-
-      const mergedTokens =
-        (current.stream_tokens?.length ?? 0) >=
-        (incoming.stream_tokens?.length ?? 0)
-          ? current.stream_tokens
-          : incoming.stream_tokens;
-
-      return {
-        ...current,
-        ...incoming,
-        content: keepCurrentContent ? current.content : incoming.content,
-        status: resolvedStatus,
-        stream_tokens: mergedTokens,
-      };
-    },
-    [],
-  );
+  // 流式消息缓存
+  const streamingMessagesRef = useRef<StreamingMessages>({});
 
   // 批量更新消息
   const flushMessages = useCallback(() => {
     if (messageBufferRef.current.length === 0) return;
 
-    const messages = [...messageBufferRef.current];
+    const events = [...messageBufferRef.current];
     messageBufferRef.current = [];
 
     setState((prev) => {
       if (!prev.currentDialog) return prev;
 
-      // Upsert by id so late buffered message_added won't overwrite a newer message_updated.
-      const messageMap = new Map(
-        prev.currentDialog.messages.map((m) => [m.id, m]),
-      );
-      messages.forEach((m) => {
-        const existing = messageMap.get(m.id);
-        messageMap.set(m.id, mergeMessage(existing, m));
+      // 按消息角色和类型合并
+      const messages = [...prev.currentDialog.messages];
+
+      events.forEach((event) => {
+        if (event.type === "delta") {
+          // 流式增量 - 追加到最后一条 assistant 消息
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "assistant") {
+            lastMsg.content = (lastMsg.content || "") + (event.message.content || "");
+          } else {
+            messages.push(event.message);
+          }
+        } else if (event.type === "message") {
+          // 新消息 - 检查是否已存在
+          const existingIdx = messages.findIndex(
+            (m) => m.role === event.message.role && m.content === event.message.content
+          );
+          if (existingIdx === -1) {
+            messages.push(event.message);
+          }
+        } else {
+          // 其他类型直接添加
+          messages.push(event.message);
+        }
       });
-      const updatedMessages = Array.from(messageMap.values());
+
       const updatedDialog = {
         ...prev.currentDialog,
-        messages: updatedMessages,
-        updated_at: new Date().toISOString(),
+        messages,
+        updated_at: Date.now(),
       };
 
       return {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d,
+          d.id === updatedDialog.id ? updatedDialog : d
         ),
       };
     });
   }, []);
 
-  // 缓冲添加消息
-  const bufferMessage = useCallback(
-    (message: RealtimeMessage) => {
-      messageBufferRef.current.push(message);
+  // 缓冲添加事件
+  const bufferEvent = useCallback(
+    (event: ChatEventPayload) => {
+      messageBufferRef.current.push(event);
 
-      // 立即刷新流式token，缓冲其他消息
-      if (message.type === "stream_token") {
+      // 立即刷新流式增量，缓冲其他消息
+      if (event.type === "delta") {
         flushMessages();
       } else if (!flushTimerRef.current) {
         flushTimerRef.current = setTimeout(() => {
@@ -118,146 +132,67 @@ export function useMessageStore() {
         }, 50);
       }
     },
-    [flushMessages],
+    [flushMessages]
   );
 
   // 监听WebSocket事件
   useEffect(() => {
     console.log("[MessageStore] Setting up event listeners");
 
-    const handleMessageAdded = (event: MessageAddedEvent) => {
+    const handleChatEvent = (event: ChatEventPayload) => {
       if (!state.currentDialog || event.dialog_id !== state.currentDialog.id) {
         return;
       }
-      console.log("[MessageStore] Message added:", {
-        id: event.message.id,
-        type: event.message.type,
-        parent_id: event.message.parent_id,
+
+      console.log("[MessageStore] Chat event received:", {
+        type: event.type,
+        role: event.message.role,
         content: event.message.content?.slice(0, 50),
       });
-      bufferMessage(event.message);
-    };
 
-    const handleMessageUpdated = (event: MessageUpdatedEvent) => {
-      setState((prev) => {
-        if (!prev.currentDialog || prev.currentDialog.id !== event.dialog_id) {
-          return prev;
-        }
-
-        // Upsert so message_updated can arrive before buffered message_added.
-        const idx = prev.currentDialog.messages.findIndex(
-          (msg) => msg.id === event.message.id,
-        );
-        const updatedMessages = [...prev.currentDialog.messages];
-        if (idx >= 0) {
-          updatedMessages[idx] = mergeMessage(
-            updatedMessages[idx],
-            event.message,
-          );
-        } else {
-          updatedMessages.push(event.message);
-        }
-
-        const updatedDialog = {
-          ...prev.currentDialog,
-          messages: updatedMessages,
-          updated_at: new Date().toISOString(),
-        };
-
-        return {
-          ...prev,
-          currentDialog: updatedDialog,
-          dialogs: prev.dialogs.map((d) =>
-            d.id === updatedDialog.id ? updatedDialog : d,
-          ),
-        };
-      });
-    };
-
-    const handleStreamToken = (event: StreamTokenMessage) => {
-      setState((prev) => {
-        if (!prev.currentDialog || prev.currentDialog.id !== event.dialog_id) {
-          return prev;
-        }
-
-        const updatedMessages = prev.currentDialog.messages.map((msg) => {
-          if (msg.id === event.message_id) {
-            return {
-              ...msg,
-              content: event.current_content,
-              stream_tokens: [...(msg.stream_tokens || []), event.token],
-              status: "streaming" as MessageStatus,
-            };
-          }
-          return msg;
-        });
-
-        const updatedDialog = {
-          ...prev.currentDialog,
-          messages: updatedMessages,
-          updated_at: new Date().toISOString(),
-        };
-
-        return {
-          ...prev,
-          currentDialog: updatedDialog,
-        };
-      });
+      bufferEvent(event);
     };
 
     const handleDialogSubscribed = (event: {
-      dialog: DialogSession | null;
+      dialog_id: string;
+      dialog: ChatSession | null;
     }) => {
       if (event.dialog) {
         setState((prev) => {
           // 检查是否已经有这个对话框
           const existingDialog = prev.dialogs.find(
-            (d) => d.id === event.dialog!.id,
+            (d) => d.id === event.dialog!.id
           );
 
           // 合并消息：保留现有消息，同时添加服务器上的新消息
-          let mergedMessages: RealtimeMessage[] = [];
+          let mergedMessages: ChatMessage[] = [];
           if (existingDialog) {
-            // 创建现有消息的映射
-            const existingMsgMap = new Map(
-              existingDialog.messages.map((m) => [m.id, m]),
-            );
-            // 遍历服务器消息，保留前端有stream_tokens的版本
-            mergedMessages = event.dialog!.messages.map((serverMsg) => {
-              const existingMsg = existingMsgMap.get(serverMsg.id);
-              if (
-                existingMsg &&
-                existingMsg.stream_tokens &&
-                existingMsg.stream_tokens.length > 0
-              ) {
-                // 前端有更完整的流式数据，保留前端版本
-                return existingMsg;
-              }
-              return serverMsg;
-            });
-            // 添加前端有但服务器没有的消息（本地乐观更新）
-            const serverMsgIds = new Set(
-              event.dialog!.messages.map((m) => m.id),
-            );
-            existingDialog.messages.forEach((localMsg) => {
-              if (!serverMsgIds.has(localMsg.id)) {
-                mergedMessages.push(localMsg);
+            mergedMessages = [...existingDialog.messages];
+            // 添加服务器有但本地没有的消息
+            event.dialog!.messages.forEach((serverMsg) => {
+              const exists = mergedMessages.some(
+                (m) =>
+                  m.role === serverMsg.role &&
+                  m.content === serverMsg.content
+              );
+              if (!exists) {
+                mergedMessages.push(serverMsg);
               }
             });
           } else {
             mergedMessages = event.dialog!.messages;
           }
 
-          const dialogToUse: DialogSession = {
+          const dialogToUse: ChatSession = {
             ...event.dialog,
             messages: mergedMessages,
-          } as DialogSession;
+          };
 
           const updatedDialogs = prev.dialogs.some(
-            (d) => d.id === event.dialog!.id,
+            (d) => d.id === event.dialog!.id
           )
             ? prev.dialogs.map((d) =>
-                d.id === event.dialog!.id ? dialogToUse : d,
+                d.id === event.dialog!.id ? dialogToUse : d
               )
             : [...prev.dialogs, dialogToUse];
 
@@ -270,33 +205,214 @@ export function useMessageStore() {
       }
     };
 
-    const unsubscribeAdded = globalEventEmitter.on(
-      "message:added",
-      handleMessageAdded,
-    );
-    const unsubscribeUpdated = globalEventEmitter.on(
-      "message:updated",
-      handleMessageUpdated,
-    );
-    const unsubscribeStream = globalEventEmitter.on(
-      "stream:token",
-      handleStreamToken,
+    // Agent 流式事件处理
+    const handleAgentEvent = (event: AgentEvent) => {
+      if (!state.currentDialog || event.dialog_id !== state.currentDialog.id) {
+        return;
+      }
+
+      console.log("[MessageStore] Agent event received:", {
+        type: event.type,
+        dialog_id: event.dialog_id,
+      });
+
+      setState((prev) => {
+        const { streamState } = prev;
+
+        switch (event.type) {
+          case "agent:message_start": {
+            const { message_id, role, agent_name } = event.data;
+            streamingMessagesRef.current[message_id] = {
+              content: "",
+              agentName: agent_name || "TeamLeadAgent",
+            };
+
+            // 添加新的流式消息占位
+            const newMessage: ChatMessage = {
+              id: message_id,
+              role: "assistant",
+              content: "",
+              agent_name: agent_name || "TeamLeadAgent",
+            };
+
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                isStreaming: true,
+                currentMessageId: message_id,
+                accumulatedContent: "",
+                accumulatedReasoning: "",
+                toolCalls: [],
+              },
+              currentDialog: prev.currentDialog
+                ? {
+                    ...prev.currentDialog,
+                    messages: [...prev.currentDialog.messages, newMessage],
+                  }
+                : null,
+            };
+          }
+
+          case "agent:content_delta": {
+            const { message_id, delta, content } = event.data;
+            streamingMessagesRef.current[message_id] = {
+              ...streamingMessagesRef.current[message_id],
+              content,
+            };
+
+            // 使用 message_id 找到并更新对应的消息
+            const messages = [...(prev.currentDialog?.messages || [])];
+            const targetIdx = messages.findIndex((m) => m.id === message_id);
+
+            if (targetIdx >= 0) {
+              // 更新已有消息
+              messages[targetIdx] = {
+                ...messages[targetIdx],
+                content,
+              };
+            }
+
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                accumulatedContent: content,
+              },
+              currentDialog: prev.currentDialog
+                ? { ...prev.currentDialog, messages }
+                : null,
+            };
+          }
+
+          case "agent:reasoning_delta": {
+            const { message_id, delta, reasoning_content } = event.data;
+            const currentMsg = streamingMessagesRef.current[message_id];
+            if (currentMsg) {
+              currentMsg.reasoning = reasoning_content;
+            }
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                accumulatedReasoning: reasoning_content,
+                showReasoning: true,
+              },
+            };
+          }
+
+          case "agent:tool_call": {
+            const { message_id, tool_call } = event.data;
+            const newToolCalls = [...streamState.toolCalls, tool_call];
+
+            // 添加 tool_call 消息到消息列表
+            const messages = [...(prev.currentDialog?.messages || [])];
+
+            // 更新对应的 assistant 消息的 tool_calls
+            const assistantIdx = messages.findIndex((m) => m.id === message_id);
+            if (assistantIdx >= 0) {
+              messages[assistantIdx] = {
+                ...messages[assistantIdx],
+                tool_calls: newToolCalls,
+              };
+            }
+
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                toolCalls: newToolCalls,
+              },
+              currentDialog: prev.currentDialog
+                ? { ...prev.currentDialog, messages }
+                : null,
+            };
+          }
+
+          case "agent:message_complete": {
+            const { message_id, content, reasoning_content, tool_calls } = event.data;
+
+            // 清理流式缓存
+            delete streamingMessagesRef.current[message_id];
+
+            // 使用 message_id 找到并更新对应的消息
+            const messages = [...(prev.currentDialog?.messages || [])];
+            const targetIdx = messages.findIndex((m) => m.id === message_id);
+
+            if (targetIdx >= 0) {
+              messages[targetIdx] = {
+                ...messages[targetIdx],
+                content: content || messages[targetIdx].content,
+                tool_calls: tool_calls || messages[targetIdx].tool_calls,
+              };
+            }
+
+            return {
+              ...prev,
+              streamState: {
+                isStreaming: false,
+                currentMessageId: null,
+                accumulatedContent: "",
+                accumulatedReasoning: "",
+                toolCalls: [],
+                showReasoning: !!reasoning_content,
+              },
+              currentDialog: prev.currentDialog
+                ? { ...prev.currentDialog, messages, updated_at: Date.now() }
+                : null,
+            };
+          }
+
+          case "agent:error": {
+            const { error } = event.data;
+            return {
+              ...prev,
+              error,
+              streamState: {
+                ...streamState,
+                isStreaming: false,
+              },
+            };
+          }
+
+          case "agent:stopped": {
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                isStreaming: false,
+              },
+            };
+          }
+
+          default:
+            return prev;
+        }
+      });
+    };
+
+    const unsubscribeChat = globalEventEmitter.on(
+      "chat:event",
+      handleChatEvent
     );
     const unsubscribeDialog = globalEventEmitter.on(
       "dialog:subscribed",
-      handleDialogSubscribed,
+      handleDialogSubscribed
+    );
+    const unsubscribeAgent = globalEventEmitter.on(
+      "agent:event",
+      handleAgentEvent
     );
 
     return () => {
-      unsubscribeAdded();
-      unsubscribeUpdated();
-      unsubscribeStream();
+      unsubscribeChat();
       unsubscribeDialog();
+      unsubscribeAgent();
     };
-  }, [bufferMessage, mergeMessage, state.currentDialog]);
+  }, [bufferEvent, state.currentDialog]);
 
   // 设置当前对话框
-  const setCurrentDialog = useCallback((dialog: DialogSession | null) => {
+  const setCurrentDialog = useCallback((dialog: ChatSession | null) => {
     setState((prev) => {
       if (!dialog) {
         return {
@@ -327,83 +443,40 @@ export function useMessageStore() {
   }, []);
 
   // 添加本地消息
-  const addLocalMessage = useCallback((message: RealtimeMessage) => {
+  const addLocalMessage = useCallback((message: ChatMessage) => {
     setState((prev) => {
       if (!prev.currentDialog) return prev;
 
       const updatedDialog = {
         ...prev.currentDialog,
         messages: [...prev.currentDialog.messages, message],
-        updated_at: new Date().toISOString(),
+        updated_at: Date.now(),
       };
 
       return {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d,
+          d.id === updatedDialog.id ? updatedDialog : d
         ),
       };
     });
   }, []);
 
-  // 更新消息状态
-  const updateMessageStatus = useCallback(
-    (messageId: string, status: MessageStatus) => {
-      setState((prev) => {
-        if (!prev.currentDialog) return prev;
-
-        const updatedMessages = prev.currentDialog.messages.map((msg) =>
-          msg.id === messageId ? { ...msg, status } : msg,
-        );
-
-        const updatedDialog = {
-          ...prev.currentDialog,
-          messages: updatedMessages,
-        };
-
-        return {
-          ...prev,
-          currentDialog: updatedDialog,
-        };
-      });
-    },
-    [],
-  );
-
-  // 获取流式消息的内容
-  const getStreamingContent = useCallback(
-    (messageId: string) => {
-      const message = state.currentDialog?.messages.find(
-        (m) => m.id === messageId,
-      );
-      return message?.content || "";
-    },
-    [state.currentDialog],
-  );
-
-  // 获取思考消息
-  const getThinkingMessages = useCallback(
-    (parentId: string) => {
-      return (
-        state.currentDialog?.messages.filter(
-          (m) => m.type === "assistant_thinking" && m.parent_id === parentId,
-        ) || []
-      );
-    },
-    [state.currentDialog],
-  );
-
   // 获取工具调用
   const getToolCalls = useCallback(
-    (parentId: string) => {
+    (parentContent: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.type === "tool_call" && m.parent_id === parentId,
+          (m) =>
+            m.role === "assistant" &&
+            m.tool_calls &&
+            m.tool_calls.length > 0 &&
+            m.content === parentContent
         ) || []
       );
     },
-    [state.currentDialog],
+    [state.currentDialog]
   );
 
   // 获取工具结果
@@ -411,22 +484,25 @@ export function useMessageStore() {
     (toolCallId: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.type === "tool_result" && m.parent_id === toolCallId,
+          (m) => m.role === "tool" && m.tool_call_id === toolCallId
         ) || []
       );
     },
-    [state.currentDialog],
+    [state.currentDialog]
   );
 
   return {
     ...state,
     setCurrentDialog,
     addLocalMessage,
-    updateMessageStatus,
-    getStreamingContent,
-    getThinkingMessages,
     getToolCalls,
     getToolResults,
     messages: state.currentDialog?.messages || [],
+    /** 当前流式消息内容 */
+    streamingContent: state.streamState.accumulatedContent,
+    /** 当前推理内容 */
+    streamingReasoning: state.streamState.accumulatedReasoning,
+    /** 是否正在流式输出 */
+    isStreaming: state.streamState.isStreaming,
   };
 }

@@ -1,0 +1,30 @@
+{
+  // Python 语言服务器配置
+  "python.languageServer": "Pylance",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.autoImportCompletions": true,
+
+  // 禁用 IntelliCode（如果问题持续）
+  // "vsintellicode.modify.editor.suggestSelection": "disabled",
+  // "vsintellicode.python.completionsEnabled": false,
+
+  // 或者启用 IntelliCode
+  "python.analysis.intellicodeEnabled": true,
+
+  // 排除的大文件夹
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/.git": true
+  },
+
+  // 保存时格式化
+  "editor.formatOnSave": true,
+  "python.formatting.provider": "black",
+
+  // 代码检查
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.ruffEnabled": true
+}

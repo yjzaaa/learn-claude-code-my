@@ -1,429 +1,206 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Activity, GitBranch, Loader2 } from "lucide-react";
+import { X, Activity, Loader2, Bot, Play, Square, Hand } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { globalEventEmitter } from "@/lib/event-emitter";
-import type { RealtimeMessage } from "@/types/realtime-message";
+import type { ChatMessage, ChatRole } from "@/types/openai";
 
-// 运行时流程图节点定义
+interface RuntimeFlowchartProps {
+  isOpen: boolean;
+  onClose: () => void;
+  messages: ChatMessage[];
+  className?: string;
+}
+
+// 流程节点类型
+type NodeType = "start" | "agent" | "end";
+
 interface FlowNode {
   id: string;
-  label: string;
-  type: "start" | "process" | "decision" | "subprocess" | "end";
-  x: number;
-  y: number;
-  description?: string;
+  type: NodeType;
+  // 归一化位置 (0-1)
+  nx: number;
+  ny: number;
+  data: {
+    label: string;
+    displayName: string;
+    role?: ChatRole;
+    status: "idle" | "running" | "completed" | "error";
+    activeMsgType?: string;
+  };
 }
 
 interface FlowEdge {
   from: string;
   to: string;
-  label?: string;
   animated?: boolean;
 }
 
-// Agent运行时流程定义
-const RUNTIME_FLOW_NODES: FlowNode[] = [
-  { id: "idle", label: "等待输入", type: "start", x: 200, y: 30, description: "等待用户消息" },
-  { id: "receive", label: "接收消息", type: "process", x: 200, y: 90, description: "接收并解析用户输入" },
-  { id: "planning", label: "任务规划", type: "process", x: 200, y: 150, description: "分析需求，制定执行计划" },
-  { id: "llm_call", label: "LLM调用", type: "process", x: 200, y: 210, description: "调用大语言模型生成响应" },
-  { id: "tool_check", label: "需要工具?", type: "decision", x: 200, y: 280, description: "判断是否需要调用工具" },
-  { id: "tool_dispatch", label: "工具分发", type: "process", x: 80, y: 350, description: "选择合适的工具" },
-  { id: "tool_execute", label: "执行工具", type: "subprocess", x: 80, y: 420, description: "执行工具调用" },
-  { id: "subagent", label: "子代理", type: "subprocess", x: 320, y: 350, description: "委派给子代理执行" },
-  { id: "result_process", label: "处理结果", type: "process", x: 200, y: 490, description: "处理工具返回结果" },
-  { id: "stream_output", label: "流式输出", type: "process", x: 200, y: 560, description: "向用户展示结果" },
-  { id: "complete", label: "完成", type: "end", x: 200, y: 630, description: "本轮对话结束" },
-];
+// 画布尺寸配置
+const CANVAS_WIDTH = 520;
+const CANVAS_HEIGHT = 280;
+const NODE_WIDTH = 100;
+const NODE_HEIGHT = 56;
 
-const RUNTIME_FLOW_EDGES: FlowEdge[] = [
-  { from: "idle", to: "receive", animated: false },
-  { from: "receive", to: "planning", animated: false },
-  { from: "planning", to: "llm_call", animated: false },
-  { from: "llm_call", to: "tool_check", animated: false },
-  { from: "tool_check", to: "tool_dispatch", label: "是", animated: true },
-  { from: "tool_check", to: "stream_output", label: "否", animated: false },
-  { from: "tool_dispatch", to: "tool_execute", animated: true },
-  { from: "tool_dispatch", to: "subagent", label: "委派", animated: true },
-  { from: "tool_execute", to: "result_process", animated: false },
-  { from: "subagent", to: "result_process", animated: false },
-  { from: "result_process", to: "llm_call", animated: false },
-  { from: "stream_output", to: "complete", animated: false },
-];
-
-// 节点状态类型
-type NodeStatus = "idle" | "active" | "completed" | "error";
-
-interface NodeState {
-  status: NodeStatus;
-  timestamp?: number;
-  metadata?: Record<string, any>;
-}
-
-type RuntimeFlowState = Record<string, NodeState>;
-
-// 根据消息类型映射到流程节点
-function mapMessageToNode(message: RealtimeMessage): string | null {
-  switch (message.type) {
-    case "user_message":
-      return "receive";
-    case "assistant_thinking":
-      return "planning";
-    case "assistant_text":
-      if (message.status === "streaming") {
-        return "llm_call";
-      }
-      return "stream_output";
-    case "tool_call":
-      return "tool_dispatch";
-    case "tool_result":
-      return "result_process";
-    default:
-      return null;
-  }
-}
-
-// 判断是否为子代理消息
-function isSubagentMessage(message: RealtimeMessage): boolean {
-  return message.agent_type?.startsWith("worker:") || false;
-}
-
-interface RuntimeFlowchartProps {
-  isOpen: boolean;
-  onClose: () => void;
-  dialogId: string;
-  className?: string;
-}
-
-export function RuntimeFlowchart({
-  isOpen,
-  onClose,
-  dialogId,
-  className,
-}: RuntimeFlowchartProps) {
-  const [nodeStates, setNodeStates] = useState<RuntimeFlowState>({});
-  const [currentAgentType, setCurrentAgentType] = useState<string | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [roundCount, setRoundCount] = useState(0);
-
-  // 更新节点状态
-  const updateNodeState = useCallback((
-    nodeId: string,
-    status: NodeStatus,
-    metadata?: Record<string, any>
-  ) => {
-    setNodeStates((prev) => ({
-      ...prev,
-      [nodeId]: {
-        status,
-        timestamp: Date.now(),
-        metadata,
-      },
-    }));
-  }, []);
-
-  // 重置流程状态
-  const resetFlow = useCallback(() => {
-    setNodeStates({});
-    setRoundCount(0);
-    setCurrentAgentType(null);
-  }, []);
-
-  // 监听消息更新
-  useEffect(() => {
-    if (!isOpen || !dialogId) return;
-
-    const handleMessageAdded = (event: { dialog_id: string; message: RealtimeMessage }) => {
-      if (event.dialog_id !== dialogId) return;
-
-      const message = event.message;
-      const nodeId = mapMessageToNode(message);
-
-      if (nodeId) {
-        // 如果是流式消息，标记为活跃
-        if (message.status === "streaming") {
-          updateNodeState(nodeId, "active", {
-            messageId: message.id,
-            agentType: message.agent_type,
-          });
-          setIsRunning(true);
-        } else if (message.status === "completed") {
-          // 如果是完成状态，标记为已完成
-          updateNodeState(nodeId, "completed", {
-            messageId: message.id,
-            agentType: message.agent_type,
-          });
-        }
-      }
-
-      // 更新代理类型
-      if (message.agent_type) {
-        setCurrentAgentType(message.agent_type);
-      }
-
-      // 检测是否为子代理
-      if (isSubagentMessage(message)) {
-        updateNodeState("subagent", message.status === "streaming" ? "active" : "completed", {
-          workerType: message.agent_type?.replace("worker:", ""),
-        });
-      }
-    };
-
-    const handleMessageUpdated = (event: { dialog_id: string; message: RealtimeMessage }) => {
-      if (event.dialog_id !== dialogId) return;
-
-      const message = event.message;
-      const nodeId = mapMessageToNode(message);
-
-      if (nodeId) {
-        if (message.status === "streaming") {
-          updateNodeState(nodeId, "active");
-          setIsRunning(true);
-        } else if (message.status === "completed") {
-          updateNodeState(nodeId, "completed");
-          setIsRunning(false);
-        }
-      }
-    };
-
-    const handleNewDialog = () => {
-      resetFlow();
-    };
-
-    // 订阅事件
-    const unsubscribeAdded = globalEventEmitter.on("message:added", handleMessageAdded);
-    const unsubscribeUpdated = globalEventEmitter.on("message:updated", handleMessageUpdated);
-    const unsubscribeDialog = globalEventEmitter.on("dialog:created", handleNewDialog);
-
-    // 初始状态
-    updateNodeState("idle", "active");
-
-    return () => {
-      unsubscribeAdded();
-      unsubscribeUpdated();
-      unsubscribeDialog();
-    };
-  }, [isOpen, dialogId, updateNodeState, resetFlow]);
-
-  // 获取节点状态颜色
-  const getNodeColor = (nodeId: string) => {
-    const state = nodeStates[nodeId];
-    if (!state) return "var(--color-text-secondary)";
-
-    switch (state.status) {
-      case "active":
-        return "#3B82F6"; // blue-500
-      case "completed":
-        return "#10B981"; // emerald-500
-      case "error":
-        return "#EF4444"; // red-500
-      default:
-        return "var(--color-text-secondary)";
-    }
+// 从 role 提取显示名称
+function getRoleDisplayName(role?: ChatRole): { className: string; displayName: string } {
+  const roleMap: Record<ChatRole, { className: string; displayName: string }> = {
+    system: { className: "System", displayName: "系统" },
+    user: { className: "User", displayName: "用户" },
+    assistant: { className: "Assistant", displayName: "助手" },
+    tool: { className: "Tool", displayName: "工具" },
   };
 
-  // 获取节点背景色
-  const getNodeBgColor = (nodeId: string) => {
-    const state = nodeStates[nodeId];
-    if (!state) return "transparent";
+  return role ? roleMap[role] : { className: "Unknown", displayName: "未知" };
+}
 
-    switch (state.status) {
-      case "active":
-        return "rgba(59, 130, 246, 0.1)";
-      case "completed":
-        return "rgba(16, 185, 129, 0.1)";
-      case "error":
-        return "rgba(239, 68, 68, 0.1)";
-      default:
-        return "transparent";
-    }
+// 获取节点颜色
+function getNodeColor(role?: ChatRole): { bg: string; border: string; text: string } {
+  const colors: Record<ChatRole, { bg: string; border: string; text: string }> = {
+    system: { bg: "#F3F4F6", border: "#9CA3AF", text: "#4B5563" },
+    user: { bg: "#DBEAFE", border: "#60A5FA", text: "#2563EB" },
+    assistant: { bg: "#E0E7FF", border: "#818CF8", text: "#4F46E5" },
+    tool: { bg: "#CFFAFE", border: "#22D3EE", text: "#0891B2" },
   };
 
-  // 渲染节点
-  const renderNode = (node: FlowNode) => {
-    const color = getNodeColor(node.id);
-    const bgColor = getNodeBgColor(node.id);
-    const state = nodeStates[node.id];
-    const isActive = state?.status === "active";
+  return role ? colors[role] : { bg: "#F3F4F6", border: "#9CA3AF", text: "#4B5563" };
+}
 
-    const baseClasses = "transition-all duration-300";
-    const activeClasses = isActive ? "animate-pulse" : "";
+export function RuntimeFlowchart({ isOpen, onClose, messages, className }: RuntimeFlowchartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
 
-    if (node.type === "decision") {
-      const size = 40;
-      return (
-        <g key={node.id} className={cn(baseClasses, activeClasses)}>
-          <motion.polygon
-            points={`${node.x},${node.y - size} ${node.x + size},${node.y} ${node.x},${node.y + size} ${node.x - size},${node.y}`}
-            fill={bgColor}
-            stroke={color}
-            strokeWidth={isActive ? 3 : 2}
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.3 }}
-          />
-          <text
-            x={node.x}
-            y={node.y - 5}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={10}
-            fontWeight={600}
-            fill={color}
-          >
-            {node.label}
-          </text>
-          {isActive && (
-            <foreignObject x={node.x - 8} y={node.y + 5} width={16} height={16}>
-              <Loader2 className="w-4 h-4 animate-spin" style={{ color }} />
-            </foreignObject>
-          )}
-        </g>
-      );
+  // 计算流程图 - 使用归一化坐标确保在单屏内
+  const { nodes, edges, activeNodeId } = useMemo(() => {
+    const flowNodes: FlowNode[] = [];
+    const flowEdges: FlowEdge[] = [];
+
+    if (messages.length === 0) {
+      return { nodes: [], edges: [], activeNodeId: null };
     }
 
-    if (node.type === "start" || node.type === "end") {
-      const width = 100;
-      const height = 32;
-      return (
-        <g key={node.id} className={cn(baseClasses, activeClasses)}>
-          <motion.rect
-            x={node.x - width / 2}
-            y={node.y - height / 2}
-            width={width}
-            height={height}
-            rx={height / 2}
-            fill={bgColor}
-            stroke={color}
-            strokeWidth={isActive ? 3 : 2}
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.3 }}
-          />
-          <text
-            x={node.x}
-            y={node.y}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={11}
-            fontWeight={600}
-            fill={color}
-          >
-            {node.label}
-          </text>
-        </g>
-      );
+    // 收集所有唯一的角色类型
+    const uniqueRoles = new Set<ChatRole>();
+    messages.forEach((msg) => {
+      if (msg.role) {
+        uniqueRoles.add(msg.role);
+      }
+    });
+
+    const roleList = Array.from(uniqueRoles);
+    const totalNodes = roleList.length + 2; // +2 for start and end
+
+    // 添加开始节点（左侧）
+    flowNodes.push({
+      id: "start",
+      type: "start",
+      nx: 0.05,
+      ny: 0.5,
+      data: { label: "Start", displayName: "开始", status: "completed" },
+    });
+
+    // 添加角色节点（均匀分布）
+    roleList.forEach((role, index) => {
+      const nodeId = `role-${role}`;
+      const { className, displayName } = getRoleDisplayName(role);
+      // 在 0.15 到 0.85 之间均匀分布
+      const nx = 0.15 + (index + 1) * (0.7 / (totalNodes - 1));
+
+      flowNodes.push({
+        id: nodeId,
+        type: "agent",
+        nx,
+        ny: 0.5,
+        data: {
+          label: className,
+          displayName: displayName,
+          role,
+          status: "idle",
+        },
+      });
+    });
+
+    // 添加结束节点（右侧）
+    flowNodes.push({
+      id: "end",
+      type: "end",
+      nx: 0.95,
+      ny: 0.5,
+      data: { label: "End", displayName: "结束", status: "completed" },
+    });
+
+    // 创建连线
+    for (let i = 0; i < flowNodes.length - 1; i++) {
+      flowEdges.push({
+        from: flowNodes[i].id,
+        to: flowNodes[i + 1].id,
+      });
     }
 
-    const width = node.type === "subprocess" ? 110 : 100;
-    const height = 36;
-    return (
-      <g key={node.id} className={cn(baseClasses, activeClasses)}>
-        <motion.rect
-          x={node.x - width / 2}
-          y={node.y - height / 2}
-          width={width}
-          height={height}
-          rx={4}
-          fill={bgColor}
-          stroke={color}
-          strokeWidth={isActive ? 3 : 2}
-          strokeDasharray={node.type === "subprocess" ? "5 3" : undefined}
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 0.3 }}
-        />
-        <text
-          x={node.x}
-          y={node.y}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={10}
-          fontWeight={500}
-          fill={color}
-        >
-          {node.label}
-        </text>
-        {isActive && node.id === "subagent" && (
-          <foreignObject x={node.x + width / 2 - 10} y={node.y - 8} width={16} height={16}>
-            <GitBranch className="w-4 h-4" style={{ color }} />
-          </foreignObject>
-        )}
-      </g>
-    );
-  };
+    // 确定活跃节点（最后一条消息的角色）
+    let activeId: string | null = null;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role) {
+      activeId = `role-${lastMessage.role}`;
+      const node = flowNodes.find(n => n.id === activeId);
+      if (node) {
+        node.data.status = "running";
+      }
+      const edge = flowEdges.find(e => e.to === activeId);
+      if (edge) edge.animated = true;
+    }
 
-  // 渲染边
-  const renderEdge = (edge: FlowEdge, index: number) => {
-    const fromNode = RUNTIME_FLOW_NODES.find((n) => n.id === edge.from);
-    const toNode = RUNTIME_FLOW_NODES.find((n) => n.id === edge.to);
-    if (!fromNode || !toNode) return null;
+    return { nodes: flowNodes, edges: flowEdges, activeNodeId: activeId };
+  }, [messages]);
 
-    const isActive =
-      nodeStates[edge.from]?.status === "active" ||
-      nodeStates[edge.to]?.status === "active";
+  const hasRunning = useMemo(() => {
+    const lastMessage = messages[messages.length - 1];
+    return lastMessage?.role === "assistant";
+  }, [messages]);
 
-    const d = `M ${fromNode.x} ${fromNode.y + 20} L ${toNode.x} ${toNode.y - 20}`;
+  // 将归一化坐标转为实际像素
+  const toPixelX = (nx: number) => nx * CANVAS_WIDTH;
+  const toPixelY = (ny: number) => ny * CANVAS_HEIGHT;
 
-    return (
-      <g key={`${edge.from}-${edge.to}`}>
-        <motion.path
-          d={d}
-          fill="none"
-          stroke={isActive ? "#3B82F6" : "var(--color-border)"}
-          strokeWidth={isActive ? 2 : 1}
-          markerEnd="url(#arrowhead-runtime)"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 0.5, delay: index * 0.1 }}
-        />
-        {edge.label && (
-          <text
-            x={(fromNode.x + toNode.x) / 2 + 5}
-            y={(fromNode.y + toNode.y) / 2 - 5}
-            fontSize={9}
-            fill="var(--color-text-secondary)"
-          >
-            {edge.label}
-          </text>
-        )}
-      </g>
-    );
+  // 生成连线路径
+  const getPath = (edge: FlowEdge) => {
+    const from = nodes.find((n) => n.id === edge.from);
+    const to = nodes.find((n) => n.id === edge.to);
+    if (!from || !to) return "";
+
+    const startX = toPixelX(from.nx) + NODE_WIDTH / 2;
+    const startY = toPixelY(from.ny);
+    const endX = toPixelX(to.nx) - NODE_WIDTH / 2;
+    const endY = toPixelY(to.ny);
+
+    // 水平直线
+    return `M ${startX} ${startY} L ${endX} ${endY}`;
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <motion.div
-          initial={{ opacity: 0, y: -20, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -20, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
+          initial={{ opacity: 0, x: 50, width: 0 }}
+          animate={{ opacity: 1, x: 0, width: "100%", maxWidth: "560px" }}
+          exit={{ opacity: 0, x: 50, width: 0 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
           className={cn(
-            "absolute top-14 left-4 right-4 z-50",
-            "bg-white dark:bg-zinc-900",
-            "rounded-xl border border-zinc-200 dark:border-zinc-700",
-            "shadow-xl",
+            "relative h-full shrink-0 overflow-hidden flex flex-col",
+            "bg-zinc-50 dark:bg-zinc-950",
+            "border-l border-zinc-200 dark:border-zinc-700",
             className
           )}
         >
           {/* 头部 */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
-            <div className="flex items-center gap-3">
-              <Activity className={cn(
-                "w-5 h-5",
-                isRunning ? "text-blue-500 animate-pulse" : "text-zinc-500"
-              )} />
+          <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0">
+            <div className="flex items-center gap-2">
+              <Activity className={cn("w-5 h-5", hasRunning ? "text-blue-500 animate-pulse" : "text-zinc-500")} />
               <div>
-                <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  运行时流程图
-                </h3>
-                <p className="text-xs text-zinc-500">
-                  {isRunning ? "运行中" : "等待中"}
-                  {currentAgentType && ` · ${currentAgentType}`}
+                <h3 className="font-semibold text-sm">对话流程</h3>
+                <p className="text-[10px] text-zinc-500">
+                  {nodes.filter(n => n.type === "agent").length} 个角色
                 </p>
               </div>
             </div>
@@ -435,61 +212,165 @@ export function RuntimeFlowchart({
             </button>
           </div>
 
-          {/* 流程图 */}
-          <div className="p-4 overflow-x-auto">
-            <svg
-              viewBox="0 0 400 680"
-              className="mx-auto w-full max-w-[400px]"
-              style={{ minHeight: 400 }}
-            >
-              <defs>
-                <marker
-                  id="arrowhead-runtime"
-                  markerWidth={8}
-                  markerHeight={6}
-                  refX={7}
-                  refY={3}
-                  orient="auto"
+          {/* 流程图区域 - 固定尺寸 */}
+          <div className="flex-1 overflow-hidden p-4 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900">
+            {nodes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-zinc-400">
+                <Activity className="w-12 h-12 mb-3 opacity-30" />
+                <p className="text-sm">等待消息...</p>
+              </div>
+            ) : (
+              <div
+                className="relative bg-white dark:bg-zinc-900 rounded-lg shadow-sm border border-zinc-200 dark:border-zinc-700"
+                style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+              >
+                <svg
+                  width={CANVAS_WIDTH}
+                  height={CANVAS_HEIGHT}
+                  className="absolute inset-0"
                 >
-                  <polygon
-                    points="0 0, 8 3, 0 6"
-                    fill="var(--color-text-secondary)"
-                  />
-                </marker>
-              </defs>
+                  <defs>
+                    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                      <polygon points="0 0, 8 3, 0 6" fill="#9CA3AF" />
+                    </marker>
+                    <marker id="arrow-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                      <polygon points="0 0, 8 3, 0 6" fill="#3B82F6" />
+                    </marker>
+                  </defs>
 
-              {/* 渲染边 */}
-              {RUNTIME_FLOW_EDGES.map((edge, i) => renderEdge(edge, i))}
+                  {/* 连线 */}
+                  {edges.map((edge) => {
+                    const path = getPath(edge);
+                    const isActive = edge.animated;
 
-              {/* 渲染节点 */}
-              {RUNTIME_FLOW_NODES.map((node) => renderNode(node))}
-            </svg>
+                    return (
+                      <g key={`${edge.from}-${edge.to}`}>
+                        <motion.path
+                          d={path}
+                          fill="none"
+                          stroke={isActive ? "#3B82F6" : "#D1D5DB"}
+                          strokeWidth={isActive ? 3 : 2}
+                          markerEnd={isActive ? "url(#arrow-active)" : "url(#arrow)"}
+                          initial={{ pathLength: 0 }}
+                          animate={{ pathLength: 1 }}
+                          transition={{ duration: 0.5 }}
+                        />
+                      </g>
+                    );
+                  })}
+
+                  {/* 节点 */}
+                  {nodes.map((node, idx) => (
+                    <foreignObject
+                      key={node.id}
+                      x={toPixelX(node.nx) - NODE_WIDTH / 2}
+                      y={toPixelY(node.ny) - NODE_HEIGHT / 2}
+                      width={NODE_WIDTH}
+                      height={NODE_HEIGHT}
+                      style={{ pointerEvents: "none" }}
+                    >
+                      <NodeCard node={node} index={idx} />
+                    </foreignObject>
+                  ))}
+                </svg>
+
+                {/* 活跃指示器 */}
+                {activeNodeId && (
+                  <div className="absolute bottom-2 left-2 right-2 text-center">
+                    <span className="text-[10px] px-2 py-1 rounded-full bg-blue-500 text-white animate-pulse">
+                      运行中: {nodes.find(n => n.id === activeNodeId)?.data.label}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* 状态栏 */}
-          <div className="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 rounded-b-xl">
-            <div className="flex items-center justify-between text-xs text-zinc-500">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  运行中
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  已完成
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-zinc-400" />
-                  等待中
-                </span>
-              </div>
-              {roundCount > 0 && (
-                <span>已运行 {roundCount} 轮</span>
-              )}
+          {/* 底部消息列表 */}
+          <div className="px-4 py-2 border-t border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shrink-0 max-h-[140px] overflow-y-auto">
+            <div className="text-[10px] text-zinc-400 mb-1.5 font-mono">最近消息</div>
+            <div className="space-y-1">
+              {[...messages]
+                .slice(-5)
+                .reverse()
+                .map((msg, idx) => {
+                  const { className } = getRoleDisplayName(msg.role);
+                  const isStreaming = msg.role === "assistant" && idx === 0;
+                  const color = getNodeColor(msg.role);
+
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1 rounded text-[10px] border",
+                        isStreaming && "ring-1 ring-blue-400"
+                      )}
+                      style={{
+                        backgroundColor: color.bg,
+                        borderColor: color.border,
+                      }}
+                    >
+                      <span className="font-semibold truncate" style={{ color: color.text }}>
+                        {className}
+                      </span>
+                      {isStreaming && <Loader2 className="w-3 h-3 animate-spin shrink-0" style={{ color: color.text }} />}
+                      <span className="text-zinc-600 dark:text-zinc-400 truncate flex-1">
+                        {msg.role}
+                      </span>
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// 节点卡片
+function NodeCard({ node, index }: { node: FlowNode; index: number }) {
+  const isRunning = node.data.status === "running";
+  const isError = node.data.status === "error";
+
+  const color = node.data.role
+    ? getNodeColor(node.data.role)
+    : {
+        bg: isRunning ? "#DBEAFE" : isError ? "#FEE2E2" : "#DCFCE7",
+        border: isRunning ? "#3B82F6" : isError ? "#EF4444" : "#22C55E",
+        text: isRunning ? "#2563EB" : isError ? "#DC2626" : "#16A34A",
+      };
+
+  const Icon = node.type === "start" ? Play : node.type === "end" ? Square : Bot;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, delay: index * 0.1 }}
+      className={cn(
+        "w-full h-full rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 p-1",
+        "shadow-sm transition-all duration-300",
+        isRunning && "ring-2 ring-blue-400 ring-offset-1 shadow-md"
+      )}
+      style={{
+        backgroundColor: color.bg,
+        borderColor: color.border,
+      }}
+    >
+      <Icon className="w-3.5 h-3.5" style={{ color: color.text }} />
+      <span
+        className="text-[9px] font-bold text-center truncate w-full leading-tight"
+        style={{ color: color.text }}
+        title={node.data.label}
+      >
+        {node.data.label}
+      </span>
+      {isRunning && node.data.activeMsgType && (
+        <span className="text-[7px] px-1 rounded bg-blue-500 text-white">
+          {node.data.activeMsgType.split('_')[0]}
+        </span>
+      )}
+    </motion.div>
   );
 }

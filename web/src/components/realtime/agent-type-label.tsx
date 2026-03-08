@@ -1,108 +1,83 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { AgentType, AGENT_TYPE_CONFIG } from "@/types/realtime-message";
-import { Bot, Database, Search, ShieldCheck, BarChart3, Puzzle, Settings, HardHat } from "lucide-react";
+import type { ChatRole } from "@/types/openai";
+import { Bot, Database, Search, ShieldCheck, BarChart3, Puzzle, Settings, HardHat, User, Wrench } from "lucide-react";
 
-interface AgentTypeLabelProps {
-  agentType: AgentType | string | undefined;
+interface RoleLabelProps {
+  role: ChatRole | string | undefined;
   size?: "sm" | "md" | "lg";
   showDescription?: boolean;
   className?: string;
+  /** Agent 名称（动态显示，如 TodoAgent、SubAgentWithPlugins） */
+  agentName?: string;
 }
 
-const AGENT_ICONS: Record<AgentType, React.ComponentType<{ className?: string }>> = {
-  master: Bot,
-  sql_executor: Database,
-  schema_explorer: Search,
-  data_validator: ShieldCheck,
-  analyzer: BarChart3,
-  skill_loader: Puzzle,
-  default: Settings,
+// 角色图标映射
+const ROLE_ICONS: Record<ChatRole, React.ComponentType<{ className?: string }>> = {
+  system: Settings,
+  user: User,
+  assistant: Bot,
+  tool: Wrench,
 };
 
-// Worker 类型配置（处理 worker:xxx 格式）
-const WORKER_CONFIG: Record<string, { label: string; description: string; icon: React.ComponentType<{ className?: string }>; color: string; bgColor: string; borderColor: string }> = {
-  "worker:sql_executor": {
-    label: "SQL执行",
-    description: "SQL执行子代理",
-    icon: Database,
+// 角色配置
+const ROLE_CONFIG: Record<ChatRole, { label: string; description: string; color: string; bgColor: string; borderColor: string }> = {
+  system: {
+    label: "系统",
+    description: "系统消息",
+    color: "text-gray-600",
+    bgColor: "bg-gray-50",
+    borderColor: "border-gray-200",
+  },
+  user: {
+    label: "用户",
+    description: "用户输入",
     color: "text-blue-600",
     bgColor: "bg-blue-50",
     borderColor: "border-blue-200",
   },
-  "worker:schema_explorer": {
-    label: "Schema探索",
-    description: "Schema探索子代理",
-    icon: Search,
+  assistant: {
+    label: "助手",
+    description: "AI 助手",
+    color: "text-purple-600",
+    bgColor: "bg-purple-50",
+    borderColor: "border-purple-200",
+  },
+  tool: {
+    label: "工具",
+    description: "工具调用结果",
     color: "text-cyan-600",
     bgColor: "bg-cyan-50",
     borderColor: "border-cyan-200",
   },
-  "worker:data_validator": {
-    label: "数据验证",
-    description: "数据验证子代理",
-    icon: ShieldCheck,
-    color: "text-amber-600",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
-  },
-  "worker:analyzer": {
-    label: "分析器",
-    description: "数据分析子代理",
-    icon: BarChart3,
-    color: "text-emerald-600",
-    bgColor: "bg-emerald-50",
-    borderColor: "border-emerald-200",
-  },
 };
 
-// 解析 agent_type，支持 worker:xxx 格式
-function parseAgentType(agentType: AgentType | string | undefined): {
-  type: AgentType | string;
-  config: typeof AGENT_TYPE_CONFIG[AgentType] | typeof WORKER_CONFIG[string];
+// 解析角色类型
+function parseRole(role: ChatRole | string | undefined): {
+  type: ChatRole | string;
+  config: typeof ROLE_CONFIG[ChatRole];
   Icon: React.ComponentType<{ className?: string }>;
-  isWorker: boolean;
 } {
-  const type = agentType || "default";
+  const type = (role || "assistant") as ChatRole;
+  const config = ROLE_CONFIG[type] || ROLE_CONFIG.assistant;
+  const Icon = ROLE_ICONS[type] || ROLE_ICONS.assistant;
 
-  // 检查是否是 worker 类型
-  if (typeof type === "string" && type.startsWith("worker:")) {
-    const workerType = type as keyof typeof WORKER_CONFIG;
-    const workerConfig = WORKER_CONFIG[workerType] || {
-      label: type.replace("worker:", ""),
-      description: "子代理",
-      icon: HardHat,
-      color: "text-slate-600",
-      bgColor: "bg-slate-50",
-      borderColor: "border-slate-200",
-    };
-    return {
-      type,
-      config: workerConfig,
-      Icon: workerConfig.icon,
-      isWorker: true,
-    };
-  }
-
-  // 标准 agent 类型
-  const config = AGENT_TYPE_CONFIG[type as AgentType] || AGENT_TYPE_CONFIG.default;
-  const Icon = AGENT_ICONS[type as AgentType] || AGENT_ICONS.default;
   return {
     type,
     config,
     Icon,
-    isWorker: false,
   };
 }
 
-export function AgentTypeLabel({
-  agentType,
+export function RoleLabel({
+  role,
   size = "md",
   showDescription = false,
   className,
-}: AgentTypeLabelProps) {
-  const { config, Icon } = parseAgentType(agentType);
+  agentName,
+}: RoleLabelProps) {
+  const { config, Icon } = parseRole(role);
 
   const sizeClasses = {
     sm: "px-1.5 py-0.5 text-[10px] gap-1",
@@ -116,6 +91,12 @@ export function AgentTypeLabel({
     lg: "h-4 w-4",
   };
 
+  // 使用传入的 agentName（如 TodoAgent），否则使用默认标签（如 助手）
+  const displayLabel = agentName || config.label;
+  const displayTitle = agentName
+    ? `${agentName} (${config.description})`
+    : config.description;
+
   return (
     <div
       className={cn(
@@ -126,25 +107,25 @@ export function AgentTypeLabel({
         sizeClasses[size],
         className
       )}
-      title={config.description}
+      title={displayTitle}
     >
       <Icon className={iconSizes[size]} />
-      <span>{config.label}</span>
+      <span>{displayLabel}</span>
     </div>
   );
 }
 
 // 紧凑版本（仅图标）
-export function AgentTypeIcon({
-  agentType,
+export function RoleIcon({
+  role,
   size = "md",
   className,
 }: {
-  agentType: AgentType | string | undefined;
+  role: ChatRole | string | undefined;
   size?: "sm" | "md" | "lg";
   className?: string;
 }) {
-  const { config, Icon } = parseAgentType(agentType);
+  const { config, Icon } = parseRole(role);
 
   const iconSizes = {
     sm: "h-3 w-3",
@@ -167,45 +148,40 @@ export function AgentTypeIcon({
   );
 }
 
-// 代理类型选择器（用于切换代理）
-export function AgentTypeSelector({
-  currentAgent,
+// 角色选择器（用于切换角色）
+export function RoleSelector({
+  currentRole,
   onSelect,
   className,
 }: {
-  currentAgent: AgentType;
-  onSelect: (agent: AgentType) => void;
+  currentRole: ChatRole;
+  onSelect: (role: ChatRole) => void;
   className?: string;
 }) {
-  const agents: AgentType[] = [
-    "master",
-    "sql_executor",
-    "schema_explorer",
-    "data_validator",
-    "analyzer",
-  ];
+  const roles: ChatRole[] = ["system", "user", "assistant", "tool"];
 
   return (
     <div className={cn("flex flex-wrap gap-2", className)}>
-      {agents.map((agent) => (
-        <button
-          key={agent}
-          onClick={() => onSelect(agent)}
-          className={cn(
-            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
-            "border hover:shadow-sm",
-            currentAgent === agent
-              ? `${AGENT_TYPE_CONFIG[agent].bgColor} ${AGENT_TYPE_CONFIG[agent].borderColor} ${AGENT_TYPE_CONFIG[agent].color} ring-1 ring-offset-1`
-              : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-          )}
-        >
-          {(() => {
-            const Icon = AGENT_ICONS[agent];
-            return <Icon className="h-3.5 w-3.5" />;
-          })()}
-          <span>{AGENT_TYPE_CONFIG[agent].label}</span>
-        </button>
-      ))}
+      {roles.map((role) => {
+        const config = ROLE_CONFIG[role];
+        const Icon = ROLE_ICONS[role];
+        return (
+          <button
+            key={role}
+            onClick={() => onSelect(role)}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+              "border hover:shadow-sm",
+              currentRole === role
+                ? `${config.bgColor} ${config.borderColor} ${config.color} ring-1 ring-offset-1`
+                : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            <span>{config.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
