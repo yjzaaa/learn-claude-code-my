@@ -15,7 +15,7 @@ export interface ChatCompletionMessageToolCall {
   /** 工具调用ID */
   id: string;
   /** 调用类型 */
-  type: "function";
+  type?: "function";
   /** 函数信息 */
   function: {
     /** 函数名 */
@@ -30,6 +30,8 @@ export interface ChatMessage {
   role: ChatRole;
   /** 消息内容 */
   content: string | null;
+  /** 推理内容 (仅推理模型如 DeepSeek-R1) */
+  reasoning_content?: string;
   /** 工具调用列表 (仅 assistant 角色) */
   tool_calls?: ChatCompletionMessageToolCall[];
   /** 工具调用ID (仅 tool 角色) */

@@ -16,6 +16,7 @@ interface MessageStoreState {
 
 interface ChatSession {
   id: string;
+  title?: string;
   messages: ChatMessage[];
   model?: string;
   created_at: number;
@@ -185,11 +186,10 @@ export function useMessageStore() {
           let mergedMessages: ChatMessage[] = [];
           if (existingDialog) {
             mergedMessages = [...existingDialog.messages];
-            // 添加服务器有但本地没有的消息
+            // 添加服务器有但本地没有的消息（通过ID判断）
             normalizedDialog.messages.forEach((serverMsg) => {
               const exists = mergedMessages.some(
-                (m) =>
-                  m.role === serverMsg.role && m.content === serverMsg.content,
+                (m) => m.id === serverMsg.id,
               );
               if (!exists) {
                 mergedMessages.push(serverMsg);
@@ -200,11 +200,7 @@ export function useMessageStore() {
           }
 
           const dialogToUse: ChatSession = {
-<<<<<<< HEAD
             ...normalizedDialog,
-=======
-            ...event.dialog!,
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
             messages: mergedMessages,
           };
 
@@ -227,7 +223,24 @@ export function useMessageStore() {
 
     // Agent 流式事件处理
     const handleAgentEvent = (event: AgentEvent) => {
-      if (!state.currentDialog || event.dialog_id !== state.currentDialog.id) {
+      // 对于 message_start 事件，如果没有 currentDialog，尝试从 event 创建
+      if (!state.currentDialog) {
+        if (event.type === "agent:message_start") {
+          console.log("[MessageStore] No current dialog, buffering message_start event");
+          // 延迟处理这个事件，等待 dialog:subscribed
+          setTimeout(() => {
+            globalEventEmitter.emit("agent:event", event);
+          }, 100);
+        } else {
+          console.log("[MessageStore] Skipping agent event: no current dialog", event.type);
+        }
+        return;
+      }
+      if (event.dialog_id !== state.currentDialog.id) {
+        console.log("[MessageStore] Skipping agent event: dialog_id mismatch", {
+          event_dialog_id: event.dialog_id,
+          current_dialog_id: state.currentDialog.id,
+        });
         return;
       }
 
@@ -242,6 +255,14 @@ export function useMessageStore() {
         switch (event.type) {
           case "agent:message_start": {
             const { message_id, role, agent_name } = event.data;
+
+            // 检查消息是否已存在，避免重复创建
+            const existingMessage = prev.currentDialog?.messages.find(m => m.id === message_id);
+            if (existingMessage) {
+              console.log("[MessageStore] Message already exists, skipping:", message_id);
+              return prev;
+            }
+
             streamingMessagesRef.current[message_id] = {
               content: "",
               agentName: agent_name || "TeamLeadAgent",
@@ -311,6 +332,17 @@ export function useMessageStore() {
             if (currentMsg) {
               currentMsg.reasoning = reasoning_content;
             }
+
+            // 同时更新消息对象中的 reasoning_content
+            const messages = [...(prev.currentDialog?.messages || [])];
+            const targetIdx = messages.findIndex((m) => m.id === message_id);
+            if (targetIdx >= 0) {
+              messages[targetIdx] = {
+                ...messages[targetIdx],
+                reasoning_content: reasoning_content,
+              };
+            }
+
             return {
               ...prev,
               streamState: {
@@ -318,11 +350,15 @@ export function useMessageStore() {
                 accumulatedReasoning: reasoning_content,
                 showReasoning: true,
               },
+              currentDialog: prev.currentDialog
+                ? { ...prev.currentDialog, messages }
+                : null,
             };
           }
 
           case "agent:tool_call": {
             const { message_id, tool_call } = event.data;
+            console.log("[MessageStore] agent:tool_call received:", { message_id, tool_call });
             const newToolCalls = [...streamState.toolCalls, tool_call];
 
             // 添加 tool_call 消息到消息列表
@@ -331,6 +367,7 @@ export function useMessageStore() {
             // 更新对应的 assistant 消息的 tool_calls
             const assistantIdx = messages.findIndex((m) => m.id === message_id);
             if (assistantIdx >= 0) {
+              console.log("[MessageStore] Updating assistant message at index:", assistantIdx);
               messages[assistantIdx] = {
                 ...messages[assistantIdx],
                 tool_calls: newToolCalls,
@@ -351,6 +388,7 @@ export function useMessageStore() {
 
           case "agent:tool_result": {
             const { tool_call_id, tool_name, result } = event.data;
+            console.log("[MessageStore] agent:tool_result received:", { tool_call_id, tool_name, result });
 
             // 创建工具结果消息
             const toolResultMessage: ChatMessage = {
@@ -387,11 +425,13 @@ export function useMessageStore() {
               const nextContent = content || messages[targetIdx].content || "";
               const nextToolCalls =
                 tool_calls || messages[targetIdx].tool_calls;
+              const nextReasoningContent = reasoning_content || messages[targetIdx].reasoning_content;
 
               messages[targetIdx] = {
                 ...messages[targetIdx],
                 content: nextContent,
                 tool_calls: nextToolCalls,
+                reasoning_content: nextReasoningContent,
               };
 
               // 清理仅由 message_start 产生的空 assistant 占位，避免 UI 出现“(无内容)”噪音。
@@ -515,6 +555,58 @@ export function useMessageStore() {
     });
   }, []);
 
+  // 重置并设置新对话框（用于新建对话）
+  const resetAndSetDialog = useCallback((dialog: ChatSession | null) => {
+    setState((prev) => {
+      if (!dialog) {
+        return {
+          ...prev,
+          currentDialog: null,
+          streamState: {
+            isStreaming: false,
+            currentMessageId: null,
+            accumulatedContent: "",
+            accumulatedReasoning: "",
+            toolCalls: [],
+            showReasoning: false,
+            hookStats: null,
+            runReport: null,
+          },
+        };
+      }
+
+      // 先把当前对话框保存到历史列表（如果存在且不在列表中）
+      let updatedDialogs = [...prev.dialogs];
+      if (prev.currentDialog && !updatedDialogs.some((d) => d.id === prev.currentDialog!.id)) {
+        updatedDialogs.push(prev.currentDialog);
+      }
+
+      // 确保新对话框在历史列表中
+      if (!updatedDialogs.some((d) => d.id === dialog.id)) {
+        updatedDialogs.push(dialog);
+      } else {
+        // 更新已存在的对话框
+        updatedDialogs = updatedDialogs.map((d) => (d.id === dialog.id ? dialog : d));
+      }
+
+      return {
+        ...prev,
+        currentDialog: dialog,
+        dialogs: updatedDialogs,
+        streamState: {
+          isStreaming: false,
+          currentMessageId: null,
+          accumulatedContent: "",
+          accumulatedReasoning: "",
+          toolCalls: [],
+          showReasoning: false,
+          hookStats: null,
+          runReport: null,
+        },
+      };
+    });
+  }, []);
+
   // 添加本地消息
   const addLocalMessage = useCallback((message: ChatMessage) => {
     setState((prev) => {
@@ -567,6 +659,7 @@ export function useMessageStore() {
   return {
     ...state,
     setCurrentDialog,
+    resetAndSetDialog,
     addLocalMessage,
     getToolCalls,
     getToolResults,

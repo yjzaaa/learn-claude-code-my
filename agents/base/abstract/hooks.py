@@ -38,7 +38,7 @@ class FullAgentHooks(AgentLifecycleHooks):
         raise NotImplementedError
 
     @abstractmethod
-    def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
+    def on_tool_call(self, name: str, arguments: dict[str, Any], tool_call_id: str = "") -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -68,13 +68,18 @@ class FullAgentHooks(AgentLifecycleHooks):
         raise NotImplementedError
 
     def on_hook(self, hook: HookName, **payload: Any) -> None:
+        from loguru import logger
+        logger.info(f"[FullAgentHooks] on_hook called: hook={hook}, payload_keys={list(payload.keys())}")
         if hook == HookName.ON_BEFORE_RUN:
             self.on_before_run(payload.get("messages", []))
         elif hook == HookName.ON_STREAM_TOKEN:
-            self.on_stream_token(payload.get("chunk"))
+            chunk = payload.get("chunk")
+            logger.info(f"[FullAgentHooks] ON_STREAM_TOKEN: chunk_type={type(chunk).__name__}, chunk={repr(chunk)[:100] if chunk else 'None'}")
+            self.on_stream_token(chunk)
         elif hook == HookName.ON_TOOL_CALL:
-            self.on_tool_call(payload.get("name", ""), payload.get("arguments", {}))
+            self.on_tool_call(payload.get("name", ""), payload.get("arguments", {}), payload.get("tool_call_id", ""))
         elif hook == HookName.ON_TOOL_RESULT:
+            logger.info(f"[FullAgentHooks] ON_TOOL_RESULT: name={payload.get('name', '')}, tool_call_id={payload.get('tool_call_id', '')}")
             self.on_tool_result(
                 payload.get("name", ""),
                 str(payload.get("result", "")),

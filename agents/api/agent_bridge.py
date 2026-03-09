@@ -9,6 +9,7 @@ AgentWebSocketBridge - Agent 与 WebSocket 之间的桥接层
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
@@ -150,6 +151,9 @@ class AgentWebSocketBridge(FullAgentHooks):
     def on_before_run(self, messages: list[dict[str, Any]]) -> None:
         _ = messages
         self.buffer.reset()
+        # 重置当前助手消息，确保每轮对话只有一个 Agent 框
+        self._current_assistant_message = None
+        self._message_id = 0
 
     def on_stream_token(self, chunk: Any):
         """
@@ -215,16 +219,19 @@ class AgentWebSocketBridge(FullAgentHooks):
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_stream_token: {e}")
 
-    def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
+    def on_tool_call(self, name: str, arguments: dict[str, Any], tool_call_id: str = "") -> None:
         """
         处理工具调用
 
         BaseAgentLoop 在调用工具前会调用此钩子
         """
         try:
+            # 使用传入的 tool_call_id 或生成新的
+            actual_tool_call_id = tool_call_id or f"call_{self._get_next_message_id()}"
+
             # 创建工具调用对象 (OpenAI 格式)
             tool_call_obj = ChatCompletionMessageToolCall(
-                id=f"call_{self._get_next_message_id()}",
+                id=actual_tool_call_id,
                 type="function",
                 function={
                     "name": name,
@@ -239,72 +246,69 @@ class AgentWebSocketBridge(FullAgentHooks):
                 "arguments": arguments if isinstance(arguments, dict) else {"raw": str(arguments)},
             })
 
+            # 确保 _current_assistant_message 存在（模型可能直接调用工具而不输出内容）
+            if self._current_assistant_message is None:
+                self._current_assistant_message = self._create_assistant_message()
+                # 发送开始事件
+                self._safe_broadcast("message_start", {
+                    "message_id": self._current_assistant_message.id,
+                    "role": "assistant",
+                    "agent_name": self.agent_name,
+                })
+                logger.info(f"[AgentBridge] Created assistant message for tool-only response: {self._current_assistant_message.id}")
+
             self._safe_broadcast("tool_call", {
-                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
+                "message_id": self._current_assistant_message.id,
                 "tool_call": tool_call_dict,
             })
 
             # 同时保存到对话框历史 (使用对象类型)
-            if self._current_assistant_message:
-                if not self._current_assistant_message.tool_calls:
-                    self._current_assistant_message.tool_calls = []
-                self._current_assistant_message.tool_calls.append(tool_call_obj)
+            if not self._current_assistant_message.tool_calls:
+                self._current_assistant_message.tool_calls = []
+            self._current_assistant_message.tool_calls.append(tool_call_obj)
+            logger.info(f"[AgentBridge] Added tool_call {actual_tool_call_id} to assistant message {self._current_assistant_message.id}")
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_tool_call: {e}")
 
-<<<<<<< HEAD
-    def on_tool_result(
-        self,
-        name: str,
-        result: str,
-        assistant_message: dict[str, Any] | None = None,
-        tool_call_id: str = "",
-    ) -> None:
-        _ = name
-        _ = assistant_message
-        _ = tool_call_id
-        _ = result
-
-    def on_complete(self, content: str) -> None:
-=======
-    def on_tool_result(self, tool_name: str, arguments: dict, result: Any, tool_call_id: str = None):
+    def on_tool_result(self, name: str, result: str, assistant_message: dict[str, Any] | None = None, tool_call_id: str = ""):
         """
         处理工具执行结果
 
         BaseAgentLoop 在工具执行完成后会调用此钩子
         """
+        logger.info(f"[AgentBridge] on_tool_result called: name={name}, tool_call_id={tool_call_id}")
         try:
             # 生成工具结果消息 ID
             result_message_id = f"{self._get_next_message_id()}_result"
 
             # 广播工具执行结果
+            logger.info(f"[AgentBridge] Broadcasting tool_result for {tool_call_id}")
             self._safe_broadcast("tool_result", {
                 "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
                 "tool_call_id": tool_call_id or f"call_{result_message_id}",
-                "tool_name": tool_name,
-                "arguments": arguments,
-                "result": result if isinstance(result, (dict, list)) else str(result),
-                "timestamp": asyncio.get_event_loop().time() if self._loop else 0,
+                "tool_name": name,
+                "result": result,
+                "timestamp": time.time(),
             })
 
             # 创建工具结果消息并保存到对话框历史
             from ..models import ChatMessage
+            actual_result = str(result)
             tool_result_msg = ChatMessage.tool(
-                content=str(result),
+                content=actual_result,
                 tool_call_id=tool_call_id or f"call_{result_message_id}",
-                name=tool_name,
+                name=name,
             )
             tool_result_msg.id = result_message_id
             event_manager.add_chat_message(self.dialog_id, tool_result_msg)
 
-            logger.info(f"[AgentBridge] Tool result broadcast: {tool_name} -> {str(result)[:100]}...")
+            logger.info(f"[AgentBridge] Tool result broadcast: {name} -> {actual_result[:100]}...")
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_tool_result: {e}")
 
     def on_complete(self, final_content: str):
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
         """
         处理完成事件
 
@@ -313,9 +317,12 @@ class AgentWebSocketBridge(FullAgentHooks):
         try:
             # 保存最终消息到对话框
             if self._current_assistant_message:
-                self._current_assistant_message.content = content or self.buffer.content
+                self._current_assistant_message.content = final_content or self.buffer.content
                 event_manager.add_chat_message(self.dialog_id, self._current_assistant_message)
                 self.buffer.hook_stats["complete_payload"] = self._current_assistant_message.content
+
+                logger.info(f"[AgentBridge] on_complete: Saved assistant message {self._current_assistant_message.id} "
+                           f"with {len(self._current_assistant_message.tool_calls or [])} tool_calls")
 
                 # 发送完成事件
                 self._safe_broadcast("message_complete", {
@@ -324,6 +331,8 @@ class AgentWebSocketBridge(FullAgentHooks):
                     "reasoning_content": self.buffer.reasoning_content,
                     "tool_calls": self.buffer.tool_calls,
                 })
+            else:
+                logger.warning(f"[AgentBridge] on_complete: _current_assistant_message is None, nothing to save")
             import pathlib
             #以存jsonl格式保存完整对话
             output_dir = pathlib.Path(".logs")
@@ -433,6 +442,7 @@ class AgentWebSocketBridge(FullAgentHooks):
         return out
 
     def on_hook(self, hook: HookName, **payload: Any) -> None:
+        logger.info(f"[AgentBridge] on_hook called: {hook}")
         super().on_hook(hook, **payload)
 
     def get_hook_kwargs(self) -> dict[str, Callable]:

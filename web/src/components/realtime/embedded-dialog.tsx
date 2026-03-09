@@ -1,18 +1,17 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAgentApi } from "@/hooks/useAgentApi";
 import { useMessageStore } from "@/hooks/useMessageStore";
-import { buildMessageRenderItems } from "@/lib/realtime/studio-view-model";
 import type { ChatSession } from "@/types/openai";
 import { CollapsibleMessage } from "./collapsible-message";
 import { StatusIndicator } from "./status-indicator";
 import { MessageSquare, Send, Plus, Square, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RuntimeFlowchart } from "./runtime-flowchart";
-import { HookStatsPanel } from "./hook-stats-panel";
+import { buildMessageRenderItems } from "@/lib/realtime/studio-view-model";
 
 interface EmbeddedDialogProps {
   className?: string;
@@ -27,52 +26,21 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const [isStopping, setIsStopping] = useState(false);
   const [showFlowchart, setShowFlowchart] = useState(false);
   const activeDialogIdRef = useRef<string>("");
-  const creatingDialogPromiseRef = useRef<Promise<string> | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // WebSocket连接
-  const { status, subscribeToDialog, isConnected } = useWebSocket();
+  const { subscribeToDialog, isConnected } = useWebSocket();
 
   // HTTP API
   const { sendMessage, createDialog, getDialog, stopAgent } = useAgentApi();
 
   // 消息存储
-  const { currentDialog, setCurrentDialog, messages, streamState } =
-    useMessageStore();
+  const { dialogs, currentDialog, setCurrentDialog, resetAndSetDialog, messages, isStreaming } = useMessageStore();
 
   const activeDialogId = dialogId || currentDialog?.id || "";
 
   useEffect(() => {
     activeDialogIdRef.current = activeDialogId;
   }, [activeDialogId]);
-
-  // 初始化：如果没有对话框，创建一个
-  useEffect(() => {
-    if (!dialogId) {
-      void (async () => {
-        const result = await createDialog("Agent 对话");
-        if (result.success && result.data) {
-          activeDialogIdRef.current = result.data.id;
-          setDialogId(result.data.id);
-          // 转换 Dialog 为 ChatSession 类型
-          setCurrentDialog({
-            ...result.data,
-            created_at: Date.parse(result.data.created_at) || Date.now(),
-            updated_at: Date.parse(result.data.updated_at) || Date.now(),
-          } as ChatSession);
-          if (isConnected) {
-            subscribeToDialog(result.data.id);
-          }
-        }
-      })();
-    }
-  }, [
-    dialogId,
-    createDialog,
-    isConnected,
-    setCurrentDialog,
-    subscribeToDialog,
-  ]);
 
   // 加载对话框数据并订阅
   useEffect(() => {
@@ -95,12 +63,10 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   // 监控 WebSocket 连接状态
   useEffect(() => {
     console.log(
-      "[EmbeddedDialog] WebSocket status:",
-      status,
-      "isConnected:",
+      "[EmbeddedDialog] WebSocket isConnected:",
       isConnected,
     );
-  }, [status, isConnected]);
+  }, [isConnected]);
 
   // 当对话框 ID 变化时，重新订阅
   useEffect(() => {
@@ -115,92 +81,11 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     console.log("[EmbeddedDialog] Messages updated:", messages);
   }, [messages]);
 
-  // 随消息增长和流式更新自动滚动到底部
-  useEffect(() => {
-    if (!messagesEndRef.current) return;
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "end",
-      });
-    });
-  }, [
-    messages.length,
-    streamState.accumulatedContent,
-    streamState.accumulatedReasoning,
-  ]);
+  // 使用 useMessageStore 中的 isStreaming 状态
+  const dialogStatus = isStreaming ? "streaming" : "completed";
 
-  // 获取对话框状态
-  const dialogStatus = (() => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return "completed";
-    // ChatMessage 没有 status 字段，根据 role 判断
-    if (lastMessage.role === "assistant") {
-      // 检查是否是流式状态（通过全局事件或 WebSocket 状态判断）
-      return "streaming";
-    }
-    return "completed";
-  })();
-
-  // 检查是否有正在运行的Agent（考虑所有消息，不只是最后一条）
-  const hasRunningAgent = useMemo(() => {
-    // ChatMessage 没有 status 字段，简化判断
-    return messages.some(
-      (msg) =>
-        msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0,
-    );
-  }, [messages]);
-
-  const renderItems = useMemo(
-    () => buildMessageRenderItems(messages),
-    [messages],
-  );
-
-  // 发送消息
-  const ensureDialogReady = useCallback(async (): Promise<string> => {
-    const currentId = activeDialogIdRef.current || activeDialogId;
-    if (currentId) {
-      return currentId;
-    }
-
-    if (creatingDialogPromiseRef.current) {
-      return creatingDialogPromiseRef.current;
-    }
-
-    creatingDialogPromiseRef.current = (async () => {
-      const result = await createDialog("Agent 对话");
-      if (result.success && result.data) {
-        activeDialogIdRef.current = result.data.id;
-        setDialogId(result.data.id);
-        // 转换 Dialog 为 ChatSession 类型
-        setCurrentDialog({
-          ...result.data,
-          created_at: Date.parse(result.data.created_at) || Date.now(),
-          updated_at: Date.parse(result.data.updated_at) || Date.now(),
-        } as ChatSession);
-        if (isConnected) {
-          subscribeToDialog(result.data.id);
-        }
-        return result.data.id;
-      }
-
-      console.error("[EmbeddedDialog] createDialog failed:", result);
-      setSendError(result.message || "创建对话失败，请检查后端服务");
-      return "";
-    })();
-
-    try {
-      return await creatingDialogPromiseRef.current;
-    } finally {
-      creatingDialogPromiseRef.current = null;
-    }
-  }, [
-    activeDialogId,
-    createDialog,
-    isConnected,
-    setCurrentDialog,
-    subscribeToDialog,
-  ]);
+  // 构建消息渲染项（用于正确匹配 toolResults）
+  const renderItems = buildMessageRenderItems(messages);
 
   const handleSend = async () => {
     if (isSending) {
@@ -211,8 +96,6 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     console.log(
       "[EmbeddedDialog] handleSend called, inputValue:",
       content,
-      "dialogId:",
-      activeDialogId,
     );
 
     if (!content) {
@@ -223,22 +106,38 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     setSendError("");
     setIsSending(true);
     try {
-      const targetDialogId =
-        activeDialogIdRef.current || (await ensureDialogReady());
-      if (!targetDialogId) {
-        console.log("[EmbeddedDialog] Send aborted - failed to create dialog");
+      // 每次发送都创建新对话框
+      const result = await createDialog("Agent 对话");
+      if (!result.success || !result.data) {
+        console.error("[EmbeddedDialog] Failed to create dialog:", result);
+        setSendError(result.message || "创建对话失败，请检查后端服务");
         return;
+      }
+
+      const newDialogId = result.data.id;
+      activeDialogIdRef.current = newDialogId;
+      setDialogId(newDialogId);
+
+      // 使用 resetAndSetDialog 重置状态并设置新对话框
+      resetAndSetDialog({
+        ...result.data,
+        created_at: Date.parse(result.data.created_at) || Date.now(),
+        updated_at: Date.parse(result.data.updated_at) || Date.now(),
+      } as ChatSession);
+
+      if (isConnected) {
+        subscribeToDialog(newDialogId);
       }
 
       setInputValue("");
 
-      console.log("[EmbeddedDialog] Sending message to API...");
-      const result = await sendMessage(targetDialogId, content);
-      console.log("[EmbeddedDialog] sendMessage result:", result);
-      if (!result.success) {
+      console.log("[EmbeddedDialog] Sending message to new dialog:", newDialogId);
+      const sendResult = await sendMessage(newDialogId, content);
+      console.log("[EmbeddedDialog] sendMessage result:", sendResult);
+      if (!sendResult.success) {
         // Keep user input when API send fails, so users can retry quickly.
         setInputValue(content);
-        setSendError(result.message || "发送失败，请检查后端接口");
+        setSendError(sendResult.message || "发送失败，请检查后端接口");
       }
     } finally {
       setIsSending(false);
@@ -261,8 +160,8 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
       if (result.success && result.data) {
         activeDialogIdRef.current = result.data.id;
         setDialogId(result.data.id);
-        // 转换 Dialog 为 ChatSession 类型
-        setCurrentDialog({
+        // 转换 Dialog 为 ChatSession 类型，使用 resetAndSetDialog 重置状态
+        resetAndSetDialog({
           ...result.data,
           created_at: Date.parse(result.data.created_at) || Date.now(),
           updated_at: Date.parse(result.data.updated_at) || Date.now(),
@@ -278,12 +177,14 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
 
   // 停止当前Agent运行
   const handleStopAgent = async () => {
-    if (dialogStatus !== "streaming") return;
+    if (!isStreaming) return;
     setIsStopping(true);
     try {
+      console.log("[EmbeddedDialog] Stopping agent, current messages:", messages);
       const result = await stopAgent();
       if (result.success) {
         console.log("[EmbeddedDialog] Agent stopped successfully");
+        console.log("[EmbeddedDialog] Messages after stop:", messages);
       } else {
         console.error("[EmbeddedDialog] Failed to stop agent:", result.message);
       }
@@ -297,35 +198,12 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   return (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden rounded-2xl border border-[#d6deeb] bg-white/85 shadow-[0_20px_60px_-35px_rgba(15,23,42,0.45)] backdrop-blur-sm",
-        "dark:border-zinc-700 dark:bg-zinc-900/85",
+        "flex flex-col h-full rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden",
+        "dark:border-zinc-800 dark:bg-zinc-900",
         className,
       )}
     >
       {/* Header */}
-<<<<<<< HEAD
-      <div className="shrink-0 border-b border-[#d6deeb] bg-white/90 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <StatusIndicator
-              status={dialogStatus as any}
-              size="sm"
-              animate={dialogStatus === "streaming"}
-            />
-            <MessageSquare className="h-4 w-4 text-cyan-700" />
-            <h3
-              className="font-semibold text-slate-900 dark:text-zinc-100"
-              style={{
-                fontFamily: '"Space Grotesk", "Noto Sans SC", sans-serif',
-              }}
-            >
-              实时对话
-            </h3>
-            <span className="text-xs text-slate-500 dark:text-zinc-400">
-              ({messages.length} 条消息)
-            </span>
-          </div>
-=======
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 shrink-0">
         <div className="flex items-center gap-3">
           <StatusIndicator
@@ -341,141 +219,137 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
             ({messages.length} 条消息)
           </span>
         </div>
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 
-          <div className="flex items-center gap-2">
-            {/* 流程图按钮 */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowFlowchart(!showFlowchart)}
-              className={cn(
-                "border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-50",
-                showFlowchart
-                  ? "border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 hover:text-cyan-800"
-                  : "",
-              )}
-            >
-              <Workflow className="h-4 w-4 mr-1" />
-              流程图
-            </Button>
+        <div className="flex items-center gap-2">
+          {/* 流程图按钮 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFlowchart(!showFlowchart)}
+            className={cn(
+              "transition-colors",
+              showFlowchart
+                ? "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+                : ""
+            )}
+          >
+            <Workflow className="h-4 w-4 mr-1" />
+            流程图
+          </Button>
 
-            {/* 停止按钮 - 当Agent正在运行时显示 */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleStopAgent}
-              disabled={isStopping || !hasRunningAgent}
-              className={cn(
-                "border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-50",
-                hasRunningAgent
-                  ? "animate-pulse border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:text-rose-800"
-                  : "",
-              )}
-            >
-              <Square className="h-4 w-4 mr-1 fill-current" />
-              {isStopping ? "停止中..." : "停止"}
-            </Button>
+          {/* 停止按钮 - 当Agent正在流式输出时显示 */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleStopAgent}
+            disabled={isStopping || !isStreaming}
+            className={cn(
+              "transition-colors",
+              isStreaming
+                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100 hover:text-red-700 animate-pulse"
+                : ""
+            )}
+          >
+            <Square className="h-4 w-4 mr-1 fill-current" />
+            {isStopping ? "停止中..." : "停止"}
+          </Button>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNewDialog}
-              disabled={isCreating}
-              className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              新建对话
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNewDialog}
+            disabled={isCreating}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            新建对话
+          </Button>
         </div>
       </div>
 
-      {/* Main Content Area - 左右布局 */}
+      {/* Main Content Area - 三栏布局 */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* 左侧：消息区域 */}
-        <div
-          className={cn(
-            "flex flex-col transition-all duration-300 ease-in-out",
-            showFlowchart ? "w-3/4" : "w-full",
-          )}
-        >
-          {/* Sticky Dashboard */}
-          <div className="shrink-0 border-b border-[#d6deeb] bg-gradient-to-r from-white to-[#f0f9ff] p-3 dark:border-zinc-700 dark:bg-zinc-900/60">
-            <HookStatsPanel
-              hookStats={streamState.hookStats}
-              runReport={streamState.runReport}
-            />
+        {/* 左侧：历史对话列表 */}
+        <div className="w-48 flex-shrink-0 border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/50 flex flex-col">
+          <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">历史对话</span>
           </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {dialogs.length === 0 ? (
+              <div className="text-xs text-zinc-400 text-center py-4">暂无对话</div>
+            ) : (
+              dialogs.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => {
+                    setDialogId(d.id);
+                    setCurrentDialog(d);
+                    if (isConnected) {
+                      subscribeToDialog(d.id);
+                    }
+                  }}
+                  className={cn(
+                    "w-full text-left px-2 py-1.5 rounded-md text-xs transition-colors",
+                    currentDialog?.id === d.id
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                      : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                  )}
+                >
+                  <div className="font-medium truncate">{d.title}</div>
+                  <div className="text-[10px] opacity-70 truncate">
+                    {d.messages.length} 条消息 · {new Date(d.updated_at).toLocaleTimeString()}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
 
+        {/* 中间：消息区域 */}
+        <div className={cn(
+          "flex flex-col transition-all duration-300 ease-in-out",
+          showFlowchart ? "w-[calc(100%-12rem-25%)]" : "w-[calc(100%-12rem)]"
+        )}>
           {/* Messages Area */}
-          <div className="flex-1 space-y-3 overflow-y-auto bg-[linear-gradient(180deg,#f8fafc_0%,#f0f9ff_60%,#ecfeff_100%)] p-4 dark:bg-zinc-900">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-slate-500 dark:text-zinc-400">
-                <MessageSquare className="mb-3 h-12 w-12 opacity-40" />
-                <p className="text-sm">
-                  开始对话，系统会展示完整的工具执行轨迹
-                </p>
+              <div className="flex flex-col items-center justify-center h-full text-zinc-400">
+                <MessageSquare className="h-12 w-12 mb-3 opacity-30" />
+                <p className="text-sm">开始对话...</p>
               </div>
             ) : (
               <>
-                {renderItems.map(
-                  ({ index, message, toolResults, attachedAssistant }) => {
-                    const isStreaming =
-                      streamState.isStreaming &&
-                      message.role === "assistant" &&
-                      !!message.id &&
-                      message.id === streamState.currentMessageId;
-
-                    const shouldHidePendingAssistantPlaceholder =
+                {renderItems
+                  // 过滤掉工具结果消息，它们已经通过 toolResults 传递
+                  .filter(({ message }) => message.role !== "tool")
+                  .map(({ index, message, toolResults, attachedAssistant }) => {
+                    const isMessageStreaming =
                       isStreaming &&
                       message.role === "assistant" &&
-                      !message.tool_calls?.length &&
-                      !(streamState.accumulatedContent || "").trim() &&
-                      !(streamState.accumulatedReasoning || "").trim() &&
-                      !(message.content || "").trim();
-
-                    if (shouldHidePendingAssistantPlaceholder) {
-                      return null;
-                    }
+                      index === messages.length - 1;
 
                     return (
                       <CollapsibleMessage
-                        key={`${message.id || message.role}-${index}`}
+                        key={index}
                         message={message}
                         toolResults={toolResults}
                         attachedAssistant={attachedAssistant}
-                        isStreaming={isStreaming}
-                        streamingContent={
-                          isStreaming
-                            ? streamState.accumulatedContent
-                            : undefined
-                        }
-                        streamingReasoning={
-                          isStreaming
-                            ? streamState.accumulatedReasoning
-                            : undefined
-                        }
+                        isStreaming={isMessageStreaming}
                         defaultExpanded={
-                          message.role === "assistant" &&
-                          message.tool_calls &&
-                          message.tool_calls.length > 0
-                            ? false
-                            : index >= messages.length - 2
+                          // 只展开最后一条工具消息，其他都收起
+                          (message.role === "assistant" && message.tool_calls && message.tool_calls.length > 0) &&
+                          index === messages.length - 1
                         }
                       />
                     );
-                  },
-                )}
-                <div ref={messagesEndRef} />
+                  })}
               </>
             )}
           </div>
 
           {/* Input Area */}
-          <div className="shrink-0 border-t border-[#d6deeb] bg-white/90 p-3 dark:border-zinc-700 dark:bg-zinc-900/90">
+          <div className="p-3 border-t border-zinc-200 dark:border-zinc-700 shrink-0">
             {sendError ? (
-              <div className="mb-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300">
+              <div className="mb-2 text-xs text-red-600 dark:text-red-400">
                 {sendError}
               </div>
             ) : null}
@@ -488,11 +362,11 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
                   placeholder="输入消息..."
                   className={cn(
                     "w-full resize-none rounded-lg border px-3 py-2",
-                    "text-sm text-slate-700 dark:text-zinc-200",
-                    "placeholder:text-slate-400",
-                    "focus:outline-none focus:ring-2 focus:ring-cyan-500/20 focus:border-cyan-500",
-                    "bg-white dark:bg-zinc-800",
-                    "border-slate-300 dark:border-zinc-700",
+                    "text-sm text-zinc-700 dark:text-zinc-300",
+                    "placeholder:text-zinc-400",
+                    "focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500",
+                    "bg-zinc-50 dark:bg-zinc-800",
+                    "border-zinc-200 dark:border-zinc-700",
                   )}
                   rows={1}
                   style={{ minHeight: "40px", maxHeight: "120px" }}
@@ -503,8 +377,8 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
                 disabled={!inputValue.trim() || isSending}
                 className={cn(
                   "flex items-center justify-center w-10 h-10 rounded-lg",
-                  "bg-cyan-600 text-white",
-                  "hover:bg-cyan-700 active:bg-cyan-800",
+                  "bg-blue-500 text-white",
+                  "hover:bg-blue-600 active:bg-blue-700",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
                   "transition-colors",
                 )}

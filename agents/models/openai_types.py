@@ -53,6 +53,7 @@ class ChatMessage:
         id: 消息唯一标识符
         role: 消息角色 (system/user/assistant/tool)
         content: 消息内容 (文本或多模态内容)
+        reasoning_content: 推理内容 (仅推理模型如 DeepSeek-R1)
         tool_calls: 工具调用列表 (仅 assistant 角色)
         tool_call_id: 工具调用ID (仅 tool 角色)
         name: 工具名称 (仅 tool 角色)
@@ -60,6 +61,7 @@ class ChatMessage:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     role: ChatRole = "user"
     content: Optional[str] = None
+    reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ChatCompletionMessageToolCall]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
@@ -73,6 +75,9 @@ class ChatMessage:
 
         if self.content is not None:
             result["content"] = self.content
+
+        if self.reasoning_content is not None:
+            result["reasoning_content"] = self.reasoning_content
 
         if self.tool_calls is not None:
             result["tool_calls"] = [tc.to_dict() for tc in self.tool_calls]
@@ -99,6 +104,7 @@ class ChatMessage:
             id=data.get("id", str(uuid.uuid4())),
             role=data.get("role", "user"),
             content=data.get("content"),
+            reasoning_content=data.get("reasoning_content"),
             tool_calls=tool_calls,
             tool_call_id=data.get("tool_call_id"),
             name=data.get("name")

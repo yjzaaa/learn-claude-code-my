@@ -1,33 +1,3 @@
-<<<<<<< HEAD
-import type { ChatMessage } from "./openai";
-
-export interface WebSocketMessage {
-  type: string;
-  [key: string]: unknown;
-}
-
-export interface StreamTokenMessage extends WebSocketMessage {
-  type: "stream_token";
-  token?: string;
-}
-
-export interface MessageAddedEvent extends WebSocketMessage {
-  type: "message_added";
-  dialog_id?: string;
-  message?: ChatMessage;
-}
-
-export interface MessageUpdatedEvent extends WebSocketMessage {
-  type: "message_updated";
-  dialog_id?: string;
-  message?: ChatMessage;
-}
-
-export interface DialogSubscribedEvent extends WebSocketMessage {
-  type: "dialog_subscribed";
-  dialog_id: string;
-  dialog: unknown;
-=======
 /**
  * WebSocket 实时消息类型定义
  *
@@ -79,5 +49,4 @@ export interface AgentStreamMessage extends WebSocketMessage {
   type: "agent:message_start" | "agent:content_delta" | "agent:reasoning_delta" | "agent:tool_call" | "agent:message_complete" | "agent:error" | "agent:stopped";
   dialog_id: string;
   data: Record<string, unknown>;
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 }

@@ -378,30 +378,45 @@ def create_app() -> FastAPI:
             f"dialog_id={active_dialog_id}, thread={threading.current_thread().name}"
         )
 
-        # 1. 设置会话停止标志
+        # 请求停止（session_manager 会处理任务取消和 agent 停止）
         session_manager.request_stop(active_dialog_id)
-        logger.info(f"[stop_agent] Setting stop_requested=True")
+        logger.info(f"[stop_agent] Stop signal sent (task cancelled if running)")
 
-        # 2. 调用当前 Agent 的 request_stop() 方法（如果存在）
-        current_agent = None
+        # 保存完整的 messages 到 JSONL 文件以便分析
         if active_dialog_id:
-            active_session = session_manager.get(active_dialog_id)
-            if active_session:
-                current_agent = active_session.runtime.current_agent
+            import json
+            from pathlib import Path
+            from datetime import datetime
 
-        if current_agent:
-            logger.info(f"[stop_agent] Calling request_stop() on {type(current_agent).__name__}")
-            try:
-                current_agent.request_stop()
-                logger.info("[stop_agent] request_stop() called successfully")
-            except Exception as e:
-                logger.error(f"[stop_agent] Error calling request_stop(): {e}")
-        else:
-            logger.info("[stop_agent] No current_agent found")
+            dialog = event_manager.get_dialog(active_dialog_id)
+            if dialog:
+                messages_dict = [msg.to_dict() for msg in dialog.messages]
+
+                # 创建 .logs 目录
+                logs_dir = Path(".logs")
+                logs_dir.mkdir(exist_ok=True)
+
+                # 生成文件名: {dialog_id}_stop_{timestamp}.jsonl
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                log_file = logs_dir / f"{active_dialog_id}_stop_{timestamp}.jsonl"
+
+                # 以 JSONL 格式保存
+                with open(log_file, "w", encoding="utf-8") as f:
+                    for msg in messages_dict:
+                        f.write(json.dumps(msg, ensure_ascii=False, default=str) + "\n")
+
+                logger.info(f"[stop_agent] Messages saved to: {log_file}")
+                logger.info(f"[stop_agent] Total messages: {len(messages_dict)}")
+
+                # 同时在日志中打印摘要
+                for i, msg in enumerate(messages_dict):
+                    logger.info(f"  [{i}] role={msg.get('role')}, id={msg.get('id')}, tool_call_id={msg.get('tool_call_id')}, tool_calls={len(msg.get('tool_calls', []))}")
+                    content_preview = str(msg.get('content', ''))[:100] if msg.get('content') else '(empty)'
+                    logger.info(f"      content_preview={content_preview}")
 
         return {
             "success": True,
-            "message": "Stop requested, Agent will stop at next check point"
+            "message": "Stop requested, Agent will stop immediately"
         }
 
     # ========== WebSocket 端点 ==========
@@ -524,16 +539,28 @@ async def process_agent_request(dialog_id: str):
         # 创建 Agent，并通过统一 hook delegate 绑定 WebSocket bridge
         agent = S02WithSkillLoaderAgent()
         agent.set_hook_delegate(composite_hooks)
-        session_manager.begin_run(dialog_id, agent)
-        logger.info(f"[process_agent_request] Agent instance saved to agent_state")
 
-        # 在线程中运行Agent
+        # 异步运行Agent（支持真正的停止）
+        run_task = None
         try:
             logger.info(f"[process_agent_request] Starting {agent_name}...")
             messages = [{"role": "user", "content": last_user_message}]
             logger.info("[process_agent_request] Built base messages for hook-based history injection")
-            await asyncio.to_thread(agent.run, messages)
+
+            # 创建异步任务
+            run_task = asyncio.create_task(agent.arun(messages))
+
+            # 将任务保存到 session，以便可以取消
+            session_manager.begin_run(dialog_id, agent, run_task)
+            logger.info(f"[process_agent_request] Agent instance and task saved to session")
+
+            await run_task
             logger.info(f"[process_agent_request] {agent_name} completed")
+        except asyncio.CancelledError:
+            logger.info("[process_agent_request] Agent was cancelled (stop requested)")
+            await _send_system_event(dialog_id, "Agent已停止")
+            # 发送停止事件到前端
+            bridge.on_stop()
         except Exception as e:
             logger.info(f"[process_agent_request] Agent error: {e}")
             import traceback

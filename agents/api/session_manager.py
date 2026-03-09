@@ -37,6 +37,7 @@ class AgentRuntimeState:
     is_running: bool = False
     stop_requested: bool = False
     current_agent: Any = None
+    current_task: Any = None  # asyncio.Task，用于取消运行
     last_started_at: Optional[datetime] = None
     last_finished_at: Optional[datetime] = None
     last_error: Optional[str] = None
@@ -90,6 +91,22 @@ class SessionManager:
                 return
             session = self.get_or_create(target_dialog_id)
             session.runtime.stop_requested = True
+
+            # 取消运行中的任务（如果存在）
+            task = session.runtime.current_task
+            if task is not None and not task.done():
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
+
+            # 同时调用 agent 的 request_stop（如果存在）
+            agent = session.runtime.current_agent
+            if agent is not None and hasattr(agent, 'request_stop'):
+                try:
+                    agent.request_stop()
+                except Exception:
+                    pass
 
     def queue_message(self, dialog_id: str, content: str) -> None:
         with self._lock:
@@ -164,12 +181,14 @@ class SessionManager:
                 messages.append({"role": "assistant", "content": round_item["assistant"]})
             return messages
 
-    def begin_run(self, dialog_id: str, agent: Any) -> SessionContext:
+    # ========== 运行控制接口 ==========
+    def begin_run(self, dialog_id: str, agent: Any, task: Any = None) -> SessionContext:
         with self._lock:
             session = self.get_or_create(dialog_id)
             session.runtime.is_running = True
             session.runtime.stop_requested = False
             session.runtime.current_agent = agent
+            session.runtime.current_task = task
             session.runtime.last_started_at = datetime.now()
             session.runtime.last_error = None
             self._active_dialog_id = dialog_id
@@ -180,6 +199,7 @@ class SessionManager:
             session = self.get_or_create(dialog_id)
             session.runtime.is_running = False
             session.runtime.current_agent = None
+            session.runtime.current_task = None
             session.runtime.last_finished_at = datetime.now()
             session.runtime.last_error = error
             if self._active_dialog_id == dialog_id:

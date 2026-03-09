@@ -33,7 +33,13 @@
       "Read(//d/countbot/countbot/backend/modules/providers/**)",
       "WebSearch",
       "Bash(.venv/Scripts/python.exe:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(echo KIMI_API_KEY: '$KIMI_API_KEY':*)",
+      "Bash(tail:*)",
+      "Bash(pkill:*)",
+      "Bash(powershell:*)",
+      "Bash(wmic process:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

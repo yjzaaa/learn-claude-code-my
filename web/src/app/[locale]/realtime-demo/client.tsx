@@ -35,10 +35,9 @@ export function RealtimeDemoClient() {
     sendMessage,
   } = useAgentApi();
   const {
-    status: wsStatus,
     isConnected: wsConnected,
     subscribeToDialog,
-  } = useWebSocket({});
+  } = useWebSocket();
   const { currentDialog, setCurrentDialog } = useMessageStore();
 
   const loadDialogs = async () => {
