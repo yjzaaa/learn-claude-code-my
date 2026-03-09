@@ -241,7 +241,16 @@ export function CollapsibleMessage({
 
   const displayContent = streamingContent ?? message.content ?? "";
   const reasoningContent = streamingReasoning || message.reasoning_content || "";
-  const hasToolCalls = isToolCall && message.tool_calls && message.tool_calls.length > 0;
+  const hasToolCalls = !!(isToolCall && message.tool_calls && message.tool_calls.length > 0);
+
+  // 调试日志
+  console.log("[CollapsibleMessage] Render:", {
+    role: message.role,
+    hasToolCalls,
+    toolCallCount: message.tool_calls?.length,
+    toolResultsCount: toolResults.length,
+    isToolCall,
+  });
 
   const config = messageTypeConfig[message.role] || messageTypeConfig.assistant;
   const Icon = config.icon;
@@ -266,23 +275,33 @@ export function CollapsibleMessage({
     };
   }, [isStreaming, reasoningContent, displayContent, hasToolCalls]);
 
-  // 展开状态管理
+  // 展开状态管理 - 默认所有区域都展开
   const [expandedSections, setExpandedSections] = useState({
-    reasoning: activeSection.reasoning,
-    content: activeSection.content,
-    tools: activeSection.tools,
+    reasoning: true,
+    content: true,
+    tools: true,
   });
 
-  // 当活跃区域变化时，自动调整展开状态（仅流式状态下）
+  // 初始化时根据活跃区域设置展开状态（仅执行一次）
   useEffect(() => {
-    if (isStreaming) {
+    const hasTools = !!(message.tool_calls && message.tool_calls.length > 0);
+    setExpandedSections({
+      reasoning: activeSection.reasoning,
+      content: activeSection.content,
+      tools: hasTools, // 有工具调用时默认展开
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在挂载时执行一次
+
+  // 当工具调用出现时，自动展开工具区域
+  useEffect(() => {
+    if (hasToolCalls) {
       setExpandedSections((prev) => ({
-        reasoning: activeSection.reasoning || prev.reasoning,
-        content: activeSection.content || prev.content,
-        tools: prev.tools, // 工具区域保持用户选择
+        ...prev,
+        tools: true,
       }));
     }
-  }, [isStreaming, activeSection]);
+  }, [hasToolCalls]);
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({
@@ -293,12 +312,13 @@ export function CollapsibleMessage({
 
   // 构建工具调用和结果的映射
   const toolCallResults = useMemo(() => {
-    if (!hasToolCalls) return [];
-    return message.tool_calls?.map((toolCall) => {
+    // 只要 message.tool_calls 存在就计算，不管 hasToolCalls 如何
+    if (!message.tool_calls?.length) return [];
+    return message.tool_calls.map((toolCall) => {
       const result = toolResults.find((r) => r.tool_call_id === toolCall.id);
       return { toolCall, result };
     });
-  }, [hasToolCalls, message.tool_calls, toolResults]);
+  }, [message.tool_calls, toolResults]);
 
   return (
     <motion.div
@@ -372,10 +392,10 @@ export function CollapsibleMessage({
               )}
             </CollapsibleSection>
 
-            {/* Tools 区域 - 只在有工具调用时显示 */}
-            {hasToolCalls && toolCallResults && (
+            {/* Tools 区域 - 只要有工具调用就显示 */}
+            {message.tool_calls && message.tool_calls.length > 0 && (
               <CollapsibleSection
-                title={`Tools (${toolCallResults.length})`}
+                title={`Tools (${message.tool_calls.length})`}
                 icon={Wrench}
                 iconColorClass="bg-slate-100 text-slate-600 dark:bg-slate-900/50 dark:text-slate-400"
                 headerBgClass="bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700"
@@ -413,12 +433,10 @@ export function CollapsibleMessage({
                         {toolCall.function.arguments}
                       </pre>
                     </div>
-                    {/* 工具执行结果 */}
+                    {/* 工具执行结果 - 使用 Markdown 渲染 */}
                     {result && (
-                      <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
-                        <pre className="text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap break-all leading-relaxed max-h-24 overflow-y-auto scrollbar-thin">
-                          {result.content}
-                        </pre>
+                      <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 max-h-48 overflow-y-auto scrollbar-thin">
+                        <MarkdownContent content={String(result.content || "")} isStreaming={false} />
                       </div>
                     )}
                   </div>
