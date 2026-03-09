@@ -1,343 +1,189 @@
 ---
 name: finance
-description: |
-  财务成本分析技能。根据用户问题生成并执行 SQL 查询，返回基于数据的财务分析结论。
-  支持：成本查询、分摊计算、预算对比、趋势分析。
 ---
 
 # Finance Skill
 
-## 核心能力
-
-1. **成本查询** - 查询特定职能/业务线的成本数据
-2. **分摊计算** - 计算成本分摊金额（按业务线/成本中心）
-3. **预算对比** - 对比不同年份/版本的预算与实际
-4. **趋势分析** - 分析成本变化趋势
-
-## 数据模型
-
-### 表结构
-
-| 表名 | 用途 | 核心字段 |
-|------|------|----------|
-| `cost_database` | 存储成本数据 | `year`, `scenario`, `function`, `cost_text`, `key`, `month`, `amount`, `year_total` |
-| `rate_table` | 存储分摊费率 | `year`, `scenario`, `month`, `key`, `bl`, `cc`, `rate_no` |
-| `cc_mapping` | 成本中心映射 | `cost_center_number`, `business_line` |
-
-### 关键字段值域
-
-**Function (职能)**
-- `IT`, `IT Allocation` - IT部门/IT分摊
-- `HR`, `HR Allocation` - HR部门/HR分摊
-- `Procurement` - 采购部门
-
-**Scenario (版本)**
-- `Actual` - 实际数
-- `Budget1` - 预算
-- `Rolling Forecast2` - 滚动预测
-
-**Key (分摊标准)**
-- `headcount` - 人头数
-- `Win Acc` - Windows账号
-- `WCW` - 白领
-- `480055 Cycle` - HR分摊标识
-- `480056 Cycle` - IT分摊标识
-
-**BL (业务线)**
-- `CT`, `XP`, `MP`, `MI`, `TI`, `DTI`, `UX` 等
-
-## SQL 生成流程
-
-```
-用户问题
-    ↓
-[Step 1: 意图识别]
-    - 识别查询类型（成本/分摊/对比/趋势）
-    - 提取时间维度（FY25/FY26）
-    - 提取版本维度（Actual/Budget1）
-    - 提取职能维度（IT/HR/Procurement）
-    ↓
-[Step 2: 参数归一化]
-    - "预算" → Budget1
-    - "实际" → Actual
-    - "分摊给CT" → bl='CT' 或 cc in (CT相关的CC)
-    ↓
-[Step 3: 查询表结构]
-    - 查询目标表的字段结构，确认字段名和数据类型
-    - SQL: SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'xxx'
-    - 根据实际字段名调整SQL生成（避免使用错误的字段名）
-    ↓
-[Step 4: SQL模板选择]
-    - 成本查询 → 直接查询 cost_database
-    - 分摊计算 → JOIN cost_database + rate_table
-    - 预算对比 → 分别查询两年数据后对比
-    ↓
-[Step 5: SQL生成与执行]
-    ↓
-结果分析与回答
-```
-
-## 查询模板
-
-### 模板0: 表结构查询（SQL生成前必须先执行）
-
-在生成业务SQL之前，必须先查询表的实际字段结构：
-
-```sql
--- 查询表字段结构
-SELECT
-    column_name,
-    data_type,
-    is_nullable
-FROM information_schema.columns
-WHERE table_name = '{table_name}'
-  AND table_schema = 'public'
-ORDER BY ordinal_position;
-```
-
-**使用方式**:
-1. 先执行结构查询获取字段列表
-2. 根据返回的字段名生成业务SQL
-3. 避免因字段名错误导致SQL失败
-
-**返回格式说明**:
-```
-column_name    | data_type       | is_nullable
----------------|-----------------|-------------
-[字段名]       | [数据类型]      | YES/NO
-```
-
-### 模板1: 成本汇总查询
-
-查询某职能的年度成本：
-
-```sql
-SELECT
-    function,
-    cost_text,
-    key,
-    SUM(amount) as total_amount
-FROM cost_database
-WHERE year = '{year}'
-  AND scenario = '{scenario}'
-  AND function = '{function}'
-GROUP BY function, cost_text, key
-ORDER BY total_amount DESC;
-```
-
-### 模板2: 分摊金额计算
-
-计算分摊给特定业务线/成本中心的金额：
-
-```sql
-SELECT
-    cdb.month,
-    cdb.amount as base_cost,
-    rt.rate_no,
-    (cdb.amount * rt.rate_no / 100.0) as allocated_amount
-FROM cost_database cdb
-JOIN rate_table rt ON cdb.month = rt.month
-    AND cdb.year = rt.year
-    AND cdb.scenario = rt.scenario
-    AND cdb.key = rt.key
-WHERE cdb.year = '{year}'
-  AND cdb.scenario = '{scenario}'
-  AND cdb.function = '{allocation_function}'
-  AND rt.{target_field} = '{target_value}'
-ORDER BY cdb.month;
-```
-
-**分摊金额计算逻辑**:
-- `Allocated Amount = base_cost * rate_no / 100`
-- 负数表示成本分摊（费用）
-- 需按年度汇总
-
-### 模板3: 预算对比
-
-对比两年数据：
-
-```sql
--- 第一年数据
-SELECT '{period_1_label}' as period, SUM(amount) as total
-FROM cost_database
-WHERE year = '{year_1}' AND scenario = '{scenario_1}' AND function = '{function}'
-
-UNION ALL
-
--- 第二年数据
-SELECT '{period_2_label}', SUM(amount)
-FROM cost_database
-WHERE year = '{year_2}' AND scenario = '{scenario_2}' AND function = '{function}';
-```
-
-**对比分析公式**:
-- 变化值 = 新值 - 旧值
-- 变化率 = (变化值 / 旧值) * 100
-
-### 模板4: 成本中心列表查询
-
-查询某业务线下的成本中心：
-
-```sql
-SELECT DISTINCT cc
-FROM rate_table
-WHERE bl = '{business_line}'
-ORDER BY cc;
-```
-
-## 业务规则
-
-### 规则1: 分摊题识别
-
-当问题包含以下关键词时，按"分摊题"处理：
-- "分摊给", "allocated to", "allocation to"
-- "分摊给CT", "分摊给XP"
-
-**分摊函数映射**:
-- IT 分摊 → `function = 'IT Allocation'`, `key = '480056 Cycle'`
-- HR 分摊 → `function = 'HR Allocation'`, `key = '480055 Cycle'`
-
-### 规则2: 成本中心vs业务线
-
-- 分摊给**业务线**（如CT）→ 使用 `rate_table.bl = 'CT'`
-- 分摊给**成本中心**（如413001）→ 使用 `rate_table.cc = '413001'`
-
-### 规则3: 对比分析输出
-
-对比问题必须给出：
-1. 绝对变化值（Delta = 新值 - 旧值）
-2. 变化率（Change % = Delta / 旧值 * 100）
-3. 结论说明（增长/下降及可能原因）
-
-## 完整示例流程
-
-### 示例: 查询"FY26 HR预算"
-
-**完整执行流程**:
-
-```
-用户问题: "FY26 HR预算多少？"
-    ↓
-[Step 1: 意图识别]
-    - 查询类型: 成本查询
-    - 时间维度: FY26
-    - 版本维度: Budget (需归一化为 Budget1)
-    - 职能维度: HR
-    - 目标表: cost_database
-    ↓
-[Step 2: 参数归一化]
-    - "预算" → "Budget1"
-    - "FY26" → "FY26"
-    - "HR" → "HR"
-    ↓
-[Step 3: 查询表结构]
-    SQL: SELECT column_name, data_type
-         FROM information_schema.columns
-         WHERE table_name = 'cost_database' AND table_schema = 'public'
-    ↓
-    返回字段列表（示例）:
-    - year: character varying
-    - scenario: character varying
-    - function: character varying
-    - year_total: numeric
-    ↓
-    确认: 使用小写字段名，数据类型为字符和数值型
-    ↓
-[Step 4: SQL模板选择]
-    选择: 成本汇总查询模板
-    ↓
-[Step 5: SQL生成与执行]
-    生成SQL:
-    SELECT SUM(year_total) as total_budget
-    FROM cost_database
-    WHERE year = 'FY26'
-      AND scenario = 'Budget1'
-      AND function = 'HR';
-    ↓
-结果: [查询结果根据实际数据库返回]
-```
-
-### 关键说明
-
-**为什么需要Step 3（查询表结构）？**
-
-1. **避免字段名错误**: 不同数据库字段命名规范不同（小写/大写/驼峰）
-2. **确认字段存在**: 避免使用不存在的字段（如误以为有 `department` 实际是 `function`）
-3. **了解数据类型**: 数值计算时需要知道是 numeric/varchar/integer
-
-**错误示例（跳过Step 3）**:
-```sql
--- 错误：使用了大写字段名和方括号（SQL Server风格）
-SELECT SUM([Year_Total]) FROM [Cost_Database] WHERE [Year] = 'FY26'
-
--- 正确：使用实际的小写字段名（PostgreSQL风格）
-SELECT SUM(year_total) FROM cost_database WHERE year = 'FY26'
-```
-
-## 查询类型与SQL映射
-
-### 类型1: 成本查询
-
-**问题模式**: "[时间] [职能] [版本] 费用多少？"
-
-**示例**:
-- "FY26 HR预算多少？"
-- "FY25 Procurement实际费用？"
-
-**SQL模板**: 模板1（成本汇总查询）
-
-### 类型2: 分摊查询
-
-**问题模式**: "[时间] [职能] 分摊给 [目标] 的费用？"
-
-**示例**:
-- "FY25 IT分摊给CT的费用？"
-- "FY26 HR分摊给成本中心412001的费用？"
-
-**SQL模板**: 模板2（分摊金额计算）
-
-### 类型3: 对比查询
-
-**问题模式**: "[时间A] [版本A] 与 [时间B] [版本B] 比变化多少？"
-
-**示例**:
-- "FY26采购预算和FY25实际比变化多少？"
-- "FY25 HR预算与实际差异？"
-
-**SQL模板**: 模板3（预算对比）+ 变化计算公式
-
-## 脚本结构
-
-```
-skills/finance/
-├── SKILL.md              # 本文件 - 技能定义与规则
-├── scripts/
-│   ├── __init__.py
-│   └── sql_query.py      # 核心：SQL执行引擎
-└── references/           # (可选) 补充文档
-```
-
-### 核心脚本: sql_query.py
-
-提供 `run_sql_query(sql: str) -> str` 函数，返回 JSON 格式结果：
-
-```json
-{
-  "truncated": false,
-  "limit": 200,
-  "rows": [...]
-}
-```
-
-## 环境配置
-
-```bash
-# 数据库连接参数
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=cost_allocation
-DB_USER=postgres
-DB_PASSWORD=123456
-```
-
-依赖: `pip install psycopg2-binary`
+## 描述
+
+`finance` 技能支持根据用户提问，动态生成 SQL 查询语句并最终执行该查询。技能包含以下核心模块：
+
+### 意图分析模块
+
+- 解析用户问题的核心意图，判断是否与数据查询相关。
+- 提取关键字（如“成本分摊”、“预算分析”等）、映射表和匹配适配。
+
+### SQL 构造模块
+
+- 动态组装 SQL 查询模板。
+- 根据意图分析的结果，填充函数参数 (如表名、字段名、查询条件)。
+
+### 执行模块
+
+- 将生成的 SQL 查询语句提交至数据库。
+- 返回查询结果用于进一步分析和展示。
+
+## 数据库信息
+
+- **数据库名称**: SmartMES_Demo
+- **数据库地址**: Shai438a.ad005.onehc.net
+- **驱动类型**: Microsoft SQL Server
+- **端口号**: 1433
+- **用户名**: testlogin
+- **密码**: WIN@superman7119
+
+## 术语对照
+
+- WCW: White Collar Worker，白领
+- headcount: 人头，人数
+- Win Acc: window 账号，电脑账号
+- Key: 分摊标准
+- Procurement: 采购部门
+- IM: indirect material，间接物料
+- actual: 实际
+- budget1: 预算，计划
+- Rolling Forecast2: FC2，预算，计划
+- SW: 软件
+
+## 术语标准化（SQL 生成前的强约束）
+
+在生成 SQL 前，必须先把用户自然语言做“术语归一化”，再映射到字段和值；禁止直接把口语词写进 SQL 条件。
+
+### 1) 同义词归一化
+
+- 白领、白领数、White Collar Worker、WCW -> `WCW`
+- 人头、人数、head count、Headcount -> `headcount`
+- 电脑账号、Windows 账号、Win Acc -> `Win Acc`
+- 间接物料、IM、indirect material -> `IM`
+- 实际、actual、ACT -> `Actual`
+- 预算、计划、budget1、BGT、BGT1 -> `Budget1`
+- FC2、Rolling Forecast2 -> `Rolling Forecast2`
+- 软件、SW -> `SW`
+- 采购、采购部门、Procurement -> `Procurement`
+
+### 2) 字段落位规则（必须遵守）
+
+- “分摊标准/按什么分摊/依据什么分摊/Key” -> 字段 `[Key]`
+- “服务/服务项/合同内容/服务名称” -> 字段 `[Cost text]`
+- “版本（预算/实际/FC2）” -> 字段 `[Scenario]`
+- “职能/部门类型（IT/HR/Procurement）” -> 字段 `[Function]`
+
+### 3) SQL 生成约束（术语相关）
+
+- 术语归一化后，仅使用标准字段值；例如白领分摊必须落到 `WHERE [Key] = 'WCW'`。
+- 遇到模糊词（如“预算”）时，优先映射为标准值（如 `Budget1`），不要同时混用多个近义值。
+- 若术语无法唯一映射，先使用字典中最保守的标准值，并在结果说明中提示映射假设。
+
+### 4) 正反例
+
+- 正例：
+  - 用户问“哪些服务是按白领数分摊的”
+  - 归一化：白领数 -> `WCW`
+  - SQL 条件：`WHERE [Key] = 'WCW'`
+
+- 反例（禁止）：
+  - `WHERE [Key] = '白领数'`
+  - `WHERE [Scenario] = '预算'`
+
+### 5) 默认策略
+
+- 未指定 Year/Month 时，不强加时间过滤。
+- 未指定 Function 时，不强加 Function 过滤。
+- 用户明确提到 IT/HR/Procurement 时，才增加 `[Function]` 条件。
+
+## 工作流逻辑
+
+1. **解析意图**:
+   包括关键字提取和表映射，分析问题是否与财务相关。
+   示例：对于提问“白领数分摊服务有哪些？”，技能会判断“分摊”和“服务”关键词，找到相关数据库表及字段。
+
+2. **生成 SQL**:
+   调用模板生成 SQL 查询。例如，针对表 `SSME_FI_InsightBot_CostDataBase` 构造分摊场景的 SQL 查询。
+
+3. **执行查询**:
+   执行 SQL，返回查询结果给用户。
+
+## 执行防错规则（强制）
+
+- 禁止使用历史表名 `cost_database` 作为最终 SQL 输出；标准表名为 `dbo.SSME_FI_InsightBot_CostDataBase`。
+- 禁止在工具中使用 `python -c`（容易触发安全限制和转义错误）。
+- 禁止使用 `powershell -File ...run_query.py` 直接运行 `.py` 文件。
+- 统一执行方式：
+  - `python skills/finance/scripts/run_query.py --sql "SELECT ..."`
+  - 或 `python skills/finance/scripts/sql_query.py --sql "SELECT ..."`
+- SQL Server 字段应使用当前库字段：`[Year]`、`[Scenario]`、`[Function]`、`[Year Total]`、`[Amount]`。
+
+说明：`sql_query.py` 已内置旧字段/旧表名兼容转换，但这仅用于兜底，生成 SQL 时仍必须优先输出标准写法。
+
+## 业务基线规则（Excel 20260104）
+
+以下规则仅用于 finance 技能内部口径，不影响通用后端工作流。
+
+### 1) 分摊题识别与映射（强制）
+
+- 当问题包含 `allocated` / `allocation` / `分摊给` / `allocation to` 时，按“分摊题”处理，不得退化为普通 Function 汇总。
+- 分摊题必须使用 Allocation Function + Key 固定映射：
+  - `IT Allocation` -> `480056 Cycle`
+  - `HR Allocation` -> `480055 Cycle`
+- 目标维度按用户问题选择：
+  - 提到 `CT` / 业务线 -> 使用 `Rate.BL`
+  - 提到具体成本中心（如 `413001`）-> 使用 `Rate.CC`
+
+### 2) 分摊金额计算口径（强制）
+
+- 必须按月计算后汇总全年：
+  - `Allocated Amount = Monthly Amount * normalized RateNo`
+- `RateNo` 归一化规则：
+  - 若为百分数字符串（如 `12.5%`）先去 `%` 再 `/100`
+  - 若为小数（如 `0.125`）直接使用
+- 禁止用 `SUM(Amount)` 直接代替分摊金额。
+- 分摊金额符号保持原始业务符号，禁止无依据地使用 `ABS()` 改变正负。
+
+### 3) 汇总题与对比题输出口径
+
+- “What was ... cost ...”类金额问法默认返回单值汇总，不返回明细行列表。
+- 对比/变化类问题（如 FY25 Actual vs FY26 BGT）必须同时给出：
+  - 绝对变化值（Delta）
+  - 变化率（Change %）
+- 变化率统一口径：`(新值 - 旧值) / 旧值`，旧值为 0 时返回 0 并说明。
+
+### 4) 额外硬约束（必须）
+
+- Scenario 归一化：
+  - 用户出现 `BGT` / `Budget` / `预算` / `计划` 时，SQL 必须使用 `Scenario = 'Budget1'`
+  - 禁止出现 `Scenario = 'BGT'`
+- 分摊题 Function 归一化：
+  - `allocated` / `allocation` / `分摊给` 问法下，IT 必须用 `Function = 'IT Allocation'`
+  - `allocated` / `allocation` / `分摊给` 问法下，HR 必须用 `Function = 'HR Allocation'`
+  - 禁止把分摊题写成 `Function = 'IT'` 或 `Function = 'HR'`
+- 费用金额问法（如“FY26 Budget 的 HR 费用”）默认输出单值汇总 SQL（SUM/COALESCE），禁止输出明细行。
+
+## 示例场景
+
+用户问题示例：
+
+- “白领数分摊服务有哪些？”
+- “今年 HR 部门成本预算与去年实际的趋势对比如何？”
+
+技能会基于问题动态生成 SQL 并返回结果。
+
+## 模块结构与关系
+
+为保证逻辑清晰与高内聚，finance 技能按以下模块划分：
+
+- 规则与约束：见 references/ 目录
+  - 核心规则：references/react_rules.md
+  - 约束与字典：references/react_constraints.md
+  - 示例库：references/react_examples.md
+  - 工作流说明：references/workflow.md
+  - 模块关系图：references/module_map.md
+
+- 核心生成器：scripts/allocation_utils.py
+  - 统一维护 ALLOC_TEMPLATE 与 generate_alloc_sql
+  - scripts/generate_alloc_sql.py 仅作为兼容层转发
+
+- 示例脚本：scripts/example_overview.py
+  - 统一依赖 allocation_utils.generate_alloc_sql，作为单一示例入口
+
+- 动态意图与 SQL 示例：scripts/dynamic_skill_sql.py
+  - 展示关键词意图分析 → SQL 构造 → 执行流程
