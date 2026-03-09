@@ -1,26 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/openai";
-<<<<<<< HEAD
-import { ToolNameLabel } from "./tool-name-label";
-import { RoleLabel } from "./agent-type-label";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-=======
 import { parseToolCallArguments } from "@/types/openai";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import {
@@ -31,8 +18,13 @@ import {
   User,
   MessageSquare,
   ChevronDown,
+  ChevronRight,
   Copy,
   Check,
+  Loader2,
+  Sparkles,
+  Brain,
+  Code2,
 } from "lucide-react";
 
 // 动态导入 react-json-view（避免 SSR 问题）
@@ -44,64 +36,18 @@ const ReactJson = dynamic(() => import("@microlink/react-json-view"), {
     </div>
   ),
 });
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
 
 interface CollapsibleMessageProps {
   message: ChatMessage;
-  toolResults?: ChatMessage[];
-  attachedAssistant?: ChatMessage | null;
   isStreaming?: boolean;
   streamingContent?: string;
   streamingReasoning?: string;
   className?: string;
   defaultExpanded?: boolean;
+  toolResults?: ChatMessage[];
+  attachedAssistant?: ChatMessage | null;
 }
 
-<<<<<<< HEAD
-function BreathingEllipsis() {
-  return (
-    <span
-      className="inline-flex items-center gap-0.5 text-zinc-500 dark:text-zinc-400"
-      aria-label="empty content"
-    >
-      <span className="animate-pulse" style={{ animationDelay: "0ms" }}>
-        .
-      </span>
-      <span className="animate-pulse" style={{ animationDelay: "180ms" }}>
-        .
-      </span>
-      <span className="animate-pulse" style={{ animationDelay: "360ms" }}>
-        .
-      </span>
-    </span>
-  );
-}
-
-function normalizeMarkdownInput(raw: string): string {
-  const text = (raw || "").trim();
-  if (!text) return "";
-
-  // If message already uses fenced code blocks, keep it untouched.
-  if (text.includes("```")) {
-    return raw;
-  }
-
-  // Promote JSON-looking payloads to fenced code blocks for stable rendering.
-  const looksLikeJson =
-    (text.startsWith("{") && text.endsWith("}")) ||
-    (text.startsWith("[") && text.endsWith("]"));
-
-  if (!looksLikeJson) {
-    return raw;
-  }
-
-  try {
-    const parsed = JSON.parse(text);
-    return `\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
-  } catch {
-    return raw;
-  }
-=======
 /** 消息类型配置 */
 const messageTypeConfig = {
   user: {
@@ -182,107 +128,177 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
       </SyntaxHighlighter>
     </div>
   );
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
+}
+
+/** 可展开区域组件 */
+function CollapsibleSection({
+  title,
+  icon: Icon,
+  iconColorClass,
+  headerBgClass,
+  borderColorClass,
+  isExpanded,
+  onToggle,
+  children,
+  isActive,
+  isStreaming,
+  streamLabel,
+  contentClassName,
+}: {
+  title: string;
+  icon: React.ElementType;
+  iconColorClass: string;
+  headerBgClass: string;
+  borderColorClass: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  isActive?: boolean;
+  isStreaming?: boolean;
+  streamLabel?: string;
+  contentClassName?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border shadow-sm overflow-hidden transition-all duration-300",
+        borderColorClass,
+        isActive && "ring-2 ring-blue-500/20",
+        isExpanded ? "flex-1 min-h-[120px]" : "flex-shrink-0 h-10"
+      )}
+    >
+      {/* 头部 - 始终可见，可点击 */}
+      <button
+        onClick={onToggle}
+        className={cn(
+          "w-full flex items-center gap-2 px-3 py-2 transition-colors",
+          headerBgClass,
+          "hover:opacity-90"
+        )}
+      >
+        <div className={cn("flex items-center justify-center w-5 h-5 rounded-lg", iconColorClass)}>
+          {isStreaming ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Icon className="h-3 w-3" />
+          )}
+        </div>
+        <span className="text-xs font-semibold uppercase tracking-wider flex-1 text-left">
+          {title}
+        </span>
+        {isStreaming && streamLabel && (
+          <span className="flex items-center gap-1 text-[10px] opacity-70">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current"></span>
+            </span>
+            {streamLabel}
+          </span>
+        )}
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 transition-transform duration-200",
+            !isExpanded && "-rotate-90"
+          )}
+        />
+      </button>
+
+      {/* 内容区域 */}
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-300",
+          isExpanded ? "flex-1 opacity-100" : "h-0 opacity-0"
+        )}
+      >
+        <div className={cn("h-full overflow-y-auto scrollbar-thin", contentClassName)}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function CollapsibleMessage({
   message,
-  toolResults = [],
-  attachedAssistant = null,
   isStreaming = false,
   streamingContent,
   streamingReasoning,
   className,
   defaultExpanded = false,
+  toolResults = [],
+  attachedAssistant,
 }: CollapsibleMessageProps) {
-<<<<<<< HEAD
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [expandedToolIds, setExpandedToolIds] = useState<
-    Record<string, boolean>
-  >({});
-
-=======
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
   const isToolCall =
     message.role === "assistant" &&
     message.tool_calls &&
     message.tool_calls.length > 0;
   const isToolResult = message.role === "tool";
-<<<<<<< HEAD
-  const displayContent = streamingContent ?? message.content ?? "";
-  const attachedAssistantContent = attachedAssistant?.content ?? "";
-  const hasContent = !!displayContent || isToolCall || !!streamingReasoning;
-  const showExpandButton = hasContent || isStreaming;
-=======
+
+  // 工具结果不单独渲染，已合并到 Tools 区域内
+  if (isToolResult) {
+    return null;
+  }
 
   const displayContent = streamingContent ?? message.content ?? "";
+  const reasoningContent = streamingReasoning || message.reasoning_content || "";
+  const hasToolCalls = isToolCall && message.tool_calls && message.tool_calls.length > 0;
 
   const config = messageTypeConfig[message.role] || messageTypeConfig.assistant;
   const Icon = config.icon;
 
-  // 决定是否使用 Accordion（有内容可展开时）
-  const hasExpandableContent =
-    isToolCall || isToolResult || displayContent.length > 100;
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
-
-  const truncate = (value: string | null | undefined, limit = 120): string => {
-    if (!value) return "...";
-    return value.length > limit ? `${value.slice(0, limit)}...` : value;
-  };
-
-  const previewText = useMemo(() => {
-    if (isToolCall) {
-      const firstTool = message.tool_calls?.[0];
-      const firstResult = firstTool
-        ? toolResults.find((result) => result.tool_call_id === firstTool.id)
-        : null;
-      const toolName = firstTool?.function.name || "unknown_tool";
-      const argsPreview = truncate(firstTool?.function.arguments, 70);
-      const resultPreview = truncate(firstResult?.content, 70);
-      const assistantPreview = truncate(
-        displayContent || attachedAssistantContent,
-        50,
-      );
-      return `${toolName} | 参数: ${argsPreview} | 结果: ${resultPreview} | 说明: ${assistantPreview}`;
+  // 确定当前活跃的 token 类型（用于响应式布局）
+  const activeSection = useMemo(() => {
+    if (!isStreaming) {
+      // 非流式状态下，有内容的展开，没内容的收起
+      return {
+        reasoning: !!reasoningContent,
+        content: !!displayContent,
+        tools: hasToolCalls,
+      };
     }
-    if (isToolResult) {
-      return "工具执行结果";
-    }
-    if (streamingReasoning) {
-      return `思考中: ${streamingReasoning.slice(0, 72)}${streamingReasoning.length > 72 ? "..." : ""}`;
-    }
-    if (!displayContent) {
-      return "...";
-    }
-    return (
-      displayContent.slice(0, 120) + (displayContent.length > 120 ? "..." : "")
-    );
-  }, [
-    displayContent,
-    attachedAssistantContent,
-    isToolCall,
-    isToolResult,
-    message.tool_calls,
-    streamingReasoning,
-    toolResults,
-  ]);
+    // 流式状态下，根据活跃内容动态判断
+    // 如果有推理内容但没有正文，推理区域活跃
+    // 如果有正文，正文区域活跃
+    return {
+      reasoning: !!reasoningContent && !displayContent,
+      content: !!displayContent,
+      tools: false, // 流式时工具区域默认不展开
+    };
+  }, [isStreaming, reasoningContent, displayContent, hasToolCalls]);
 
-  const normalizedDisplayContent = useMemo(
-    () => normalizeMarkdownInput(displayContent),
-    [displayContent],
-  );
+  // 展开状态管理
+  const [expandedSections, setExpandedSections] = useState({
+    reasoning: activeSection.reasoning,
+    content: activeSection.content,
+    tools: activeSection.tools,
+  });
 
-  const normalizedAttachedAssistantContent = useMemo(
-    () => normalizeMarkdownInput(attachedAssistantContent),
-    [attachedAssistantContent],
-  );
+  // 当活跃区域变化时，自动调整展开状态（仅流式状态下）
+  useEffect(() => {
+    if (isStreaming) {
+      setExpandedSections((prev) => ({
+        reasoning: activeSection.reasoning || prev.reasoning,
+        content: activeSection.content || prev.content,
+        tools: prev.tools, // 工具区域保持用户选择
+      }));
+    }
+  }, [isStreaming, activeSection]);
 
-  const toggleToolExpanded = (toolId: string) => {
-    setExpandedToolIds((prev) => ({
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({
       ...prev,
-      [toolId]: !prev[toolId],
+      [section]: !prev[section],
     }));
   };
+
+  // 构建工具调用和结果的映射
+  const toolCallResults = useMemo(() => {
+    if (!hasToolCalls) return [];
+    return message.tool_calls?.map((toolCall) => {
+      const result = toolResults.find((r) => r.tool_call_id === toolCall.id);
+      return { toolCall, result };
+    });
+  }, [hasToolCalls, message.tool_calls, toolResults]);
 
   return (
     <motion.div
@@ -290,277 +306,131 @@ export function CollapsibleMessage({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
       className={cn(
-<<<<<<< HEAD
-        "rounded-lg border bg-white shadow-sm",
-        "dark:bg-zinc-900 dark:border-zinc-700",
-        className,
-      )}
-    >
-      <div
-        className={cn(
-          "flex items-center justify-between px-3 py-2.5",
-          "border-b border-zinc-100 dark:border-zinc-800",
-          showExpandButton &&
-            "cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50",
-          "transition-colors",
-        )}
-        onClick={() => showExpandButton && setIsExpanded(!isExpanded)}
-      >
-        <div className="flex items-center gap-2.5">
-          <RoleLabel
-            role={message.role}
-            size="sm"
-            agentName={message.agent_name}
-          />
-
-          {isToolCall && message.tool_calls?.[0] && (
-            <ToolNameLabel
-              toolName={message.tool_calls[0].function.name}
-              size="sm"
-            />
-          )}
-
-          {isToolResult && message.name && (
-            <ToolNameLabel toolName={message.name} size="sm" />
-          )}
-
-          {isStreaming && (
-            <span className="text-xs text-blue-500 animate-pulse">
-              流式传输中...
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {showExpandButton && (
-            <motion.div
-              animate={{ rotate: isExpanded ? 180 : 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <ChevronDown className="h-4 w-4 text-zinc-400" />
-            </motion.div>
-          )}
-        </div>
-      </div>
-
-      {!isExpanded && (
-        <div className="px-3 py-2.5">
-          <p className="line-clamp-2 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-            {previewText}
-          </p>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-3 py-3 border-b border-zinc-100 dark:border-zinc-800">
-              {isToolCall ? (
-                <div className="space-y-3">
-                  {message.tool_calls?.map((toolCall) => (
-                    <div
-                      key={toolCall.id}
-                      className="rounded-lg border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50"
-                    >
-                      <div
-                        className="mb-2 flex cursor-pointer items-center justify-between gap-2 rounded px-1 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                        onClick={() => toggleToolExpanded(toolCall.id)}
-                      >
-                        <div className="flex items-center gap-2">
-                          <ToolNameLabel
-                            toolName={toolCall.function.name}
-                            size="sm"
-                          />
-                          <span className="text-[11px] text-zinc-600 dark:text-zinc-300">
-                            Tool Execution
-                          </span>
-                        </div>
-                        {expandedToolIds[toolCall.id] ? (
-                          <ChevronDown className="h-4 w-4 text-zinc-400" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 text-zinc-400" />
-                        )}
-                      </div>
-
-                      {!expandedToolIds[toolCall.id] ? (
-                        <div className="rounded-md border border-zinc-200 bg-white p-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
-                          <p className="line-clamp-1">
-                            参数: {truncate(toolCall.function.arguments, 120)}
-                          </p>
-                          <p className="line-clamp-1">
-                            结果:{" "}
-                            {truncate(
-                              toolResults.find(
-                                (result) => result.tool_call_id === toolCall.id,
-                              )?.content,
-                              120,
-                            )}
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-900/70">
-                          <div>
-                            <p className="mb-1 text-[11px] font-semibold text-zinc-500">
-                              参数
-                            </p>
-                            <p className="whitespace-pre-wrap break-words rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs leading-6 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                              {truncate(toolCall.function.arguments, 400)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="mb-1 text-[11px] font-semibold text-zinc-500">
-                              执行结果
-                            </p>
-                            <p className="whitespace-pre-wrap break-words rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-xs leading-6 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                              {truncate(
-                                toolResults.find(
-                                  (result) =>
-                                    result.tool_call_id === toolCall.id,
-                                )?.content,
-                                500,
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {(displayContent || attachedAssistantContent) && (
-                    <div className="rounded-lg border border-zinc-300 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                      <p className="mb-1 text-[11px] font-semibold text-zinc-500">
-                        Assistant 附加说明
-                      </p>
-                      <div className="chat-markdown rounded border border-zinc-200 bg-zinc-50 px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {normalizedDisplayContent ||
-                            normalizedAttachedAssistantContent}
-                        </ReactMarkdown>
-                      </div>
-                    </div>
-                  )}
-
-                  {isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-blue-500 ml-0.5 animate-pulse" />
-                  )}
-                </div>
-              ) : isToolResult ? (
-                <div className="rounded-lg border border-emerald-200/70 bg-emerald-50/70 p-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-emerald-900 dark:text-emerald-200">
-                    {truncate(message.content, 500)}
-                  </pre>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {streamingReasoning && (
-                    <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3 border border-amber-200 dark:border-amber-900/30">
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400 mb-1 font-medium">
-                        思考过程
-                      </p>
-                      <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-                        {streamingReasoning}
-                      </pre>
-                    </div>
-                  )}
-                  <div className="chat-markdown max-w-none rounded-lg border border-zinc-200 bg-zinc-50/70 p-3 dark:border-zinc-700 dark:bg-zinc-900/60">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {normalizedDisplayContent || ""}
-                    </ReactMarkdown>
-                    {!displayContent && !isStreaming && <BreathingEllipsis />}
-                    {isStreaming && (
-                      <span className="inline-block w-2 h-4 bg-blue-500 ml-0.5 animate-pulse" />
-                    )}
-                  </div>
-                  {isStreaming && !displayContent && (
-                    <p className="text-xs text-zinc-500">等待模型输出...</p>
-                  )}
-                  {isStreaming && displayContent && (
-                    <p className="text-[11px] text-zinc-500">
-                      持续生成中
-                      {isStreaming && (
-                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 ml-1 animate-pulse" />
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-=======
         "rounded-2xl border shadow-sm overflow-hidden backdrop-blur-sm",
         config.bgColor,
         config.borderColor,
         className
       )}
     >
-      {hasExpandableContent ? (
-        <Accordion
-          type="single"
-          collapsible
-          defaultValue={defaultExpanded ? "content" : undefined}
-        >
-          <AccordionItem value="content" className="border-0">
-            <AccordionTrigger
-              className={cn(
-                "px-4 py-3 hover:no-underline [&[data-state=open]>div>div>svg]:rotate-180",
-                "transition-all duration-200"
-              )}
+      {/* 消息头部 - 始终显示 */}
+      <div className="px-4 py-3">
+        <MessageHeader
+          message={message}
+          config={config}
+          Icon={Icon}
+          isStreaming={isStreaming}
+          isToolCall={!!isToolCall}
+          isToolResult={!!isToolResult}
+        />
+      </div>
+
+      {/* 消息内容 - 响应式分栏布局 */}
+      <div className="px-4 pb-4">
+        {message.role === "assistant" ? (
+          <div className="flex flex-col gap-2">
+            {/* Reasoning 区域 */}
+            <CollapsibleSection
+              title="Thought Process"
+              icon={Brain}
+              iconColorClass="bg-violet-100 text-violet-600 dark:bg-violet-900/50 dark:text-violet-400"
+              headerBgClass="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/20 border-b border-violet-200 dark:border-violet-800/50"
+              borderColorClass="border-violet-200 dark:border-violet-800/50"
+              isExpanded={expandedSections.reasoning}
+              onToggle={() => toggleSection("reasoning")}
+              isActive={activeSection.reasoning}
+              isStreaming={isStreaming && activeSection.reasoning}
+              streamLabel="reasoning"
+              contentClassName="p-3 bg-gradient-to-r from-violet-50/50 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/10"
             >
-              <MessageHeader
-                message={message}
-                config={config}
-                Icon={Icon}
-                isStreaming={isStreaming}
-                isToolCall={!!isToolCall}
-                isToolResult={!!isToolResult}
-              />
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4">
-              <MessageContent
-                message={message}
-                displayContent={displayContent}
-                streamingReasoning={streamingReasoning}
-                isStreaming={isStreaming}
-                isToolCall={!!isToolCall}
-                isToolResult={!!isToolResult}
-              />
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      ) : (
-        <div>
-          <div className="px-4 py-3">
-            <MessageHeader
-              message={message}
-              config={config}
-              Icon={Icon}
-              isStreaming={isStreaming}
-              isToolCall={!!isToolCall}
-              isToolResult={!!isToolResult}
-            />
+              {reasoningContent ? (
+                <p className="text-sm text-violet-800 dark:text-violet-200 whitespace-pre-wrap leading-relaxed">
+                  {reasoningContent}
+                </p>
+              ) : (
+                <p className="text-xs text-violet-400 italic">等待推理内容...</p>
+              )}
+            </CollapsibleSection>
+
+            {/* Content 区域 */}
+            <CollapsibleSection
+              title="Response"
+              icon={MessageSquare}
+              iconColorClass="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"
+              headerBgClass="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800/50"
+              borderColorClass="border-blue-200 dark:border-blue-800/50"
+              isExpanded={expandedSections.content}
+              onToggle={() => toggleSection("content")}
+              isActive={activeSection.content}
+              isStreaming={isStreaming && activeSection.content}
+              streamLabel="generating"
+              contentClassName="p-3 bg-white dark:bg-zinc-900/50"
+            >
+              {displayContent ? (
+                <MarkdownContent content={displayContent} isStreaming={isStreaming} />
+              ) : (
+                <p className="text-xs text-zinc-400 italic">等待生成内容...</p>
+              )}
+            </CollapsibleSection>
+
+            {/* Tools 区域 - 只在有工具调用时显示 */}
+            {hasToolCalls && toolCallResults && (
+              <CollapsibleSection
+                title={`Tools (${toolCallResults.length})`}
+                icon={Wrench}
+                iconColorClass="bg-slate-100 text-slate-600 dark:bg-slate-900/50 dark:text-slate-400"
+                headerBgClass="bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700"
+                borderColorClass="border-slate-200 dark:border-slate-700"
+                isExpanded={!!expandedSections.tools}
+                onToggle={() => toggleSection("tools")}
+                isActive={false}
+                contentClassName="p-2 bg-slate-50/50 dark:bg-slate-900/20 space-y-2"
+              >
+                {toolCallResults.map(({ toolCall, result }) => (
+                  <div
+                    key={toolCall.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-zinc-950"
+                  >
+                    {/* 工具名称和状态 */}
+                    <div className="px-2 py-1.5 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50">
+                      <span className="font-medium text-xs text-slate-700 dark:text-slate-300">
+                        {toolCall.function.name}
+                      </span>
+                      {result ? (
+                        <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                          <CheckCircle2 className="h-3 w-3" />
+                          完成
+                        </span>
+                      ) : (
+                        <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          执行中
+                        </span>
+                      )}
+                    </div>
+                    {/* 工具参数 */}
+                    <div className="px-2 py-1 border-t border-slate-100 dark:border-slate-800">
+                      <pre className="text-[10px] text-slate-500 dark:text-slate-500 whitespace-pre-wrap break-all leading-relaxed max-h-16 overflow-y-auto scrollbar-thin">
+                        {toolCall.function.arguments}
+                      </pre>
+                    </div>
+                    {/* 工具执行结果 */}
+                    {result && (
+                      <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30">
+                        <pre className="text-[11px] text-slate-600 dark:text-slate-400 whitespace-pre-wrap break-all leading-relaxed max-h-24 overflow-y-auto scrollbar-thin">
+                          {result.content}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CollapsibleSection>
+            )}
           </div>
-          <div className="px-4 pb-4">
-            <MessageContent
-              message={message}
-              displayContent={displayContent}
-              streamingReasoning={streamingReasoning}
-              isStreaming={isStreaming}
-              isToolCall={!!isToolCall}
-              isToolResult={!!isToolResult}
-            />
-          </div>
-        </div>
-      )}
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
+        ) : (
+          /* 普通用户/系统消息 */
+          <div className="text-sm whitespace-pre-wrap">{displayContent}</div>
+        )}
+      </div>
     </motion.div>
   );
 }
@@ -602,19 +472,11 @@ function MessageHeader({
             : config.label}
         </span>
 
-        {/* 工具调用标识 */}
-        {isToolCall && message.tool_calls?.[0] && (
+        {/* 工具调用数量标识 */}
+        {isToolCall && message.tool_calls && message.tool_calls.length > 0 && (
           <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300 shrink-0 font-medium">
             <Wrench className="h-3 w-3" />
-            {message.tool_calls[0].function.name}
-          </span>
-        )}
-
-        {/* 工具结果标识 */}
-        {isToolResult && message.name && (
-          <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 shrink-0 font-medium">
-            <CheckCircle2 className="h-3 w-3" />
-            {message.name}
+            {message.tool_calls.length} 个工具
           </span>
         )}
 
@@ -629,117 +491,6 @@ function MessageHeader({
           </span>
         )}
       </div>
-
-      {/* 展开箭头 */}
-      <ChevronDown className="h-4 w-4 text-zinc-400 transition-transform duration-200 shrink-0" />
-    </div>
-  );
-}
-
-/** 消息内容组件 */
-function MessageContent({
-  message,
-  displayContent,
-  streamingReasoning,
-  isStreaming,
-  isToolCall,
-  isToolResult,
-}: {
-  message: ChatMessage;
-  displayContent: string;
-  streamingReasoning?: string;
-  isStreaming: boolean;
-  isToolCall: boolean;
-  isToolResult: boolean;
-}) {
-  // 工具调用：显示 JSON 参数 + 助手内容
-  if (isToolCall) {
-    return (
-      <div className="space-y-4">
-        {/* 先显示助手的内容（如果有） */}
-        {displayContent && (
-          <div className={cn("text-sm", !isToolResult && "pb-3 border-b border-zinc-200 dark:border-zinc-800")}>
-            <MarkdownContent content={displayContent} isStreaming={isStreaming} />
-          </div>
-        )}
-        {/* 显示工具调用 */}
-        {message.tool_calls?.map((toolCall) => {
-          const args = parseToolCallArguments(toolCall);
-          return (
-            <div
-              key={toolCall.id}
-              className="rounded-xl border border-purple-200 dark:border-purple-800 overflow-hidden shadow-sm"
-            >
-              <div className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-950/50 dark:to-purple-900/30 px-4 py-2.5 flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                <span className="font-semibold text-sm text-purple-700 dark:text-purple-300">
-                  {toolCall.function.name}
-                </span>
-              </div>
-              <div className="p-4 bg-white dark:bg-zinc-950">
-                <ReactJson
-                  src={args}
-                  collapsed={true}
-                  collapseStringsAfterLength={50}
-                  enableClipboard={true}
-                  displayDataTypes={false}
-                  displayObjectSize={false}
-                  theme="rjv-default"
-                  style={{
-                    backgroundColor: "transparent",
-                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // 工具结果：显示代码块
-  if (isToolResult) {
-    const content = message.content || "";
-    const formattedContent = useMemo(() => {
-      try {
-        const parsed = JSON.parse(content);
-        return JSON.stringify(parsed, null, 2);
-      } catch {
-        return content;
-      }
-    }, [content]);
-
-    return (
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          <span className="font-semibold text-sm text-emerald-700 dark:text-emerald-300">
-            执行结果
-          </span>
-        </div>
-        <CodeBlock code={formattedContent} language="json" />
-      </div>
-    );
-  }
-
-  // 普通消息
-  return (
-    <div className="space-y-3">
-      {/* 推理内容 */}
-      {streamingReasoning && (
-        <div className="rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 p-3 border border-amber-200 dark:border-amber-800/50">
-          <p className="text-xs text-amber-600 dark:text-amber-400 mb-1 font-semibold uppercase tracking-wider">
-            思考过程
-          </p>
-          <p className="text-sm text-amber-800 dark:text-amber-200 whitespace-pre-wrap leading-relaxed">
-            {streamingReasoning}
-          </p>
-        </div>
-      )}
-
-      {/* 主内容 - Markdown 渲染 */}
-      <MarkdownContent content={displayContent} isStreaming={isStreaming} />
     </div>
   );
 }
@@ -761,7 +512,6 @@ function MarkdownContent({
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // 标题样式
           h1: ({ children }) => (
             <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-4 mb-3 pb-2 border-b-2 border-zinc-200 dark:border-zinc-700">
               {children}
@@ -778,13 +528,11 @@ function MarkdownContent({
               {children}
             </h3>
           ),
-          // 段落
           p: ({ children }) => (
             <p className="text-zinc-700 dark:text-zinc-300 mb-3 last:mb-0">
               {children}
             </p>
           ),
-          // 列表
           ul: ({ children }) => (
             <ul className="list-disc list-inside my-2 space-y-1 text-zinc-700 dark:text-zinc-300">
               {children}
@@ -798,17 +546,14 @@ function MarkdownContent({
           li: ({ children }) => (
             <li className="marker:text-blue-500">{children}</li>
           ),
-          // 加粗
           strong: ({ children }) => (
             <strong className="font-bold text-zinc-900 dark:text-zinc-100">
               {children}
             </strong>
           ),
-          // 斜体
           em: ({ children }) => (
             <em className="italic text-zinc-600 dark:text-zinc-400">{children}</em>
           ),
-          // 行内代码
           code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || "");
             const language = match ? match[1] : "";
@@ -827,15 +572,12 @@ function MarkdownContent({
 
             return <CodeBlock code={code} language={language} />;
           },
-          // 代码块容器
           pre: ({ children }) => <>{children}</>,
-          // 引用
           blockquote: ({ children }) => (
             <blockquote className="border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-600 pl-4 py-2 pr-3 my-3 rounded-r-lg italic text-zinc-600 dark:text-zinc-400">
               {children}
             </blockquote>
           ),
-          // 链接
           a: ({ children, href }) => (
             <a
               href={href}
@@ -846,7 +588,6 @@ function MarkdownContent({
               {children}
             </a>
           ),
-          // 表格
           table: ({ children }) => (
             <div className="overflow-x-auto my-4 rounded-lg border border-zinc-200 dark:border-zinc-700">
               <table className="w-full text-sm border-collapse">
@@ -874,16 +615,12 @@ function MarkdownContent({
               {children}
             </tr>
           ),
-          // 分隔线
-          hr: () => (
-            <hr className="my-4 border-zinc-200 dark:border-zinc-700" />
-          ),
+          hr: () => <hr className="my-4 border-zinc-200 dark:border-zinc-700" />,
         }}
       >
         {content}
       </ReactMarkdown>
 
-      {/* 流式指示器 */}
       {isStreaming && (
         <span className="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse rounded-sm" />
       )}

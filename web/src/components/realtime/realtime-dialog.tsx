@@ -84,7 +84,7 @@ export function RealtimeDialog({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // WebSocket连接（仅用于接收实时推送）
-  const { status, subscribeToDialog, isConnected } = useWebSocket();
+  const { subscribeToDialog, isConnected } = useWebSocket();
 
   // HTTP API（用于发送消息和获取对话框）
   const { sendMessage, getDialog, stopAgent } = useAgentApi();
@@ -168,12 +168,14 @@ export function RealtimeDialog({
 
   // 停止当前Agent运行
   const handleStopAgent = async () => {
-    if (dialogStatus !== "streaming") return;
+    if (!isStreaming) return;
     setIsStopping(true);
     try {
+      console.log("[RealtimeDialog] Stopping agent, current messages:", messages);
       const result = await stopAgent();
       if (result.success) {
         console.log("[RealtimeDialog] Agent stopped successfully");
+        console.log("[RealtimeDialog] Messages after stop:", messages);
       } else {
         console.error("[RealtimeDialog] Failed to stop agent:", result.message);
       }
@@ -297,19 +299,17 @@ export function RealtimeDialog({
             <WifiOff className="h-4 w-4 text-red-500" />
           )}
 
-          {/* 停止按钮 - 始终显示但样式根据状态变化 */}
+          {/* 停止按钮 - 仅在流式输出时显示 */}
           <button
             onClick={handleStopAgent}
-            disabled={isStopping || isSessionClosed}
+            disabled={isStopping || !isStreaming}
             className={cn(
               "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors border",
-              isSessionClosed
+              !isStreaming
                 ? "bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
-                : dialogStatus === "streaming"
-                  ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50 animate-pulse"
-                  : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-700",
+                : "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50 animate-pulse",
             )}
-            title={isSessionClosed ? "会话已结束" : "停止当前Agent运行"}
+            title={!isStreaming ? "Agent 未运行" : "停止当前Agent运行"}
           >
             <Square className="h-3.5 w-3.5 fill-current" />
             <span>{isStopping ? "停止中..." : "停止"}</span>
@@ -375,15 +375,17 @@ export function RealtimeDialog({
           </div>
         ) : (
           <>
-            {renderItems.map(
-              ({ index, message, toolResults, attachedAssistant }) => {
+            {renderItems
+              // 过滤掉工具结果消息，它们已经通过 toolResults 传递
+              .filter(({ message }) => message.role !== "tool")
+              .map(({ index, message, toolResults, attachedAssistant }) => {
+                console.log("[RealtimeDialog] Rendering message:", { index, role: message.role, toolCallsCount: message.tool_calls?.length, toolResultsCount: toolResults?.length, toolResults });
                 const isMessageStreaming =
                   isStreaming &&
                   message.role === "assistant" &&
                   !!message.id &&
                   message.id === streamState.currentMessageId;
 
-<<<<<<< HEAD
                 const shouldHidePendingAssistantPlaceholder =
                   isMessageStreaming &&
                   message.role === "assistant" &&
@@ -398,7 +400,7 @@ export function RealtimeDialog({
 
                 return (
                   <CollapsibleMessage
-                    key={`${message.id || message.role}-${index}`}
+                    key={index}
                     message={message}
                     toolResults={toolResults}
                     attachedAssistant={attachedAssistant}
@@ -418,26 +420,7 @@ export function RealtimeDialog({
                     }
                   />
                 );
-              },
-            )}
-=======
-              return (
-                <CollapsibleMessage
-                  key={index}
-                  message={message}
-                  isStreaming={isMessageStreaming}
-                  streamingContent={isMessageStreaming ? streamingContent : undefined}
-                  streamingReasoning={isMessageStreaming ? streamingReasoning : undefined}
-                  defaultExpanded={
-                    // 用户消息和助手消息默认展开
-                    // 工具结果默认折叠
-                    message.role === "user" ||
-                    (message.role === "assistant" && index >= messages.length - 2)
-                  }
-                />
-              );
-            })}
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
+              })}
             <div ref={messagesEndRef} />
           </>
         )}

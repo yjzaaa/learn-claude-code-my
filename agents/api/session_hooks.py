@@ -20,8 +20,16 @@ class CompositeHooks(AgentLifecycleHooks):
         self._delegates = delegates
 
     def on_hook(self, hook: HookName, **payload: Any) -> None:
-        for delegate in self._delegates:
-            delegate.on_hook(hook, **payload)
+        from loguru import logger
+        logger.info(f"[CompositeHooks] on_hook called: hook={hook}, delegates={len(self._delegates)}, payload_keys={list(payload.keys())}")
+        for i, delegate in enumerate(self._delegates):
+            try:
+                logger.info(f"[CompositeHooks] Calling delegate {i}: {type(delegate).__name__}")
+                delegate.on_hook(hook, **payload)
+            except Exception as e:
+                logger.error(f"[CompositeHooks] Error in delegate {i}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
 
 class SessionHistoryHooks(FullAgentHooks):
@@ -59,9 +67,10 @@ class SessionHistoryHooks(FullAgentHooks):
     def on_stream_token(self, chunk: Any) -> None:
         _ = chunk
 
-    def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
+    def on_tool_call(self, name: str, arguments: dict[str, Any], tool_call_id: str = "") -> None:
         _ = name
         _ = arguments
+        _ = tool_call_id
 
     def on_tool_result(
         self,

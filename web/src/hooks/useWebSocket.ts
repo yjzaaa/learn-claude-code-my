@@ -1,302 +1,466 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { globalEventEmitter } from "@/lib/event-emitter";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type {
-  WebSocketMessage,
-  StreamTokenMessage,
-  MessageAddedEvent,
-  MessageUpdatedEvent,
-  DialogSubscribedEvent,
-} from "../types/realtime-message";
-import type { AgentEvent } from "@/types/agent-event";
+  DialogSession,
+  DialogSummary,
+  ServerPushEvent,
+  StreamDeltaEvent,
+  ToolCallUpdateEvent,
+  Message,
+} from "@/types/dialog";
+import type { ChatMessage } from "@/types/openai";
+import { globalEventEmitter } from "@/lib/event-emitter";
 
-export type WebSocketStatus =
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "error";
+// 将后端 Message 转换为前端 ChatMessage
+function convertToChatMessage(msg: Message): ChatMessage {
+  const base: ChatMessage = {
+    id: msg.id,
+    role: msg.role as any,
+    content: msg.content,
+    reasoning_content: msg.reasoning_content,
+    agent_name: msg.agent_name,
+  };
 
-interface UseWebSocketOptions {
-  url?: string;
-  autoReconnect?: boolean;
-  reconnectInterval?: number;
-  maxReconnectAttempts?: number;
-  onMessage?: (message: WebSocketMessage) => void;
-  onConnect?: () => void;
-  onDisconnect?: () => void;
-  onError?: (error: Event) => void;
-}
-
-// 全局WebSocket状态（避免React StrictMode重复创建连接）
-const globalWsRef = { current: null as WebSocket | null };
-const globalClientId = { current: "" };
-const subscribedDialogs = new Set<string>();
-
-export function useWebSocket(options: UseWebSocketOptions = {}) {
-  const {
-    url = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws",
-    autoReconnect = true,
-    reconnectInterval = 3000,
-    maxReconnectAttempts = 5,
-  } = options;
-
-  const [status, setStatus] = useState<WebSocketStatus>(
-    globalWsRef.current?.readyState === WebSocket.OPEN
-      ? "connected"
-      : "disconnected",
-  );
-  const [error, setError] = useState<string | null>(null);
-
-  const wsRef = globalWsRef;
-  const reconnectAttemptsRef = useRef(0);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const clientIdRef = globalClientId;
-  const optionsRef = useRef(options);
-  const isConnectingRef = useRef(false);
-  const mountedRef = useRef(true);
-  const subscribedDialogsRef = useRef(subscribedDialogs);
-
-  // Update options ref when they change
-  useEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
-
-  // Generate client ID once
-  if (!clientIdRef.current) {
-    clientIdRef.current = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  if (msg.tool_calls && msg.tool_calls.length > 0) {
+    base.tool_calls = msg.tool_calls.map((tc) => ({
+      id: tc.id,
+      type: "function",
+      function: {
+        name: tc.name,
+        arguments: JSON.stringify(tc.arguments),
+      },
+    }));
   }
 
+  if (msg.role === "tool") {
+    base.tool_call_id = msg.tool_call_id;
+    base.name = msg.tool_name;
+  }
+
+  return base;
+}
+
+// WebSocket URL - 优先使用环境变量，否则使用默认值
+const WS_URL = typeof window !== 'undefined'
+  ? (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws/client-1")
+  : "ws://localhost:8001/ws/client-1";
+
+console.log("[WebSocket] Initializing with URL:", WS_URL);
+
+interface UseWebSocketReturn {
+  /** 当前对话框完整状态快照 */
+  currentSnapshot: DialogSession | null;
+  /** 历史对话框列表 */
+  dialogList: DialogSummary[];
+  /** WebSocket 连接状态 */
+  isConnected: boolean;
+  /** 订阅对话框 */
+  subscribeToDialog: (dialogId: string) => void;
+  /** 发送用户输入 */
+  sendUserInput: (dialogId: string, content: string) => void;
+  /** 停止 Agent */
+  stopAgent: (dialogId: string) => void;
+  /** 获取对话框列表 */
+  fetchDialogList: () => Promise<void>;
+  /** 创建新对话框 */
+  createDialog: (title: string) => Promise<{ success: boolean; data?: DialogSession }>;
+}
+
+/**
+ * WebSocket Hook - 纯状态接收，不管理状态
+ *
+ * 只接收后端推送的状态快照，通过 setState 更新
+ */
+export function useWebSocket(): UseWebSocketReturn {
+  const [currentSnapshot, setCurrentSnapshot] = useState<DialogSession | null>(null);
+  const [dialogList, setDialogList] = useState<DialogSummary[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // 跟踪流式消息的累积内容
+  const streamingContentRef = useRef<Map<string, { content: string; reasoning: string }>>(new Map());
+  // 跟踪已发送 message_start 的消息 ID，避免重复创建
+  const messageStartSentRef = useRef<Set<string>>(new Set());
+
+  // 应用增量更新到快照
+  const applyDelta = useCallback((
+    snapshot: DialogSession | null,
+    event: StreamDeltaEvent
+  ): DialogSession | null => {
+    if (!snapshot || !snapshot.streaming_message) return snapshot;
+
+    const streaming = snapshot.streaming_message;
+    return {
+      ...snapshot,
+      streaming_message: {
+        ...streaming,
+        content: streaming.content + (event.delta.content || ""),
+        reasoning_content: (streaming.reasoning_content || "") + (event.delta.reasoning || ""),
+      },
+    };
+  }, []);
+
+  // 更新工具调用状态
+  const updateToolCall = useCallback((
+    snapshot: DialogSession | null,
+    event: ToolCallUpdateEvent
+  ): DialogSession | null => {
+    if (!snapshot || !snapshot.streaming_message?.tool_calls) return snapshot;
+
+    const streaming = snapshot.streaming_message;
+    return {
+      ...snapshot,
+      streaming_message: {
+        ...streaming,
+        tool_calls: streaming.tool_calls!.map((t) =>
+          t.id === event.tool_call.id ? event.tool_call : t
+        ),
+      },
+    };
+  }, []);
+
+  // 连接 WebSocket
   const connect = useCallback(() => {
-    if (
-      wsRef.current?.readyState === WebSocket.OPEN ||
-      isConnectingRef.current
-    ) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
 
-    isConnectingRef.current = true;
-    setStatus("connecting");
-    setError(null);
-
-    const fullUrl = `${url}/${clientIdRef.current}`;
-    console.log("[WebSocket] Connecting to:", fullUrl);
-
     try {
-      const ws = new WebSocket(fullUrl);
+      console.log("[WebSocket] Connecting to:", WS_URL);
+      const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        isConnectingRef.current = false;
-        setStatus("connected");
-        reconnectAttemptsRef.current = 0;
-        optionsRef.current.onConnect?.();
-        globalEventEmitter.emit("websocket:connected");
-        console.log("[WebSocket] Connected successfully");
-
-        // 恢复之前的订阅
-        subscribedDialogsRef.current.forEach((dialogId) => {
-          console.log(
-            "[WebSocket] Restoring subscription to dialog:",
-            dialogId,
-          );
-          ws.send(
-            JSON.stringify({
-              type: "subscribe_dialog",
-              dialog_id: dialogId,
-            }),
-          );
-        });
+        console.log("[WebSocket] Connected");
+        setIsConnected(true);
       };
 
       ws.onmessage = (event) => {
         try {
-          const message: WebSocketMessage = JSON.parse(event.data);
-          console.log("[WebSocket] Message received:", message.type, message);
+          const msg: ServerPushEvent = JSON.parse(event.data);
+          console.log("[WebSocket] Received:", msg.type, msg);
 
-          globalEventEmitter.emit("websocket:message", message);
-          globalEventEmitter.emit(`websocket:${message.type}`, message);
+          switch (msg.type) {
+            case "dialog:snapshot": {
+              // 直接替换整个快照
+              setCurrentSnapshot(msg.data);
+              // 更新历史列表
+              setDialogList((prev) => {
+                const exists = prev.find((d) => d.id === msg.data.id);
+                const summary = {
+                  id: msg.data.id,
+                  title: msg.data.title,
+                  message_count: msg.data.messages.length,
+                  updated_at: msg.data.updated_at,
+                };
+                if (exists) {
+                  return prev.map((d) => (d.id === msg.data.id ? summary : d));
+                }
+                return [...prev, summary];
+              });
 
-          switch (message.type) {
-            case "stream_token":
-              globalEventEmitter.emit(
-                "stream:token",
-                message as StreamTokenMessage,
-              );
-              break;
-            case "message_added":
-              console.log("[WebSocket] Emitting message:added");
-              globalEventEmitter.emit(
-                "message:added",
-                message as MessageAddedEvent,
-              );
-              break;
-            case "message_updated":
-              console.log("[WebSocket] Emitting message:updated");
-              globalEventEmitter.emit(
-                "message:updated",
-                message as MessageUpdatedEvent,
-              );
-              break;
-            case "dialog_subscribed":
-              console.log("[WebSocket] Dialog subscribed:", message);
-              globalEventEmitter.emit(
-                "dialog:subscribed",
-                message as DialogSubscribedEvent,
-              );
-              break;
-            case "dialog_created":
-              globalEventEmitter.emit("dialog:created", message);
-              break;
-            case "dialog_deleted":
-              globalEventEmitter.emit("dialog:deleted", message);
-              break;
+              // 发射 dialog:subscribed 事件给 useMessageStore
+              // 包含 streaming_message（如果存在）
+              const allMessages: ChatMessage[] = msg.data.messages.map(convertToChatMessage);
+              if (msg.data.streaming_message) {
+                allMessages.push(convertToChatMessage(msg.data.streaming_message));
+              }
+              globalEventEmitter.emit("dialog:subscribed", {
+                dialog_id: msg.data.id,
+                dialog: {
+                  id: msg.data.id,
+                  title: msg.data.title,
+                  messages: allMessages,
+                  created_at: Date.parse(msg.data.created_at) || Date.now(),
+                  updated_at: Date.parse(msg.data.updated_at) || Date.now(),
+                },
+              });
 
-            // Agent 流式事件
-            case "agent:message_start":
-            case "agent:content_delta":
-            case "agent:reasoning_delta":
-            case "agent:tool_call":
-            case "agent:tool_result":
-            case "agent:message_complete":
-            case "agent:run_summary":
-            case "agent:error":
-<<<<<<< HEAD
-            case "agent:stopped":
-              globalEventEmitter.emit(
-                "agent:event",
-                message as unknown as AgentEvent,
-              );
-              globalEventEmitter.emit(
-                message.type,
-                message as unknown as AgentEvent,
-              );
-=======
-            case "agent:stopped": {
-              const agentEvent = message as unknown as AgentEvent;
-              globalEventEmitter.emit("agent:event", agentEvent);
-              globalEventEmitter.emit(message.type, agentEvent);
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
+              // 如果有流式消息，发射 message_start（只发送一次）
+              if (msg.data.streaming_message) {
+                const messageId = msg.data.streaming_message.id;
+                // 初始化累积内容跟踪
+                streamingContentRef.current.set(messageId, {
+                  content: msg.data.streaming_message.content || "",
+                  reasoning: msg.data.streaming_message.reasoning_content || "",
+                });
+
+                // 只在该消息还没有被创建时才发送 message_start
+                if (!messageStartSentRef.current.has(messageId)) {
+                  messageStartSentRef.current.add(messageId);
+                  globalEventEmitter.emit("agent:event", {
+                    type: "agent:message_start",
+                    dialog_id: msg.data.id,
+                    data: {
+                      message_id: messageId,
+                      role: msg.data.streaming_message.role,
+                      agent_name: msg.data.streaming_message.agent_name || "TeamLeadAgent",
+                    },
+                  });
+                }
+              }
               break;
             }
-          }
 
-          optionsRef.current.onMessage?.(message);
-        } catch (err) {
-          console.error("[WebSocket] Failed to parse message:", err);
+            case "stream:delta": {
+              // 增量更新
+              setCurrentSnapshot((prev) => applyDelta(prev, msg));
+
+              // 获取或创建当前消息的累积内容
+              const currentMsg = streamingContentRef.current.get(msg.message_id) || { content: "", reasoning: "" };
+
+              // 发射 content_delta 或 reasoning_delta 事件
+              if (msg.delta.content) {
+                const newContent = currentMsg.content + msg.delta.content;
+                currentMsg.content = newContent;
+                streamingContentRef.current.set(msg.message_id, currentMsg);
+
+                globalEventEmitter.emit("agent:event", {
+                  type: "agent:content_delta",
+                  dialog_id: msg.dialog_id,
+                  data: {
+                    message_id: msg.message_id,
+                    delta: msg.delta.content,
+                    content: newContent, // 累积后的完整内容
+                  },
+                });
+              }
+              if (msg.delta.reasoning) {
+                const newReasoning = currentMsg.reasoning + msg.delta.reasoning;
+                currentMsg.reasoning = newReasoning;
+                streamingContentRef.current.set(msg.message_id, currentMsg);
+
+                globalEventEmitter.emit("agent:event", {
+                  type: "agent:reasoning_delta",
+                  dialog_id: msg.dialog_id,
+                  data: {
+                    message_id: msg.message_id,
+                    delta: msg.delta.reasoning,
+                    reasoning_content: newReasoning, // 累积后的完整推理内容
+                  },
+                });
+              }
+              break;
+            }
+
+            case "tool_call:update": {
+              // 更新工具调用状态
+              setCurrentSnapshot((prev) => updateToolCall(prev, msg));
+
+              // 转换 ToolCall 为 ChatCompletionMessageToolCall 格式
+              const toolCallForStore = {
+                id: msg.tool_call.id,
+                type: "function" as const,
+                function: {
+                  name: msg.tool_call.name,
+                  arguments: JSON.stringify(msg.tool_call.arguments),
+                },
+              };
+
+              // 发射 tool_call 事件
+              globalEventEmitter.emit("agent:event", {
+                type: "agent:tool_call",
+                dialog_id: msg.dialog_id,
+                data: {
+                  message_id: msg.tool_call.id,
+                  tool_call: toolCallForStore,
+                },
+              });
+
+              // 如果工具已完成且有结果，发射 tool_result
+              if (msg.tool_call.status === "completed" && msg.tool_call.result) {
+                globalEventEmitter.emit("agent:event", {
+                  type: "agent:tool_result",
+                  dialog_id: msg.dialog_id,
+                  data: {
+                    message_id: null,
+                    tool_call_id: msg.tool_call.id,
+                    tool_name: msg.tool_call.name,
+                    arguments: msg.tool_call.arguments,
+                    result: msg.tool_call.result,
+                  },
+                });
+              }
+              break;
+            }
+
+            case "status:change": {
+              // 状态变更，等待下一个 snapshot 或手动更新
+              setCurrentSnapshot((prev) => {
+                if (!prev || prev.id !== msg.dialog_id) return prev;
+
+                // 如果是 completed 状态，发射 message_complete 并清理累积内容
+                if (msg.to === "completed" && prev.streaming_message) {
+                  const messageId = prev.streaming_message.id;
+                  const accumulated = streamingContentRef.current.get(messageId);
+
+                  globalEventEmitter.emit("agent:event", {
+                    type: "agent:message_complete",
+                    dialog_id: msg.dialog_id,
+                    data: {
+                      message_id: messageId,
+                      content: accumulated?.content || prev.streaming_message.content || "",
+                      reasoning_content: accumulated?.reasoning || prev.streaming_message.reasoning_content,
+                    },
+                  });
+
+                  // 清理累积内容和 message_start 记录
+                  streamingContentRef.current.delete(messageId);
+                  messageStartSentRef.current.delete(messageId);
+                }
+
+                return { ...prev, status: msg.to };
+              });
+              break;
+            }
+
+            case "error":
+              console.error("[WebSocket] Server error:", msg.error);
+              globalEventEmitter.emit("agent:event", {
+                type: "agent:error",
+                dialog_id: msg.dialog_id,
+                data: {
+                  error: msg.error?.message || "Unknown error",
+                },
+              });
+              break;
+          }
+        } catch (e) {
+          console.error("[WebSocket] Failed to parse message:", e);
         }
       };
 
       ws.onclose = () => {
-        isConnectingRef.current = false;
-        setStatus("disconnected");
+        console.log("[WebSocket] Disconnected");
+        setIsConnected(false);
         wsRef.current = null;
-        optionsRef.current.onDisconnect?.();
-        globalEventEmitter.emit("websocket:disconnected");
-        console.log("[WebSocket] Connection closed");
 
-        if (
-          autoReconnect &&
-          reconnectAttemptsRef.current < maxReconnectAttempts
-        ) {
-          reconnectAttemptsRef.current++;
-          console.log(
-            `[WebSocket] Reconnecting... attempt ${reconnectAttemptsRef.current}`,
-          );
-          reconnectTimerRef.current = setTimeout(() => {
-            if (mountedRef.current) {
-              connect();
-            }
-          }, reconnectInterval);
+        // 自动重连
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log("[WebSocket] Reconnecting...");
+          connect();
+        }, 3000);
+      };
+
+      ws.onerror = (error) => {
+        console.error("[WebSocket] Connection error. URL:", WS_URL, "Error:", error);
+        // 检查常见错误原因
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.error("[WebSocket] Failed to establish connection. Check if backend is running on port 8001");
         }
       };
-
-      ws.onerror = (err) => {
-        isConnectingRef.current = false;
-        setStatus("error");
-        setError("WebSocket connection error");
-        optionsRef.current.onError?.(err);
-        globalEventEmitter.emit("websocket:error", err);
-        console.error("[WebSocket] Error:", err);
-      };
-    } catch (err) {
-      isConnectingRef.current = false;
-      setStatus("error");
-      setError("Failed to create WebSocket connection");
-      console.error("[WebSocket] Failed to create connection:", err);
+    } catch (e) {
+      console.error("[WebSocket] Failed to connect:", e);
     }
-  }, [url, autoReconnect, reconnectInterval, maxReconnectAttempts]);
+  }, [applyDelta, updateToolCall]);
 
-  const disconnect = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-  }, []);
-
-  const send = useCallback((message: object) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-      return true;
-    }
-    return false;
-  }, []);
-
-  const subscribeToDialog = useCallback(
-    (dialogId: string) => {
-      console.log("[WebSocket] Subscribing to dialog:", dialogId);
-      // 记录订阅，以便重连后恢复
-      subscribedDialogsRef.current.add(dialogId);
-      const result = send({
-        type: "subscribe_dialog",
-        dialog_id: dialogId,
-      });
-      console.log("[WebSocket] Subscribe message sent:", result);
-      return result;
-    },
-    [send],
-  );
-
-  const unsubscribeFromDialog = useCallback(
-    (dialogId: string) => {
-      subscribedDialogsRef.current.delete(dialogId);
-      return send({
-        type: "unsubscribe_dialog",
-        dialog_id: dialogId,
-      });
-    },
-    [send],
-  );
-
-  const sendPing = useCallback(() => {
-    return send({ type: "ping" });
-  }, [send]);
-
-  // 组件挂载时确保连接
+  // 初始连接
   useEffect(() => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      connect();
-    }
+    connect();
+
     return () => {
-      mountedRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
+  }, [connect]);
+
+  // 订阅对话框
+  const subscribeToDialog = useCallback((dialogId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "subscribe",
+          dialog_id: dialogId,
+        })
+      );
+    }
+  }, []);
+
+  // 发送用户输入
+  const sendUserInput = useCallback((dialogId: string, content: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "user:input",
+          dialog_id: dialogId,
+          content,
+        })
+      );
+    }
+  }, []);
+
+  // 停止 Agent
+  const stopAgent = useCallback((dialogId: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "stop",
+          dialog_id: dialogId,
+        })
+      );
+    }
+  }, []);
+
+  // 获取对话框列表
+  const fetchDialogList = useCallback(async () => {
+    try {
+      const response = await fetch("http://localhost:8001/api/dialogs");
+      const result = await response.json();
+      if (result.success) {
+        setDialogList(result.data);
+      }
+    } catch (e) {
+      console.error("[WebSocket] Failed to fetch dialogs:", e);
+    }
+  }, []);
+
+  // 创建新对话框
+  const createDialog = useCallback(async (title: string) => {
+    try {
+      const response = await fetch("http://localhost:8001/api/dialogs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        setCurrentSnapshot(result.data);
+        setDialogList((prev) => {
+          const summary = {
+            id: result.data.id,
+            title: result.data.title,
+            message_count: 0,
+            updated_at: result.data.updated_at,
+          };
+          if (prev.find((d) => d.id === summary.id)) {
+            return prev.map((d) => (d.id === summary.id ? summary : d));
+          }
+          return [...prev, summary];
+        });
+        return { success: true, data: result.data };
+      }
+      return { success: false };
+    } catch (e) {
+      console.error("[WebSocket] Failed to create dialog:", e);
+      return { success: false };
+    }
   }, []);
 
   return {
-    status,
-    error,
-    connect,
-    disconnect,
-    send,
+    currentSnapshot,
+    dialogList,
+    isConnected,
     subscribeToDialog,
-    unsubscribeFromDialog,
-    sendPing,
-    isConnected: status === "connected",
-    isConnecting: status === "connecting",
+    sendUserInput,
+    stopAgent,
+    fetchDialogList,
+    createDialog,
   };
 }

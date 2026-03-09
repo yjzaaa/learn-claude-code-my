@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 启动 FastAPI 服务器
 
@@ -269,7 +269,7 @@ def main():
 
     try:
         uvicorn.run(
-            "agents.api.main:app",
+            "agents.api.main_new:app",
             host=args.host,
             port=args.port,
             reload=args.reload,

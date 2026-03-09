@@ -9,18 +9,11 @@ import type { ChatCompletionMessageToolCall } from "./openai";
 
 /** Agent 事件类型 */
 export type AgentEventType =
-<<<<<<< HEAD
-  | "agent:message_start" // 助手消息开始
-  | "agent:content_delta" // 内容增量
-  | "agent:reasoning_delta" // 推理内容增量 (DeepSeek-R1等)
-  | "agent:tool_call" // 工具调用
-=======
   | "agent:message_start"    // 助手消息开始
   | "agent:content_delta"    // 内容增量
   | "agent:reasoning_delta"  // 推理内容增量 (DeepSeek-R1等)
   | "agent:tool_call"        // 工具调用
   | "agent:tool_result"      // 工具执行结果
->>>>>>> 4aa0591 (feat: 完善实时对话界面的 Markdown 渲染和工具结果显示)
   | "agent:message_complete" // 消息完成
   | "agent:run_summary" // 运行摘要/钩子统计
   | "agent:error" // 错误

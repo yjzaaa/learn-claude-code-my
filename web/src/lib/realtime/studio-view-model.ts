@@ -110,7 +110,9 @@ export function buildStudioConversationViewModel(
         next.role === "assistant" &&
         (!next.tool_calls || next.tool_calls.length === 0)
       ) {
-        attachedAssistantNote = clip(next.content, 260);
+        // 对于推理模型，优先使用 content，如果为空则使用 reasoning_content
+        const displayContent = next.content || next.reasoning_content || "";
+        attachedAssistantNote = clip(displayContent, 260);
         consumed.add(i + 1);
       }
 
@@ -128,12 +130,14 @@ export function buildStudioConversationViewModel(
     }
 
     if (msg.role === "assistant") {
+      // 对于推理模型（如 DeepSeek-R1），content 可能为空，但 reasoning_content 有内容
+      const displayContent = msg.content || msg.reasoning_content || "";
       items.push({
         id: msg.id || `assistant-${i}`,
         kind: "assistant",
         role: "assistant",
         title: msg.agent_name ? `Assistant (${msg.agent_name})` : "Assistant",
-        body: clip(msg.content, 420),
+        body: clip(displayContent, 420),
         timestampLabel: clockLabel(i),
       });
       continue;
@@ -186,6 +190,7 @@ export function buildStudioConversationViewModel(
 export function buildMessageRenderItems(
   messages: ChatMessage[],
 ): StudioMessageRenderItem[] {
+  console.log("[buildMessageRenderItems] Input messages:", messages.map(m => ({ role: m.role, id: m.id, tool_call_id: m.tool_call_id })));
   const consumedToolResultIds = new Set<string>();
   const consumedAssistantIndices = new Set<number>();
   const renderItems: StudioMessageRenderItem[] = [];
@@ -251,7 +256,7 @@ export function buildMessageRenderItems(
               if (
                 candidate.role === "assistant" &&
                 !candidate.tool_calls?.length &&
-                !!(candidate.content || "").trim()
+                !!(candidate.content || candidate.reasoning_content || "").trim()
               ) {
                 consumedAssistantIndices.add(candidateIndex);
                 return candidate;
@@ -281,6 +286,12 @@ export function buildMessageRenderItems(
     });
   }
 
+  console.log("[buildMessageRenderItems] Output renderItems:", renderItems.map(r => ({
+    index: r.index,
+    role: r.message.role,
+    toolCallsCount: r.message.tool_calls?.length,
+    toolResultsCount: r.toolResults?.length
+  })));
   return renderItems;
 }
 

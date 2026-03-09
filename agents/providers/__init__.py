@@ -1,6 +1,7 @@
 """LLM providers module - 流式优先设计"""
 
 import os
+from loguru import logger
 from .base import LLMProvider, StreamChunk, ToolCall
 from .litellm_provider import LiteLLMProvider
 from .transcription import TranscriptionProvider
@@ -34,6 +35,7 @@ def create_provider_from_env() -> LiteLLMProvider | None:
         """按优先级解析模型名：MODEL_ID > provider 专属模型变量 > 默认值。"""
         explicit_model = os.getenv("MODEL_ID")
         if explicit_model:
+            logger.debug(f"Using MODEL_ID: {explicit_model}")
             return explicit_model
 
         provider_model_envs = {
@@ -47,8 +49,10 @@ def create_provider_from_env() -> LiteLLMProvider | None:
         for env_name in provider_model_envs.get(prov_id, ()):  # pragma: no branch
             val = os.getenv(env_name)
             if val:
+                logger.debug(f"Using {env_name}: {val}")
                 return val
 
+        logger.debug(f"Using default model for {prov_id}: {default_model}")
         return default_model
 
     # 根据模型前缀或名称推断 provider
@@ -136,6 +140,8 @@ def create_provider_from_env() -> LiteLLMProvider | None:
                 if not model:
                     model = deployment
                 api_base = f"{prefix}/openai/deployments"
+
+    logger.info(f"Creating LiteLLMProvider: provider_id={provider_id}, model={model}, api_base={api_base}")
 
     return LiteLLMProvider(
         api_key=api_key,

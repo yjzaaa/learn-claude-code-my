@@ -274,7 +274,7 @@ class LiteLLMProvider(LLMProvider):
                 
                 choice = chunk.choices[0]
                 delta = choice.delta
-                
+                # logger.debug(f"LiteLLM chunk: {chunk}")
                 # 处理内容增量
                 if hasattr(delta, "content") and delta.content:
                     yield StreamChunk(content=delta.content)

@@ -61,11 +61,15 @@ class ConnectionManager:
 
     async def broadcast(self, message: Dict[str, Any]):
         """广播消息到所有客户端"""
+        logger.info(f"[ConnectionManager] Broadcasting to all: type={message.get('type')}, active_connections={len(self.active_connections)}")
         disconnected = []
+        message_json = json.dumps(message, ensure_ascii=False)
         for client_id, connection in self.active_connections.items():
             try:
-                await connection.send_text(json.dumps(message, ensure_ascii=False))
-            except Exception:
+                await connection.send_text(message_json)
+                logger.info(f"[ConnectionManager] Message sent to client {client_id}")
+            except Exception as e:
+                logger.error(f"[ConnectionManager] Failed to send to client {client_id}: {e}")
                 disconnected.append(client_id)
 
         # 清理断开的连接
