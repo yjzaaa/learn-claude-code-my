@@ -1,4 +1,4 @@
-﻿from loguru import logger
+from loguru import logger
 #!/usr/bin/env python3
 """
 s08_background_tasks.py - 后台任务

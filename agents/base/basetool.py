@@ -49,10 +49,20 @@ class WorkspaceOps:
         self.read_blacklist_scopes = self._build_simple_scopes(self.read_tool_blacklist)
         self.write_scope = self.write_scopes[0]
         self.bash_script_ext_whitelist = {".py", ".ps1", ".bat", ".cmd"}
+        # Inline Python is enabled by default; set ALLOW_INLINE_PYTHON=0/false to disable.
+        self.allow_inline_python = self._resolve_bool_flag("ALLOW_INLINE_PYTHON", True)
         # 默认在构造阶段构建基础工具列表，供外部直接复用。
         self.tools: list[Callable[..., Any]] = (
             self.build_default_tools() if auto_build_tools else []
         )
+
+    def _resolve_bool_flag(self, env_key: str, default: bool) -> bool:
+        env_value = os.environ.get(env_key)
+        dotenv_value = self._dotenv_values.get(env_key)
+        raw = (env_value if env_value is not None else dotenv_value)
+        if raw is None:
+            return default
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
     def _split_list_value(raw_value: str | None) -> list[str]:
@@ -271,11 +281,13 @@ class WorkspaceOps:
         return "scripts" in rel_parts
 
     def _validate_bash_script_command(self, command: str) -> tuple[bool, str | None]:
-        """Allow only script execution from approved scopes and block inline execution flags."""
+        """Allow approved script execution and selected inline commands."""
         if re.search(r"\bpython(?:\.exe)?\s+-c\b", command, flags=re.IGNORECASE):
+            if self.allow_inline_python:
+                return True, None
             return False, "Inline python (-c) is not allowed; run a script from BASH_SCRIPT_WHITELIST."
         if re.search(r"\bpowershell(?:\.exe)?\s+-Command\b", command, flags=re.IGNORECASE):
-            return False, "Inline PowerShell (-Command) is not allowed; run a script from BASH_SCRIPT_WHITELIST."
+            return True, None
 
         for resolved_path in self._extract_command_paths(command):
             if self._is_allowed_bash_script(resolved_path):
@@ -394,7 +406,7 @@ class WorkspaceOps:
         if include_bash:
             @tool(
                 name="bash",
-                description="Run a command in Windows PowerShell only. Only script files from BASH_SCRIPT_WHITELIST are executable (default: .workspace;skills/**/scripts). No inline -c/-Command.",
+                description="Run a command in Windows PowerShell only. Script files from BASH_SCRIPT_WHITELIST are executable (default: .workspace;skills/**/scripts). Inline Python (-c) is allowed by default. Inline PowerShell (-Command) is allowed.",
             )
             def bash(command: str) -> str:
                 return self.run_bash(command, timeout=bash_timeout)

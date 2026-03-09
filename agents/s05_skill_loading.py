@@ -414,8 +414,6 @@ AGENT_LOOP = BaseAgentLoop(
     tools=TOOLS,
     max_tokens=8000,
     max_rounds=10,  # 限制最多10轮对话
-    on_stream_token=_on_stream_token,
-    on_stop=_on_stop,
 )
 
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 WebSocket桥接器
 
 将Agent循环与WebSocket事件系统集成

@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import AsyncIterator, Any
+from typing import AsyncIterator, Any, cast
 from loguru import logger
 from .base import LLMProvider, StreamChunk, ToolCall
 
@@ -22,6 +22,7 @@ class LiteLLMProvider(LLMProvider):
         self,
         api_key: str | None = None,
         api_base: str | None = None,
+        api_version: str | None = None,
         default_model: str = "anthropic/claude-4.5",
         timeout: float = 120.0,
         max_retries: int = 3,
@@ -36,6 +37,7 @@ class LiteLLMProvider(LLMProvider):
         
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
+        self.api_version = api_version
         self._configure_litellm(api_key, api_base)
         self._suppress_litellm_logging()
     
@@ -47,7 +49,7 @@ class LiteLLMProvider(LLMProvider):
             
             os.environ["LITELLM_LOG"] = "ERROR"
             litellm.suppress_debug_info = True
-            litellm.set_verbose = False
+            setattr(litellm, "set_verbose", False)
             litellm.drop_params = True
             litellm.telemetry = False
             
@@ -94,6 +96,38 @@ class LiteLLMProvider(LLMProvider):
                 os.environ[env_name] = resolved
         elif api_key:
             os.environ["OPENAI_API_KEY"] = api_key
+
+    @staticmethod
+    def _openai_fallback_shapes(api_base: str, model: str) -> list[tuple[str, str]]:
+        """Generate candidate (api_base, model) pairs for OpenAI/Azure-compatible gateways."""
+        base = (api_base or "").rstrip("/")
+        candidates: list[tuple[str, str]] = []
+
+        def add_candidate(b: str, m: str) -> None:
+            if not b or not m:
+                return
+            pair = (b.rstrip("/"), m)
+            if pair not in candidates:
+                candidates.append(pair)
+
+        # Current shape first.
+        add_candidate(base, model)
+
+        if "/openai/deployments" in base:
+            # If base is .../deployments, try .../deployments/<model>
+            if base.endswith("/openai/deployments"):
+                add_candidate(f"{base}/{model}", model)
+
+            # If base is .../deployments/<name>, also try parent deployments path.
+            if "/openai/deployments/" in base:
+                root, _, tail = base.partition("/openai/deployments/")
+                deployment = tail.split("/")[0] if tail else ""
+                add_candidate(f"{root}/openai/deployments", deployment or model)
+                add_candidate(f"{root}/openai/deployments/{deployment}", deployment or model)
+                # Some gateways expose OpenAI-compatible /openai/v1 directly.
+                add_candidate(f"{root}/openai/v1", model)
+
+        return candidates
     
     async def chat_stream(
         self,
@@ -125,6 +159,32 @@ class LiteLLMProvider(LLMProvider):
                 "stream": True,
                 "timeout": self.timeout,
             }
+
+            effective_api_base = self.api_base
+            openai_azure_mode = False
+
+            # Azure/OpenAI gateways often expect: model=azure/<deployment>, api_base=<gateway-root>.
+            if (
+                self.provider_id == "openai"
+                and self.api_version
+                and self.api_base
+                and "/openai/deployments" in self.api_base
+            ):
+                base_norm = self.api_base.rstrip("/")
+                gateway_root = base_norm.split("/openai/deployments", 1)[0]
+                deployment = str(model)
+                if deployment.startswith("azure/"):
+                    deployment = deployment.split("/", 1)[1]
+                request_params["model"] = f"azure/{deployment}"
+                effective_api_base = gateway_root
+                openai_azure_mode = True
+                logger.info(
+                    f"Using Azure-compatible LiteLLM shape: model={request_params['model']}, api_base={effective_api_base}"
+                )
+
+            # Azure/OpenAI-compatible gateways may require explicit API version.
+            if self.api_version:
+                request_params["api_version"] = self.api_version
             
             # max_tokens: 0 表示不传此参数，由模型自行决定
             if max_tokens and max_tokens > 0:
@@ -132,14 +192,17 @@ class LiteLLMProvider(LLMProvider):
             
             from .registry import find_provider_by_api_base, get_provider_metadata
             
-            if self.api_base:
+            if effective_api_base:
                 # 优先用 provider_id 精确查找，自定义 API 的 api_base 无法通过 URL 匹配
                 provider_metadata = (
                     get_provider_metadata(self.provider_id) if self.provider_id
-                    else find_provider_by_api_base(self.api_base)
+                    else find_provider_by_api_base(effective_api_base)
                 )
                 
-                if provider_metadata:
+                if openai_azure_mode:
+                    request_params["api_base"] = effective_api_base
+                    request_params["api_key"] = self.api_key or "not-needed"
+                elif provider_metadata:
                     if provider_metadata.litellm_prefix:
                         should_skip = any(model.startswith(prefix) for prefix in provider_metadata.skip_prefixes)
                         if not should_skip:
@@ -150,11 +213,11 @@ class LiteLLMProvider(LLMProvider):
                         request_params.update(overrides)
                         logger.info(f"Applied overrides for {model}: {overrides}")
                     
-                    request_params["api_base"] = self.api_base
+                    request_params["api_base"] = effective_api_base
                     #  LiteLLM 强制要求 api_key，传占位值即可
                     request_params["api_key"] = self.api_key or "not-needed"
                 else:
-                    request_params["api_base"] = self.api_base
+                    request_params["api_base"] = effective_api_base
                     request_params["api_key"] = self.api_key or "not-needed"
             elif self.api_key:
                 request_params["api_key"] = self.api_key
@@ -166,13 +229,41 @@ class LiteLLMProvider(LLMProvider):
             request_params.update(kwargs)
             
             # logger.debug(f"LiteLLM params: {json.dumps({k: v for k, v in request_params.items() if k not in ['api_key', 'messages']}, ensure_ascii=False)}")
-            response = await litellm.acompletion(**request_params)
+            response = None
+            last_err: Exception | None = None
+
+            # For OpenAI/Azure-style gateways, retry with a few common URL/model shapes on 404.
+            if self.provider_id == "openai" and self.api_base and model and not openai_azure_mode:
+                fallback_pairs = self._openai_fallback_shapes(self.api_base, str(model))
+                for idx, (candidate_base, candidate_model) in enumerate(fallback_pairs, start=1):
+                    attempt_params = dict(request_params)
+                    attempt_params["api_base"] = candidate_base
+                    attempt_params["model"] = candidate_model
+                    try:
+                        if idx > 1:
+                            logger.warning(
+                                f"Retrying LiteLLM with fallback shape #{idx}: model={candidate_model}, api_base={candidate_base}"
+                            )
+                        response = await litellm.acompletion(**attempt_params)
+                        request_params = attempt_params
+                        break
+                    except Exception as e:
+                        last_err = e
+                        if "notfound" in str(e).lower() or "resource not found" in str(e).lower():
+                            continue
+                        raise
+                if response is None and last_err is not None:
+                    raise last_err
+            else:
+                response = await litellm.acompletion(**request_params)
+
+            stream_response = cast(AsyncIterator[Any], response)
             
             tool_call_buffer: dict[str, dict[str, Any]] = {}
             reasoning_buffer = ""
             # chunk_count = 0
             
-            async for chunk in response:
+            async for chunk in stream_response:
                 # chunk_count += 1
                 # 记录前3个chunk，以及带有finish_reason的chunk
                 # has_finish_reason = chunk.choices and chunk.choices[0].finish_reason
@@ -353,7 +444,7 @@ class LiteLLMProvider(LLMProvider):
                 # 调用 litellm 转录
                 response = await litellm.atranscription(**request_params)
                 
-                return response.text
+                return response.text or ""
             
             finally:
                 # 清理临时文件

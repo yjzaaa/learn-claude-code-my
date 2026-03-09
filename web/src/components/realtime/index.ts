@@ -6,5 +6,11 @@ export { StatusIndicator } from "./status-indicator";
 export { MessageTypeBadge } from "./message-type-badge";
 export { ToolNameLabel } from "./tool-name-label";
 export { ThinkingMessage } from "./thinking-message";
-export { AgentTypeLabel, AgentTypeIcon, AgentTypeSelector } from "./agent-type-label";
+export {
+  AgentTypeLabel,
+  AgentTypeIcon,
+  AgentTypeSelector,
+} from "./agent-type-label";
 export { RuntimeFlowchart } from "./runtime-flowchart";
+export { HookStatsPanel } from "./hook-stats-panel";
+export { StudioDesignDemo } from "./studio-design-demo";

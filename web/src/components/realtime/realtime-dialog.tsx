@@ -6,9 +6,11 @@ import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useMessageStore } from "@/hooks/useMessageStore";
 import { useAgentApi } from "@/hooks/useAgentApi";
-import type { ChatMessage, ChatSession } from "@/types/openai";
+import { buildMessageRenderItems } from "@/lib/realtime/studio-view-model";
+import type { ChatSession } from "@/types/openai";
 import { CollapsibleMessage } from "./collapsible-message";
 import { StatusIndicator } from "./status-indicator";
+import { HookStatsPanel } from "./hook-stats-panel";
 import {
   MessageSquare,
   Wifi,
@@ -95,6 +97,7 @@ export function RealtimeDialog({
     isStreaming,
     streamingContent,
     streamingReasoning,
+    streamState,
   } = useMessageStore();
 
   // 加载对话框数据
@@ -135,11 +138,24 @@ export function RealtimeDialog({
     return "completed";
   }, [isStreaming, messages]);
 
+  const renderItems = useMemo(
+    () => buildMessageRenderItems(messages),
+    [messages],
+  );
+
   // 调试：打印状态
   useEffect(() => {
-    console.log("[RealtimeDialog] dialogStatus:", dialogStatus, "messages count:", messages.length);
+    console.log(
+      "[RealtimeDialog] dialogStatus:",
+      dialogStatus,
+      "messages count:",
+      messages.length,
+    );
     if (messages.length > 0) {
-      console.log("[RealtimeDialog] last message role:", messages[messages.length - 1]?.role);
+      console.log(
+        "[RealtimeDialog] last message role:",
+        messages[messages.length - 1]?.role,
+      );
     }
   }, [dialogStatus, messages]);
 
@@ -152,7 +168,7 @@ export function RealtimeDialog({
 
   // 停止当前Agent运行
   const handleStopAgent = async () => {
-    if (dialogStatus !== "streaming" && dialogStatus !== "pending") return;
+    if (dialogStatus !== "streaming") return;
     setIsStopping(true);
     try {
       const result = await stopAgent();
@@ -200,7 +216,7 @@ export function RealtimeDialog({
             "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg",
             "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700",
             "hover:shadow-xl transition-shadow",
-            isSessionClosed && "opacity-70"
+            isSessionClosed && "opacity-70",
           )}
         >
           <StatusIndicator
@@ -209,19 +225,23 @@ export function RealtimeDialog({
             animate={!isSessionClosed && dialogStatus === "streaming"}
           />
           <MessageSquare className="h-4 w-4 text-zinc-600" />
-          <span className={cn(
-            "text-sm font-medium",
-            isSessionClosed
-              ? "text-zinc-500 line-through"
-              : "text-zinc-700 dark:text-zinc-300"
-          )}>
+          <span
+            className={cn(
+              "text-sm font-medium",
+              isSessionClosed
+                ? "text-zinc-500 line-through"
+                : "text-zinc-700 dark:text-zinc-300",
+            )}
+          >
             {isSessionClosed ? `${title} (已结束)` : title}
           </span>
           {messages.length > 0 && (
-            <span className={cn(
-              "text-white text-xs rounded-full px-1.5 py-0.5",
-              isSessionClosed ? "bg-zinc-400" : "bg-blue-500"
-            )}>
+            <span
+              className={cn(
+                "text-white text-xs rounded-full px-1.5 py-0.5",
+                isSessionClosed ? "bg-zinc-400" : "bg-blue-500",
+              )}
+            >
               {messages.length}
             </span>
           )}
@@ -254,12 +274,14 @@ export function RealtimeDialog({
             animate={!isSessionClosed && dialogStatus === "streaming"}
           />
           <MessageSquare className="h-4 w-4 text-zinc-600" />
-          <h3 className={cn(
-            "font-semibold",
-            isSessionClosed
-              ? "text-zinc-500 dark:text-zinc-500 line-through"
-              : "text-zinc-800 dark:text-zinc-200"
-          )}>
+          <h3
+            className={cn(
+              "font-semibold",
+              isSessionClosed
+                ? "text-zinc-500 dark:text-zinc-500 line-through"
+                : "text-zinc-800 dark:text-zinc-200",
+            )}
+          >
             {isSessionClosed ? `${title} (已结束)` : title}
           </h3>
           <span className="text-xs text-zinc-400">
@@ -283,9 +305,9 @@ export function RealtimeDialog({
               "flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors border",
               isSessionClosed
                 ? "bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed"
-                : (dialogStatus === "streaming" || dialogStatus === "pending")
+                : dialogStatus === "streaming"
                   ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-200 dark:hover:bg-red-900/50 animate-pulse"
-                  : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-300 dark:border-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-700",
             )}
             title={isSessionClosed ? "会话已结束" : "停止当前Agent运行"}
           >
@@ -327,6 +349,14 @@ export function RealtimeDialog({
         </div>
       </div>
 
+      {/* Sticky Dashboard */}
+      <div className="shrink-0 border-b border-zinc-200 bg-zinc-50/60 p-3 dark:border-zinc-700 dark:bg-zinc-900/60">
+        <HookStatsPanel
+          hookStats={streamState.hookStats}
+          runReport={streamState.runReport}
+        />
+      </div>
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {/* 会话已关闭提示 */}
@@ -345,24 +375,50 @@ export function RealtimeDialog({
           </div>
         ) : (
           <>
-            {messages.map((message, index) => {
-              const isLastMessage = index === messages.length - 1;
-              const isMessageStreaming = isStreaming && isLastMessage;
+            {renderItems.map(
+              ({ index, message, toolResults, attachedAssistant }) => {
+                const isMessageStreaming =
+                  isStreaming &&
+                  message.role === "assistant" &&
+                  !!message.id &&
+                  message.id === streamState.currentMessageId;
 
-              return (
-                <CollapsibleMessage
-                  key={index}
-                  message={message}
-                  isStreaming={isMessageStreaming}
-                  streamingContent={isMessageStreaming ? streamingContent : undefined}
-                  streamingReasoning={isMessageStreaming ? streamingReasoning : undefined}
-                  defaultExpanded={
-                    !(message.role === "assistant" && message.tool_calls && message.tool_calls.length > 0) &&
-                    index >= messages.length - 2
-                  }
-                />
-              );
-            })}
+                const shouldHidePendingAssistantPlaceholder =
+                  isMessageStreaming &&
+                  message.role === "assistant" &&
+                  !message.tool_calls?.length &&
+                  !(streamingContent || "").trim() &&
+                  !(streamingReasoning || "").trim() &&
+                  !(message.content || "").trim();
+
+                if (shouldHidePendingAssistantPlaceholder) {
+                  return null;
+                }
+
+                return (
+                  <CollapsibleMessage
+                    key={`${message.id || message.role}-${index}`}
+                    message={message}
+                    toolResults={toolResults}
+                    attachedAssistant={attachedAssistant}
+                    isStreaming={isMessageStreaming}
+                    streamingContent={
+                      isMessageStreaming ? streamingContent : undefined
+                    }
+                    streamingReasoning={
+                      isMessageStreaming ? streamingReasoning : undefined
+                    }
+                    defaultExpanded={
+                      message.role === "assistant" &&
+                      message.tool_calls &&
+                      message.tool_calls.length > 0
+                        ? false
+                        : index >= messages.length - 2
+                    }
+                  />
+                );
+              },
+            )}
             <div ref={messagesEndRef} />
           </>
         )}

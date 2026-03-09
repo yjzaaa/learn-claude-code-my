@@ -9,13 +9,46 @@ import type { ChatCompletionMessageToolCall } from "./openai";
 
 /** Agent 事件类型 */
 export type AgentEventType =
-  | "agent:message_start"    // 助手消息开始
-  | "agent:content_delta"    // 内容增量
-  | "agent:reasoning_delta"  // 推理内容增量 (DeepSeek-R1等)
-  | "agent:tool_call"        // 工具调用
+  | "agent:message_start" // 助手消息开始
+  | "agent:content_delta" // 内容增量
+  | "agent:reasoning_delta" // 推理内容增量 (DeepSeek-R1等)
+  | "agent:tool_call" // 工具调用
   | "agent:message_complete" // 消息完成
-  | "agent:error"            // 错误
-  | "agent:stopped";         // 停止
+  | "agent:run_summary" // 运行摘要/钩子统计
+  | "agent:error" // 错误
+  | "agent:stopped"; // 停止
+
+export interface HookToolCallSummary {
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface HookStats {
+  stream_total: number;
+  content_chunks: number;
+  reasoning_chunks: number;
+  tool_chunks: number;
+  done_chunks: number;
+  error_chunks: number;
+  tool_calls: HookToolCallSummary[];
+  complete_payload: string;
+  errors: string[];
+  after_run_rounds: number;
+}
+
+export interface AgentRunReportMessage {
+  role: string;
+  content: unknown;
+  tool_call_id?: string;
+  reasoning_content?: unknown;
+  tool_calls?: unknown;
+}
+
+export interface AgentRunReport {
+  result: string;
+  hook_stats: HookStats;
+  messages: AgentRunReportMessage[];
+}
 
 /** Agent 流式消息 */
 export interface StreamingMessage {
@@ -60,7 +93,6 @@ export interface AgentReasoningDeltaEvent extends AgentEventBase {
   type: "agent:reasoning_delta";
   data: {
     message_id: string;
-    message_id: string;
     delta: string;
     reasoning_content: string;
   };
@@ -83,6 +115,16 @@ export interface AgentMessageCompleteEvent extends AgentEventBase {
     content: string;
     reasoning_content?: string;
     tool_calls?: ChatCompletionMessageToolCall[];
+  };
+}
+
+/** 运行摘要事件 */
+export interface AgentRunSummaryEvent extends AgentEventBase {
+  type: "agent:run_summary";
+  data: {
+    result: string;
+    hook_stats: HookStats;
+    messages: AgentRunReportMessage[];
   };
 }
 
@@ -110,6 +152,7 @@ export type AgentEvent =
   | AgentReasoningDeltaEvent
   | AgentToolCallEvent
   | AgentMessageCompleteEvent
+  | AgentRunSummaryEvent
   | AgentErrorEvent
   | AgentStoppedEvent;
 
@@ -138,6 +181,10 @@ export interface AgentStreamState {
   toolCalls: ChatCompletionMessageToolCall[];
   /** 是否显示推理内容 */
   showReasoning: boolean;
+  /** 最近一次运行的 hook 统计 */
+  hookStats: HookStats | null;
+  /** 最近一次运行的完整报告（result/hook_stats/messages） */
+  runReport: AgentRunReport | null;
 }
 
 /** 初始流式状态 */
@@ -149,5 +196,7 @@ export function createInitialStreamState(): AgentStreamState {
     accumulatedReasoning: "",
     toolCalls: [],
     showReasoning: false,
+    hookStats: null,
+    runReport: null,
   };
 }

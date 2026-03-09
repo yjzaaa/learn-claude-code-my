@@ -1,4 +1,4 @@
-﻿from loguru import logger
+from loguru import logger
 #!/usr/bin/env python3
 """
 s12_worktree_task_isolation.py - Worktree 与任务隔离

@@ -2,11 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
-import type {
-  ChatMessage,
-  ChatEvent,
-  ChatEventType,
-} from "@/types/openai";
+import type { ChatMessage, ChatEvent, ChatEventType } from "@/types/openai";
 import type { AgentEvent, AgentStreamState } from "@/types/agent-event";
 
 interface MessageStoreState {
@@ -44,6 +40,21 @@ interface ChatEventPayload {
   timestamp: number;
 }
 
+function normalizeDialog(
+  input: Partial<ChatSession> | null,
+): ChatSession | null {
+  if (!input || !input.id) return null;
+  return {
+    id: input.id,
+    messages: Array.isArray(input.messages) ? input.messages : [],
+    model: input.model,
+    created_at:
+      typeof input.created_at === "number" ? input.created_at : Date.now(),
+    updated_at:
+      typeof input.updated_at === "number" ? input.updated_at : Date.now(),
+  };
+}
+
 export function useMessageStore() {
   const [state, setState] = useState<MessageStoreState>({
     dialogs: [],
@@ -57,6 +68,8 @@ export function useMessageStore() {
       accumulatedReasoning: "",
       toolCalls: [],
       showReasoning: false,
+      hookStats: null,
+      runReport: null,
     },
   });
 
@@ -83,14 +96,17 @@ export function useMessageStore() {
           // 流式增量 - 追加到最后一条 assistant 消息
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.role === "assistant") {
-            lastMsg.content = (lastMsg.content || "") + (event.message.content || "");
+            lastMsg.content =
+              (lastMsg.content || "") + (event.message.content || "");
           } else {
             messages.push(event.message);
           }
         } else if (event.type === "message") {
           // 新消息 - 检查是否已存在
           const existingIdx = messages.findIndex(
-            (m) => m.role === event.message.role && m.content === event.message.content
+            (m) =>
+              m.role === event.message.role &&
+              m.content === event.message.content,
           );
           if (existingIdx === -1) {
             messages.push(event.message);
@@ -111,7 +127,7 @@ export function useMessageStore() {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d
+          d.id === updatedDialog.id ? updatedDialog : d,
         ),
       };
     });
@@ -132,7 +148,7 @@ export function useMessageStore() {
         }, 50);
       }
     },
-    [flushMessages]
+    [flushMessages],
   );
 
   // 监听WebSocket事件
@@ -155,13 +171,14 @@ export function useMessageStore() {
 
     const handleDialogSubscribed = (event: {
       dialog_id: string;
-      dialog: ChatSession | null;
+      dialog: Partial<ChatSession> | null;
     }) => {
-      if (event.dialog) {
+      const normalizedDialog = normalizeDialog(event.dialog);
+      if (normalizedDialog) {
         setState((prev) => {
           // 检查是否已经有这个对话框
           const existingDialog = prev.dialogs.find(
-            (d) => d.id === event.dialog!.id
+            (d) => d.id === normalizedDialog.id,
           );
 
           // 合并消息：保留现有消息，同时添加服务器上的新消息
@@ -169,30 +186,29 @@ export function useMessageStore() {
           if (existingDialog) {
             mergedMessages = [...existingDialog.messages];
             // 添加服务器有但本地没有的消息
-            event.dialog!.messages.forEach((serverMsg) => {
+            normalizedDialog.messages.forEach((serverMsg) => {
               const exists = mergedMessages.some(
                 (m) =>
-                  m.role === serverMsg.role &&
-                  m.content === serverMsg.content
+                  m.role === serverMsg.role && m.content === serverMsg.content,
               );
               if (!exists) {
                 mergedMessages.push(serverMsg);
               }
             });
           } else {
-            mergedMessages = event.dialog!.messages;
+            mergedMessages = normalizedDialog.messages;
           }
 
           const dialogToUse: ChatSession = {
-            ...event.dialog,
+            ...normalizedDialog,
             messages: mergedMessages,
           };
 
           const updatedDialogs = prev.dialogs.some(
-            (d) => d.id === event.dialog!.id
+            (d) => d.id === normalizedDialog.id,
           )
             ? prev.dialogs.map((d) =>
-                d.id === event.dialog!.id ? dialogToUse : d
+                d.id === normalizedDialog.id ? dialogToUse : d,
               )
             : [...prev.dialogs, dialogToUse];
 
@@ -330,7 +346,8 @@ export function useMessageStore() {
           }
 
           case "agent:message_complete": {
-            const { message_id, content, reasoning_content, tool_calls } = event.data;
+            const { message_id, content, reasoning_content, tool_calls } =
+              event.data;
 
             // 清理流式缓存
             delete streamingMessagesRef.current[message_id];
@@ -340,11 +357,23 @@ export function useMessageStore() {
             const targetIdx = messages.findIndex((m) => m.id === message_id);
 
             if (targetIdx >= 0) {
+              const nextContent = content || messages[targetIdx].content || "";
+              const nextToolCalls =
+                tool_calls || messages[targetIdx].tool_calls;
+
               messages[targetIdx] = {
                 ...messages[targetIdx],
-                content: content || messages[targetIdx].content,
-                tool_calls: tool_calls || messages[targetIdx].tool_calls,
+                content: nextContent,
+                tool_calls: nextToolCalls,
               };
+
+              // 清理仅由 message_start 产生的空 assistant 占位，避免 UI 出现“(无内容)”噪音。
+              const hasContent = (nextContent || "").trim().length > 0;
+              const hasToolCalls =
+                Array.isArray(nextToolCalls) && nextToolCalls.length > 0;
+              if (!hasContent && !hasToolCalls) {
+                messages.splice(targetIdx, 1);
+              }
             }
 
             return {
@@ -356,10 +385,27 @@ export function useMessageStore() {
                 accumulatedReasoning: "",
                 toolCalls: [],
                 showReasoning: !!reasoning_content,
+                hookStats: streamState.hookStats,
+                runReport: streamState.runReport,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages, updated_at: Date.now() }
                 : null,
+            };
+          }
+
+          case "agent:run_summary": {
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                hookStats: event.data.hook_stats,
+                runReport: {
+                  result: event.data.result,
+                  hook_stats: event.data.hook_stats,
+                  messages: event.data.messages,
+                },
+              },
             };
           }
 
@@ -393,15 +439,15 @@ export function useMessageStore() {
 
     const unsubscribeChat = globalEventEmitter.on(
       "chat:event",
-      handleChatEvent
+      handleChatEvent,
     );
     const unsubscribeDialog = globalEventEmitter.on(
       "dialog:subscribed",
-      handleDialogSubscribed
+      handleDialogSubscribed,
     );
     const unsubscribeAgent = globalEventEmitter.on(
       "agent:event",
-      handleAgentEvent
+      handleAgentEvent,
     );
 
     return () => {
@@ -457,7 +503,7 @@ export function useMessageStore() {
         ...prev,
         currentDialog: updatedDialog,
         dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d
+          d.id === updatedDialog.id ? updatedDialog : d,
         ),
       };
     });
@@ -472,11 +518,11 @@ export function useMessageStore() {
             m.role === "assistant" &&
             m.tool_calls &&
             m.tool_calls.length > 0 &&
-            m.content === parentContent
+            m.content === parentContent,
         ) || []
       );
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   // 获取工具结果
@@ -484,11 +530,11 @@ export function useMessageStore() {
     (toolCallId: string) => {
       return (
         state.currentDialog?.messages.filter(
-          (m) => m.role === "tool" && m.tool_call_id === toolCallId
+          (m) => m.role === "tool" && m.tool_call_id === toolCallId,
         ) || []
       );
     },
-    [state.currentDialog]
+    [state.currentDialog],
   );
 
   return {

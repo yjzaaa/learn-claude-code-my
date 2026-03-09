@@ -1,5 +1,6 @@
 from .basetool import DefaultCommandGuard, WorkspaceOps
 from .base_agent_loop import BaseAgentLoop, run_agent
+from .abstract import AgentLifecycleHooks, HookName
 from .plugin_enabled_agent import PluginEnabledAgent
 from .toolkit import tool, build_tools, build_tools_and_handlers, scan_tools
 
@@ -12,6 +13,8 @@ __all__ = [
     "WorkspaceOps",
     # Agent 循环
     "BaseAgentLoop",
+    "AgentLifecycleHooks",
+    "HookName",
     "PluginEnabledAgent",
     "run_agent",
     # OpenAI 风格类型

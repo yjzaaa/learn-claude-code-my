@@ -1,11 +1,12 @@
-﻿"""
+"""
 Subagent Pattern - How to implement Task tool for context isolation.
 
 The key insight: spawn child agents with ISOLATED context to prevent
 "context pollution" where exploration details fill up the main conversation.
 """
 
-from loguru import logger`r`nimport time
+from loguru import logger
+import time
 import sys
 
 # Assuming client, MODEL, execute_tool are defined elsewhere

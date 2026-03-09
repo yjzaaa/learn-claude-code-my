@@ -1,4 +1,4 @@
-﻿from loguru import logger
+from loguru import logger
 #!/usr/bin/env python3
 """
 Agent Scaffold Script - Create a new agent project with best practices.

@@ -52,7 +52,7 @@ uv pip install --python .venv\Scripts\python.exe pipreqs
 在项目根目录执行（输出到独立文件，避免覆盖现有 `requirements.txt`）：
 
 ```powershell
-uv run --python .venv\Scripts\python.exe pipreqs . --force --savepath requirements.txt --ignore .venv,web
+uv run --python .venv\Scripts\python.exe pipreqs . --force --savepath requirements.inferred.txt --ignore .venv,web
 ```
 
 参数说明：
@@ -60,6 +60,11 @@ uv run --python .venv\Scripts\python.exe pipreqs . --force --savepath requiremen
 - `--savepath requirements.inferred.txt`：将反推结果输出到新文件
 - `--ignore .venv,web`：忽略虚拟环境目录和前端目录，减少误识别
 - `--force`：允许覆盖已有输出文件
+
+筛选建议：
+
+- 先人工检查 `requirements.inferred.txt`，再合并到正式 `requirements.txt`
+- 避免直接锁定底层传递依赖（例如 `pydantic_core`）；应优先保留上层包（例如 `pydantic` 或依赖它的框架）
 
 ## 5. 安装反推得到的依赖
 
@@ -72,13 +77,13 @@ uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 ```powershell
 uv venv .venv; `
 uv pip install --python .venv\Scripts\python.exe pipreqs; `
-uv run --python .venv\Scripts\python.exe pipreqs . --force --savepath requirements.txt --ignore .venv,web; `
+uv run --python .venv\Scripts\python.exe pipreqs . --force --savepath requirements.inferred.txt --ignore .venv,web; `
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
 ```
 
 ## 7. 本仓库一次实际执行结果
 
-本次执行后，`requirements.txt` 内容如下：
+示例（仅示意） `requirements.inferred.txt` 可能包含：
 
 ```txt
 anthropic==0.84.0
@@ -89,4 +94,3 @@ python-dotenv==1.2.2
 ```
 
 注意：`pipreqs` 通过源码 import 反推依赖，可能出现“版本偏高”或“可选依赖也被纳入”的情况。建议将 `requirements.inferred.txt` 与项目已有 `requirements.txt` 对比后，再决定最终依赖清单。
-
