@@ -359,20 +359,27 @@ export function useMessageStore() {
           case "agent:tool_call": {
             const { message_id, tool_call } = event.data;
             console.log("[MessageStore] agent:tool_call received:", { message_id, tool_call });
-            const newToolCalls = [...streamState.toolCalls, tool_call];
 
-            // 添加 tool_call 消息到消息列表
             const messages = [...(prev.currentDialog?.messages || [])];
 
-            // 更新对应的 assistant 消息的 tool_calls
-            const assistantIdx = messages.findIndex((m) => m.id === message_id);
+            // 找到最后一条 assistant 消息来添加 tool_call
+            // 因为 tool_call 可能是通过 tool_call.id 关联的，而不是 message_id
+            const assistantIdx = messages.findLastIndex((m) => m.role === "assistant");
+
             if (assistantIdx >= 0) {
               console.log("[MessageStore] Updating assistant message at index:", assistantIdx);
-              messages[assistantIdx] = {
-                ...messages[assistantIdx],
-                tool_calls: newToolCalls,
-              };
+              const existingToolCalls = messages[assistantIdx].tool_calls || [];
+              // 检查是否已存在相同的 tool_call
+              const exists = existingToolCalls.some((tc) => tc.id === tool_call.id);
+              if (!exists) {
+                messages[assistantIdx] = {
+                  ...messages[assistantIdx],
+                  tool_calls: [...existingToolCalls, tool_call],
+                };
+              }
             }
+
+            const newToolCalls = [...streamState.toolCalls, tool_call];
 
             return {
               ...prev,
@@ -443,17 +450,14 @@ export function useMessageStore() {
               }
             }
 
+            // 保留当前累积的内容，不要清空，避免内容闪烁消失
             return {
               ...prev,
               streamState: {
+                ...streamState,
                 isStreaming: false,
                 currentMessageId: null,
-                accumulatedContent: "",
-                accumulatedReasoning: "",
-                toolCalls: [],
                 showReasoning: !!reasoning_content,
-                hookStats: streamState.hookStats,
-                runReport: streamState.runReport,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages, updated_at: Date.now() }
