@@ -6,47 +6,46 @@
 ```json
 {
   "tables": [
-    "cost_database",
-    "rate_table",
-    "cc_mapping",
-    "cost_text_mapping"
+    "SSME_FI_InsightBot_CostDataBase",
+    "SSME_FI_InsightBot_Rate",
+    "SSME_FI_InsightBot_CCMapping"
   ],
-  "default_tables": ["cost_database"],
+  "default_tables": ["SSME_FI_InsightBot_CostDataBase"],
   "intent_table_map": {
     "allocation": [
-      "cost_database",
-      "rate_table"
+      "SSME_FI_InsightBot_CostDataBase",
+      "SSME_FI_InsightBot_Rate"
     ],
-    "budget_vs_actual": ["cost_database"],
-    "variance": ["cost_database"],
-    "trend": ["cost_database"],
-    "cost_structure": ["cost_database"],
-    "profitability": ["cost_database"]
+    "budget_vs_actual": ["SSME_FI_InsightBot_CostDataBase"],
+    "variance": ["SSME_FI_InsightBot_CostDataBase"],
+    "trend": ["SSME_FI_InsightBot_CostDataBase"],
+    "cost_structure": ["SSME_FI_InsightBot_CostDataBase"],
+    "profitability": ["SSME_FI_InsightBot_CostDataBase"]
   },
   "keyword_table_map": {
-    "分摊": ["cost_database", "rate_table"],
+    "分摊": ["SSME_FI_InsightBot_CostDataBase", "SSME_FI_InsightBot_Rate"],
     "allocation": [
-      "cost_database",
-      "rate_table"
+      "SSME_FI_InsightBot_CostDataBase",
+      "SSME_FI_InsightBot_Rate"
     ],
-    "预算": ["cost_database"],
-    "实际": ["cost_database"],
-    "差异": ["cost_database"],
-    "同比": ["cost_database"],
-    "环比": ["cost_database"],
-    "趋势": ["cost_database"],
-    "对比": ["cost_database"],
-    "成本": ["cost_database"],
-    "费用": ["cost_database"],
-    "服务": ["cost_database"],
-    "it": ["cost_database"],
-    "IT": ["cost_database"],
-    "it服务": ["cost_database"],
-    "IT服务": ["cost_database"],
-    "利润": ["cost_database"],
-    "收入": ["cost_database"],
-    "费率": ["rate_table"],
-    "比例": ["rate_table"]
+    "预算": ["SSME_FI_InsightBot_CostDataBase"],
+    "实际": ["SSME_FI_InsightBot_CostDataBase"],
+    "差异": ["SSME_FI_InsightBot_CostDataBase"],
+    "同比": ["SSME_FI_InsightBot_CostDataBase"],
+    "环比": ["SSME_FI_InsightBot_CostDataBase"],
+    "趋势": ["SSME_FI_InsightBot_CostDataBase"],
+    "对比": ["SSME_FI_InsightBot_CostDataBase"],
+    "成本": ["SSME_FI_InsightBot_CostDataBase"],
+    "费用": ["SSME_FI_InsightBot_CostDataBase"],
+    "服务": ["SSME_FI_InsightBot_CostDataBase"],
+    "it": ["SSME_FI_InsightBot_CostDataBase"],
+    "IT": ["SSME_FI_InsightBot_CostDataBase"],
+    "it服务": ["SSME_FI_InsightBot_CostDataBase"],
+    "IT服务": ["SSME_FI_InsightBot_CostDataBase"],
+    "利润": ["SSME_FI_InsightBot_CostDataBase"],
+    "收入": ["SSME_FI_InsightBot_CostDataBase"],
+    "费率": ["SSME_FI_InsightBot_Rate"],
+    "比例": ["SSME_FI_InsightBot_Rate"]
   }
 }
 ```

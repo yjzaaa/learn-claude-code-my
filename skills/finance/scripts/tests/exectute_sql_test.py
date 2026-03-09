@@ -1,4 +1,3 @@
-﻿from loguru import logger
 from pathlib import Path
 import sys
 import logging
@@ -16,8 +15,10 @@ FROM SSME_FI_InsightBot_CostDataBase
 where  [Function] = 'IT'"""
     # 执行 SQL 查询
     sql_query = execute_sql(sql)
-    logger.info("生成的 SQL 查询:")
-    logger.info(sql_query)
+    print("生成的 SQL 查询:")
+    print(sql_query)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     test_execute_sql()
