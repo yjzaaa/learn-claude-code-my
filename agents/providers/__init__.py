@@ -27,8 +27,29 @@ def _detect_provider_from_api_base(api_base: str) -> str | None:
 
 def create_provider_from_env() -> LiteLLMProvider | None:
     """从环境变量创建 provider"""
-    # 检查 MODEL_ID 环境变量来选择 provider
-    model_id = os.getenv("MODEL_ID", "").lower()
+    # 优先兼容通用 MODEL_ID，同时支持 provider 专属模型变量（如 OPENAI_MODEL_ID）
+    model_id = (os.getenv("MODEL_ID") or os.getenv("OPENAI_MODEL_ID") or "").lower()
+
+    def _resolve_model_for_provider(default_model: str, prov_id: str) -> str:
+        """按优先级解析模型名：MODEL_ID > provider 专属模型变量 > 默认值。"""
+        explicit_model = os.getenv("MODEL_ID")
+        if explicit_model:
+            return explicit_model
+
+        provider_model_envs = {
+            "openai": ("OPENAI_MODEL_ID", "OPENAI_MODEL"),
+            "deepseek": ("DEEPSEEK_MODEL_ID", "DEEPSEEK_MODEL"),
+            "moonshot": ("MOONSHOT_MODEL_ID", "MOONSHOT_MODEL", "KIMI_MODEL"),
+            "anthropic": ("ANTHROPIC_MODEL_ID", "ANTHROPIC_MODEL"),
+            "gemini": ("GEMINI_MODEL_ID", "GEMINI_MODEL"),
+        }
+
+        for env_name in provider_model_envs.get(prov_id, ()):  # pragma: no branch
+            val = os.getenv(env_name)
+            if val:
+                return val
+
+        return default_model
 
     # 根据模型前缀或名称推断 provider
     provider_from_model = None
@@ -55,6 +76,7 @@ def create_provider_from_env() -> LiteLLMProvider | None:
 
     api_key = None
     api_base = None
+    api_version = None
     model = None
     provider_id = None
 
@@ -66,7 +88,7 @@ def create_provider_from_env() -> LiteLLMProvider | None:
                 if key:
                     api_key = key
                     api_base = os.getenv(base_env, "")
-                    model = os.getenv("MODEL_ID", default_model)
+                    model = _resolve_model_for_provider(default_model, prov_id)
                     provider_id = prov_id
                     break
 
@@ -86,7 +108,7 @@ def create_provider_from_env() -> LiteLLMProvider | None:
                         api_base = None
                         continue
 
-                model = os.getenv("MODEL_ID", default_model)
+                model = _resolve_model_for_provider(default_model, prov_id)
                 provider_id = prov_id
                 break
 
@@ -99,9 +121,26 @@ def create_provider_from_env() -> LiteLLMProvider | None:
         if not api_base and metadata.default_api_base:
             api_base = metadata.default_api_base
 
+    if provider_id == "openai":
+        api_version = os.getenv("OPENAI_API_VERSION") or os.getenv("AZURE_OPENAI_API_VERSION")
+
+        # 兼容 Azure 风格 base URL:
+        # 若 OPENAI_BASE_URL 已包含 /openai/deployments/<deployment>，
+        # 则规范化为 /openai/deployments，并把 <deployment> 作为 model。
+        # 这样可避免 SDK 再次拼接 deployment 导致 Resource not found。
+        if api_base and "/openai/deployments/" in api_base:
+            normalized = api_base.rstrip("/")
+            prefix, _, tail = normalized.partition("/openai/deployments/")
+            deployment = tail.split("/")[0] if tail else ""
+            if deployment:
+                if not model:
+                    model = deployment
+                api_base = f"{prefix}/openai/deployments"
+
     return LiteLLMProvider(
         api_key=api_key,
         api_base=api_base if api_base else None,
+        api_version=api_version,
         default_model=model,
         provider_id=provider_id,
     )

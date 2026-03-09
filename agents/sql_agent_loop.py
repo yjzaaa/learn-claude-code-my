@@ -495,15 +495,6 @@ class SQLAgentLoop(BaseAgentLoop):
             tools=list(tools or TOOLS),
             max_tokens=max_tokens,
             max_rounds=max_rounds,
-            on_before_round=self._on_before_round,
-            on_stream_token=on_stream_token,
-            on_stream_text=on_stream_text,
-            on_tool_call=on_tool_call,
-            on_tool_result=self._on_tool_result,
-            on_round_end=self._on_round_end,
-            on_after_round=self._on_after_round,
-            on_stop=on_stop,
-            should_stop=should_stop,
         )
 
     def _on_before_round(self, messages: list[dict[str, Any]]):

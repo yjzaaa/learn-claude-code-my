@@ -7,11 +7,11 @@ FastAPI 主应用 (OpenAI 风格)
 
 from loguru import logger
 import asyncio
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,19 +24,23 @@ from ..websocket.event_manager import event_manager
 from ..websocket.server import connection_manager, MessageHandler
 try:
     from .agent_bridge import AgentWebSocketBridge
+    from .session_manager import SessionManager
+    from .session_hooks import CompositeHooks, SessionHistoryHooks
 except ImportError:
     from agents.api.agent_bridge import AgentWebSocketBridge
+    from agents.api.session_manager import SessionManager
+    from agents.api.session_hooks import CompositeHooks, SessionHistoryHooks
 
 # 导入Agent组件
 try:
     from ..providers import create_provider_from_env
     from ..s05_skill_loading import SKILL_LOADER
-    from ..s03_todo_write import TodoAgent
+    from ..agent.s02_with_skill_loader import S02WithSkillLoaderAgent
     from ..utils.agent_helpers import get_last_user_message
 except ImportError:
     from agents.providers import create_provider_from_env
     from agents.s05_skill_loading import SKILL_LOADER
-    from agents.s03_todo_write import TodoAgent
+    from agents.agent.s02_with_skill_loader import S02WithSkillLoaderAgent
     from agents.utils.agent_helpers import get_last_user_message
 
 WORKDIR = Path.cwd()
@@ -45,16 +49,31 @@ SKILLS_DIR = WORKDIR / "skills"
 # 初始化 provider
 provider = create_provider_from_env()
 
-# 全局Agent状态
-agent_state = {
-    "current_dialog_id": None,
-    "is_running": False,
-    "stop_requested": False,
-    "pending_messages": {},
-    "provider": provider,
-    "model": provider.default_model if provider else "deepseek-chat",
-    "current_agent": None,
-}
+def _build_session_manager() -> SessionManager:
+    """构建默认 SessionManager。"""
+    window_rounds_raw = os.getenv("SESSION_WINDOW_ROUNDS", "10")
+    try:
+        window_rounds = max(1, int(window_rounds_raw))
+    except ValueError:
+        window_rounds = 10
+
+    return SessionManager(
+        provider=provider,
+        model=(provider.default_model if provider and provider.default_model else "deepseek-chat"),
+        window_rounds=window_rounds,
+    )
+
+
+# 模块级默认实例，app.state 初始化前可用
+_default_session_manager = _build_session_manager()
+
+
+def _get_session_manager() -> SessionManager:
+    """统一获取 SessionManager，优先 app.state。"""
+    app_obj = globals().get("app")
+    if app_obj is not None and hasattr(app_obj, "state") and hasattr(app_obj.state, "session_manager"):
+        return app_obj.state.session_manager
+    return _default_session_manager
 
 
 @asynccontextmanager
@@ -82,6 +101,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 挂载到应用状态，便于后续替换/注入
+    app.state.session_manager = _default_session_manager
 
     # ========== REST API 端点 ==========
 
@@ -175,6 +197,8 @@ def create_app() -> FastAPI:
                 "role": "user"  // 可选，默认为 "user"
             }
         """
+        session_manager = _get_session_manager()
+
         content = request.get("content", "")
         role = request.get("role", "user")
 
@@ -192,15 +216,21 @@ def create_app() -> FastAPI:
         # 添加到对话框
         event_manager.add_chat_message(dialog_id, user_message)
 
-        # 检查Agent是否正在运行
-        if agent_state["is_running"]:
-            logger.info(f"[send_message] Agent is running, requesting stop and queuing message for dialog {dialog_id}")
-            agent_state["stop_requested"] = True
+        # 会话对象（缓存历史与队列）
+        session_manager.get_or_create(dialog_id)
 
-            # 将消息加入等待队列
-            if dialog_id not in agent_state["pending_messages"]:
-                agent_state["pending_messages"][dialog_id] = []
-            agent_state["pending_messages"][dialog_id].append(content)
+        # 检查 Agent 是否正在运行（全局串行）
+        if session_manager.is_globally_running():
+            current_dialog_id = session_manager.active_dialog_id()
+            logger.info(
+                f"[send_message] Agent is running, requesting stop and queuing message for dialog {dialog_id}"
+            )
+
+            # 请求停止当前运行中的会话
+            session_manager.request_stop(current_dialog_id)
+
+            # 将消息加入目标会话等待队列
+            session_manager.queue_message(dialog_id, content)
 
             return {
                 "success": True,
@@ -302,10 +332,10 @@ def create_app() -> FastAPI:
     @app.post("/api/skills/{skill_name}/update")
     async def update_skill(skill_name: str, request: Dict[str, Any]):
         """更新skill"""
-        old_text = request.get("old_text")
-        new_text = request.get("new_text")
-        full_content = request.get("full_content")
-        reason = request.get("reason", "")
+        old_text = request.get("old_text") or ""
+        new_text = request.get("new_text") or ""
+        full_content = request.get("full_content") or ""
+        reason = request.get("reason", "") or ""
 
         result = SKILL_LOADER.update_skill(
             skill_name,
@@ -330,27 +360,35 @@ def create_app() -> FastAPI:
     @app.get("/api/agent/status")
     async def get_agent_status():
         """获取Agent状态"""
+        session_manager = _get_session_manager()
         return {
             "success": True,
-            "data": {
-                "is_running": agent_state["is_running"],
-                "current_dialog_id": agent_state["current_dialog_id"],
-                "model": agent_state["model"],
-            }
+            "data": session_manager.status(),
         }
 
     @app.post("/api/agent/stop")
     async def stop_agent():
         """停止当前Agent运行"""
+        session_manager = _get_session_manager()
         import threading
-        logger.info(f"[stop_agent] Stop requested! Current is_running={agent_state.get('is_running')}, dialog_id={agent_state.get('current_dialog_id')}, thread={threading.current_thread().name}")
+        status = session_manager.status()
+        active_dialog_id = status.get("current_dialog_id")
+        logger.info(
+            f"[stop_agent] Stop requested! Current is_running={status.get('is_running')}, "
+            f"dialog_id={active_dialog_id}, thread={threading.current_thread().name}"
+        )
 
-        # 1. 设置全局停止标志
-        agent_state["stop_requested"] = True
+        # 1. 设置会话停止标志
+        session_manager.request_stop(active_dialog_id)
         logger.info(f"[stop_agent] Setting stop_requested=True")
 
-        # 2. 调用当前Agent的request_stop()方法（如果存在）
-        current_agent = agent_state.get("current_agent")
+        # 2. 调用当前 Agent 的 request_stop() 方法（如果存在）
+        current_agent = None
+        if active_dialog_id:
+            active_session = session_manager.get(active_dialog_id)
+            if active_session:
+                current_agent = active_session.runtime.current_agent
+
         if current_agent:
             logger.info(f"[stop_agent] Calling request_stop() on {type(current_agent).__name__}")
             try:
@@ -438,16 +476,22 @@ async def process_agent_request(dialog_id: str):
     4. 检查是否有待处理的消息，如有则继续处理
     5. 发送完成事件
     """
-    logger.info(f"[process_agent_request] Starting for dialog_id={dialog_id}, is_running={agent_state['is_running']}")
+    session_manager = _get_session_manager()
 
-    if agent_state["is_running"] and agent_state["current_dialog_id"] != dialog_id:
+    logger.info(
+        f"[process_agent_request] Starting for dialog_id={dialog_id}, "
+        f"is_running={session_manager.is_globally_running()}"
+    )
+
+    if session_manager.is_globally_running() and session_manager.active_dialog_id() != dialog_id:
         logger.info(f"[process_agent_request] Agent is busy with other dialog, skipping")
         await _send_system_event(dialog_id, "Agent正在处理其他对话，请稍候...")
         return
 
-    agent_state["is_running"] = True
-    agent_state["current_dialog_id"] = dialog_id
-    agent_state["stop_requested"] = False
+    # 确保会话存在
+    session_manager.get_or_create(dialog_id)
+
+    run_error: str | None = None
 
     try:
         # 发送开始事件
@@ -470,31 +514,33 @@ async def process_agent_request(dialog_id: str):
             raise ValueError("No user message found in dialog")
 
         # 从 Agent 类动态获取名称（避免创建两次实例）
-        agent_name = TodoAgent.__name__
+        agent_name = S02WithSkillLoaderAgent.__name__
 
         # 创建 WebSocket Bridge，传入 agent_name
         bridge = AgentWebSocketBridge(dialog_id=dialog_id, agent_name=agent_name)
+        history_hooks = SessionHistoryHooks(dialog_id=dialog_id, session_manager=session_manager)
+        composite_hooks = CompositeHooks([history_hooks, bridge])
 
-        # 创建 TodoAgent，传入 bridge 的钩子函数
-        agent = TodoAgent(
-            **bridge.get_hook_kwargs()
-        )
-        agent_state["current_agent"] = agent
+        # 创建 Agent，并通过统一 hook delegate 绑定 WebSocket bridge
+        agent = S02WithSkillLoaderAgent()
+        agent.set_hook_delegate(composite_hooks)
+        session_manager.begin_run(dialog_id, agent)
         logger.info(f"[process_agent_request] Agent instance saved to agent_state")
 
         # 在线程中运行Agent
         try:
-            logger.info(f"[process_agent_request] Starting TodoAgent...")
-            messages = _build_messages_from_dialog(dialog)
-            logger.info(f"[process_agent_request] Built messages from dialog history: {len(messages)} messages")
-            await asyncio.to_thread(agent.run_with_inbox, messages)
-            logger.info(f"[process_agent_request] TodoAgent completed")
+            logger.info(f"[process_agent_request] Starting {agent_name}...")
+            messages = [{"role": "user", "content": last_user_message}]
+            logger.info("[process_agent_request] Built base messages for hook-based history injection")
+            await asyncio.to_thread(agent.run, messages)
+            logger.info(f"[process_agent_request] {agent_name} completed")
         except Exception as e:
             logger.info(f"[process_agent_request] Agent error: {e}")
             import traceback
             traceback.print_exc()
             bridge.on_error(e)
             await _send_system_event(dialog_id, f"Agent error: {str(e)}")
+            run_error = str(e)
 
         # 发送完成事件
         await _send_system_event(dialog_id, "处理完成")
@@ -507,53 +553,16 @@ async def process_agent_request(dialog_id: str):
 
     finally:
         logger.info(f"[process_agent_request] Cleaning up, setting is_running=False")
-        agent_state["is_running"] = False
-        agent_state["current_dialog_id"] = None
-        agent_state["current_agent"] = None
+        session_manager.end_run(dialog_id, error=run_error)
 
         # 检查是否有待处理的消息
-        pending = agent_state.get("pending_messages", {}).get(dialog_id, [])
+        pending = session_manager.pop_pending_messages(dialog_id)
         if pending:
             logger.info(f"[process_agent_request] Processing {len(pending)} pending messages")
-            agent_state["pending_messages"][dialog_id] = []
-            agent_state["stop_requested"] = False
 
             if pending:
                 await _send_system_event(dialog_id, "处理新的用户消息")
                 asyncio.create_task(process_agent_request(dialog_id))
-
-
-def _build_messages_from_dialog(dialog) -> list:
-    """从对话框历史构建消息列表，供Agent使用（OpenAI格式）"""
-    messages = []
-    for msg in dialog.messages:
-        if msg.role == "user":
-            messages.append({"role": "user", "content": msg.content or ""})
-        elif msg.role == "assistant":
-            assistant_msg = {"role": "assistant", "content": msg.content or ""}
-            # 添加工具调用（如果有）
-            if msg.tool_calls:
-                assistant_msg["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.get("name", "unknown"),
-                            "arguments": tc.function.get("arguments", "{}"),
-                        }
-                    }
-                    for tc in msg.tool_calls
-                ]
-            messages.append(assistant_msg)
-        elif msg.role == "tool":
-            messages.append({
-                "role": "tool",
-                "tool_call_id": msg.tool_call_id,
-                "content": msg.content or ""
-            })
-    return messages
-
-
 async def _send_system_event(dialog_id: str, content: str, metadata: Optional[Dict] = None):
     """发送系统事件 (OpenAI 风格)"""
     # 创建系统消息

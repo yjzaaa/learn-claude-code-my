@@ -37,6 +37,12 @@ class SkillPlugin(AgentPlugin):
         self.skill_loader = SKILL_LOADER
         self._pending_skill_content: str = ""  # 用于暂存加载的技能内容
 
+    def on_before_run(self, messages: List[Dict]) -> None:
+        return None
+
+    def on_stream_token(self, chunk: Any) -> None:
+        return None
+
     def get_additional_tools(self) -> List[Callable]:
         """返回技能加载相关工具"""
         return [
@@ -62,7 +68,13 @@ When you need specialized knowledge:
 3. Use load_skill_reference() or load_skill_script() for additional resources
 """
 
-    def on_tool_result(self, name: str, result: str) -> None:
+    def on_tool_result(
+        self,
+        name: str,
+        result: str,
+        assistant_message: Dict[str, Any] | None = None,
+        tool_call_id: str = "",
+    ) -> None:
         """
         处理工具结果，暂存加载的技能内容
 
@@ -71,6 +83,22 @@ When you need specialized knowledge:
         if name == "load_skill" and not result.startswith("Error:"):
             self._pending_skill_content = result
             logger.info(f"[SkillPlugin] Loaded skill content (length: {len(result)})")
+        _ = (assistant_message, tool_call_id)
+
+    def on_tool_call(self, name: str, arguments: Dict) -> None:
+        return None
+
+    def on_complete(self, content: str) -> None:
+        return None
+
+    def on_error(self, error: Exception) -> None:
+        return None
+
+    def on_after_run(self, messages: List[Dict], rounds: int) -> None:
+        _ = (messages, rounds)
+
+    def on_stop(self) -> None:
+        return None
 
     def _extract_skill_from_messages(self, messages: List[Dict]) -> str:
         """

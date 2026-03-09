@@ -1,4 +1,4 @@
-﻿"""
+"""
 FastAPI WebSocket服务器
 
 提供基于FastAPI的WebSocket实时通信服务

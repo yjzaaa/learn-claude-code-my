@@ -1,4 +1,4 @@
-﻿from loguru import logger
+from loguru import logger
 #!/usr/bin/env python3
 """
 s_full.py - Full Reference Agent

@@ -8,7 +8,7 @@ import type {
   MessageAddedEvent,
   MessageUpdatedEvent,
   DialogSubscribedEvent,
-} from "@/types/realtime-message";
+} from "../types/realtime-message";
 import type { AgentEvent } from "@/types/agent-event";
 
 export type WebSocketStatus =
@@ -158,10 +158,17 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
             case "agent:reasoning_delta":
             case "agent:tool_call":
             case "agent:message_complete":
+            case "agent:run_summary":
             case "agent:error":
             case "agent:stopped":
-              globalEventEmitter.emit("agent:event", message as AgentEvent);
-              globalEventEmitter.emit(message.type, message as AgentEvent);
+              globalEventEmitter.emit(
+                "agent:event",
+                message as unknown as AgentEvent,
+              );
+              globalEventEmitter.emit(
+                message.type,
+                message as unknown as AgentEvent,
+              );
               break;
           }
 

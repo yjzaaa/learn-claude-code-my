@@ -18,11 +18,13 @@ Agent 插件系统
 9. get_system_prompt_addon() - 获取系统提示词追加内容
 """
 
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from abc import abstractmethod
+from typing import Any, Callable, Dict, List
+
+from ..base.abstract import AgentLifecycleHooks, HookName
 
 
-class AgentPlugin(ABC):
+class AgentPlugin(AgentLifecycleHooks):
     """
     Agent 插件基类
 
@@ -42,6 +44,32 @@ class AgentPlugin(ABC):
         """
         self.agent = agent
 
+    def on_hook(self, hook: HookName, **payload: Any) -> None:
+        """Enum-based hook dispatcher required by AgentLifecycleHooks."""
+        if hook == HookName.ON_BEFORE_RUN:
+            self.on_before_run(payload.get("messages", []))
+        elif hook == HookName.ON_STREAM_TOKEN:
+            self.on_stream_token(payload.get("chunk"))
+        elif hook == HookName.ON_TOOL_CALL:
+            self.on_tool_call(payload.get("name", ""), payload.get("arguments", {}))
+        elif hook == HookName.ON_TOOL_RESULT:
+            self.on_tool_result(
+                payload.get("name", ""),
+                payload.get("result", ""),
+                payload.get("assistant_message"),
+                str(payload.get("tool_call_id", "")),
+            )
+        elif hook == HookName.ON_COMPLETE:
+            self.on_complete(payload.get("content", ""))
+        elif hook == HookName.ON_ERROR:
+            err = payload.get("error")
+            self.on_error(err if isinstance(err, Exception) else Exception(str(err)))
+        elif hook == HookName.ON_AFTER_RUN:
+            self.on_after_run(payload.get("messages", []), int(payload.get("rounds", 0)))
+        elif hook == HookName.ON_STOP:
+            self.on_stop()
+
+    @abstractmethod
     def on_before_run(self, messages: List[Dict]) -> None:
         """
         在 Agent 运行前调用
@@ -49,8 +77,9 @@ class AgentPlugin(ABC):
         Args:
             messages: 消息列表（可原地修改）
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def on_stream_token(self, chunk: Any) -> None:
         """
         收到流式 token 时调用
@@ -58,8 +87,9 @@ class AgentPlugin(ABC):
         Args:
             chunk: 内容块
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def on_tool_call(self, name: str, arguments: Dict) -> None:
         """
         工具调用时调用
@@ -68,18 +98,28 @@ class AgentPlugin(ABC):
             name: 工具名称
             arguments: 工具参数
         """
-        pass
+        raise NotImplementedError
 
-    def on_tool_result(self, name: str, result: str) -> None:
+    @abstractmethod
+    def on_tool_result(
+        self,
+        name: str,
+        result: str,
+        assistant_message: Dict[str, Any] | None = None,
+        tool_call_id: str = "",
+    ) -> None:
         """
         收到工具结果时调用
 
         Args:
             name: 工具名称
             result: 工具返回结果
+            assistant_message: 触发该工具调用的 assistant 消息
+            tool_call_id: 工具调用 id
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def on_complete(self, content: str) -> None:
         """
         一轮对话完成时调用
@@ -87,8 +127,9 @@ class AgentPlugin(ABC):
         Args:
             content: 完成的文本内容
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
     def on_error(self, error: Exception) -> None:
         """
         发生错误时调用
@@ -96,11 +137,17 @@ class AgentPlugin(ABC):
         Args:
             error: 异常对象
         """
-        pass
+        raise NotImplementedError
 
+    @abstractmethod
+    def on_after_run(self, messages: List[Dict], rounds: int) -> None:
+        """Agent 运行结束后调用（无论成功/失败）。"""
+        raise NotImplementedError
+
+    @abstractmethod
     def on_stop(self) -> None:
         """Agent 停止时调用"""
-        pass
+        raise NotImplementedError
 
     def get_additional_tools(self) -> List[Callable]:
         """
@@ -248,6 +295,7 @@ class PluginManager:
 
 
 __all__ = [
+    "AgentLifecycleHooks",
     "AgentPlugin",
     "PluginManager",
 ]

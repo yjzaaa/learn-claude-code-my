@@ -9,6 +9,7 @@ AgentWebSocketBridge - Agent 与 WebSocket 之间的桥接层
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
 from loguru import logger
@@ -17,10 +18,12 @@ try:
     from ..models import ChatMessage, ChatEvent, ChatCompletionMessageToolCall
     from ..websocket.server import connection_manager
     from ..websocket.event_manager import event_manager
+    from ..base.abstract import FullAgentHooks, HookName
 except ImportError:
     from agents.models import ChatMessage, ChatEvent, ChatCompletionMessageToolCall
     from agents.websocket.server import connection_manager
     from agents.websocket.event_manager import event_manager
+    from agents.base.abstract import FullAgentHooks, HookName
 
 
 @dataclass
@@ -29,14 +32,27 @@ class StreamingBuffer:
     content: str = ""
     reasoning_content: str = ""
     tool_calls: list = field(default_factory=list)
+    hook_stats: dict = field(default_factory=dict)
 
     def reset(self):
         self.content = ""
         self.reasoning_content = ""
         self.tool_calls = []
+        self.hook_stats = {
+            "stream_total": 0,
+            "content_chunks": 0,
+            "reasoning_chunks": 0,
+            "tool_chunks": 0,
+            "done_chunks": 0,
+            "error_chunks": 0,
+            "tool_calls": [],
+            "complete_payload": "",
+            "errors": [],
+            "after_run_rounds": 0,
+        }
 
 
-class AgentWebSocketBridge:
+class AgentWebSocketBridge(FullAgentHooks):
     """
     Agent 与 WebSocket 之间的桥接器
 
@@ -57,6 +73,7 @@ class AgentWebSocketBridge:
         self.agent_name = agent_name
         self.enable_streaming = enable_streaming
         self.buffer = StreamingBuffer()
+        self.buffer.reset()
         self._message_id = 0
         self._current_assistant_message: Optional[ChatMessage] = None
         # 保存事件循环引用，用于线程安全调度
@@ -122,6 +139,10 @@ class AgentWebSocketBridge:
 
     # ===== Hook Handlers =====
 
+    def on_before_run(self, messages: list[dict[str, Any]]) -> None:
+        _ = messages
+        self.buffer.reset()
+
     def on_stream_token(self, chunk: Any):
         """
         处理流式 token
@@ -146,6 +167,8 @@ class AgentWebSocketBridge:
             if hasattr(chunk, 'is_content') and chunk.is_content:
                 content = chunk.content if hasattr(chunk, 'content') else str(chunk)
                 self.buffer.content += content
+                self.buffer.hook_stats["stream_total"] += 1
+                self.buffer.hook_stats["content_chunks"] += 1
                 logger.info(f"[AgentBridge] Content chunk received: {content[:50]}...")
 
                 # 发送增量内容，包含 agent_name
@@ -159,6 +182,8 @@ class AgentWebSocketBridge:
             elif hasattr(chunk, 'is_reasoning') and chunk.is_reasoning:
                 reasoning = chunk.reasoning_content if hasattr(chunk, 'reasoning_content') else str(chunk)
                 self.buffer.reasoning_content += reasoning
+                self.buffer.hook_stats["stream_total"] += 1
+                self.buffer.hook_stats["reasoning_chunks"] += 1
 
                 # 发送推理内容
                 self._safe_broadcast("reasoning_delta", {
@@ -167,10 +192,22 @@ class AgentWebSocketBridge:
                     "reasoning_content": self.buffer.reasoning_content,
                 })
 
+            elif hasattr(chunk, 'is_tool_call') and chunk.is_tool_call:
+                self.buffer.hook_stats["stream_total"] += 1
+                self.buffer.hook_stats["tool_chunks"] += 1
+            elif hasattr(chunk, 'is_done') and chunk.is_done:
+                self.buffer.hook_stats["stream_total"] += 1
+                self.buffer.hook_stats["done_chunks"] += 1
+            elif hasattr(chunk, 'is_error') and chunk.is_error:
+                self.buffer.hook_stats["stream_total"] += 1
+                self.buffer.hook_stats["error_chunks"] += 1
+                err_text = chunk.error if hasattr(chunk, "error") else str(chunk)
+                self.buffer.hook_stats["errors"].append(err_text)
+
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_stream_token: {e}")
 
-    def on_tool_call(self, tool_name: str, arguments: dict):
+    def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
         """
         处理工具调用
 
@@ -182,13 +219,17 @@ class AgentWebSocketBridge:
                 id=f"call_{self._get_next_message_id()}",
                 type="function",
                 function={
-                    "name": tool_name,
+                    "name": name,
                     "arguments": json.dumps(arguments) if isinstance(arguments, dict) else str(arguments),
                 }
             )
             # 同时保存 dict 格式用于广播
             tool_call_dict = tool_call_obj.to_dict()
             self.buffer.tool_calls.append(tool_call_dict)
+            self.buffer.hook_stats["tool_calls"].append({
+                "name": name,
+                "arguments": arguments if isinstance(arguments, dict) else {"raw": str(arguments)},
+            })
 
             self._safe_broadcast("tool_call", {
                 "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
@@ -204,7 +245,19 @@ class AgentWebSocketBridge:
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_tool_call: {e}")
 
-    def on_complete(self, final_content: str):
+    def on_tool_result(
+        self,
+        name: str,
+        result: str,
+        assistant_message: dict[str, Any] | None = None,
+        tool_call_id: str = "",
+    ) -> None:
+        _ = name
+        _ = assistant_message
+        _ = tool_call_id
+        _ = result
+
+    def on_complete(self, content: str) -> None:
         """
         处理完成事件
 
@@ -213,8 +266,9 @@ class AgentWebSocketBridge:
         try:
             # 保存最终消息到对话框
             if self._current_assistant_message:
-                self._current_assistant_message.content = final_content or self.buffer.content
+                self._current_assistant_message.content = content or self.buffer.content
                 event_manager.add_chat_message(self.dialog_id, self._current_assistant_message)
+                self.buffer.hook_stats["complete_payload"] = self._current_assistant_message.content
 
                 # 发送完成事件
                 self._safe_broadcast("message_complete", {
@@ -232,10 +286,6 @@ class AgentWebSocketBridge:
             # 保存消息和 usage 到 JSONL
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.buffer, ensure_ascii=False, default=str) + "\n")
-
-            # 重置缓冲区
-            self.buffer.reset()
-            self._current_assistant_message = None
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_complete: {e}")
@@ -266,6 +316,7 @@ class AgentWebSocketBridge:
         try:
             error_msg = str(error)
             logger.error(f"[AgentBridge] Agent error: {error_msg}")
+            self.buffer.hook_stats["errors"].append(error_msg)
 
             self._safe_broadcast("error", {
                 "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
@@ -293,6 +344,50 @@ class AgentWebSocketBridge:
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_stop: {e}")
 
+    def on_after_run(self, messages: list[dict[str, Any]], rounds: int) -> None:
+        self.buffer.hook_stats["after_run_rounds"] = rounds
+
+        run_report = {
+            "result": str(self.buffer.hook_stats.get("complete_payload", "")),
+            "hook_stats": self.buffer.hook_stats,
+            "messages": self._serialize_messages(messages),
+        }
+
+        self._safe_broadcast("run_summary", run_report)
+
+        # Persist the latest report for offline inspection.
+        output_dir = Path(".logs")
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / f"{self.dialog_id}_run_report.json"
+        output_file.write_text(
+            json.dumps(run_report, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+
+        # Reset run-scoped state only after summary is sent.
+        self.buffer.reset()
+        self._current_assistant_message = None
+
+    def _serialize_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Create a stable, JSON-friendly snapshot of OpenAI-style messages."""
+        out: list[dict[str, Any]] = []
+        for msg in messages:
+            item: dict[str, Any] = {
+                "role": msg.get("role"),
+                "content": msg.get("content"),
+            }
+            if "tool_call_id" in msg:
+                item["tool_call_id"] = msg.get("tool_call_id")
+            if "reasoning_content" in msg:
+                item["reasoning_content"] = msg.get("reasoning_content")
+            if "tool_calls" in msg:
+                item["tool_calls"] = msg.get("tool_calls")
+            out.append(item)
+        return out
+
+    def on_hook(self, hook: HookName, **payload: Any) -> None:
+        super().on_hook(hook, **payload)
+
     def get_hook_kwargs(self) -> dict[str, Callable]:
         """
         获取所有钩子函数的字典，用于传递给 BaseAgentLoop
@@ -309,6 +404,8 @@ class AgentWebSocketBridge:
             "on_tool_call": self.on_tool_call,
             "on_complete": self.on_complete,
             "on_reasoning": self.on_reasoning,
+            "on_before_run": self.on_before_run,
+            "on_after_run": self.on_after_run,
             "on_error": self.on_error,
             "on_stop": self.on_stop,
         }

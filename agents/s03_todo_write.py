@@ -1,4 +1,4 @@
-﻿from tkinter import BOTH
+from tkinter import BOTH
 
 from loguru import logger
 

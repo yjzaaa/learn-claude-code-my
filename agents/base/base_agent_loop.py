@@ -11,13 +11,14 @@ from email import errors
 import json
 import asyncio
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from loguru import logger
 
+from .abstract import AgentLifecycleHooks, HookName
 from ..providers import LiteLLMProvider, create_provider_from_env
 
 
-class BaseAgentLoop:
+class BaseAgentLoop(AgentLifecycleHooks):
     """极简 Agent 循环基类
 
     钩子通过函数参数传递，无需继承或 Mixin。
@@ -27,8 +28,6 @@ class BaseAgentLoop:
             provider=provider,
             system="You are a helpful assistant",
             tools=[...],
-            on_tool_call=lambda name, inp: print(f"Tool: {name}"),
-            on_stream_token=lambda t: print(t, end=""),
         )
         agent.run([{"role": "user", "content": "Hello"}])
     """
@@ -42,14 +41,6 @@ class BaseAgentLoop:
         tool_handlers: dict | None = None,
         max_tokens: int = 8000,
         max_rounds: int = 25,
-        # 钩子函数（可选）
-        on_tool_call: Callable[[str, dict], None] | None = None,
-        on_stream_token: Callable[[str], None] | None = None,
-        on_complete: Callable[[str], None] | None = None,
-        on_reasoning: Callable[[str], None] | None = None,  
-        on_error: Callable[[Exception], None] | None = None,
-        on_stop: Callable[[], None] | None = None,
-
     ):
         self.provider = provider or create_provider_from_env()
         self.model = model or (self.provider.default_model if self.provider else "deepseek-chat")
@@ -58,26 +49,26 @@ class BaseAgentLoop:
         self.tool_handlers = tool_handlers or {}
         self.max_tokens = max_tokens
         self.max_rounds = max_rounds
-
-        # 保存钩子
-        self._on_tool_call = on_tool_call
-        self._on_stream_token = on_stream_token
-        self._on_complete = on_complete
-        self._on_reasoning = on_reasoning
-        self._on_error = on_error
-        self._on_stop = on_stop
+        self._hook_delegate: AgentLifecycleHooks | None = None
 
         # 运行状态
         self._stopped = False
 
-    def _emit(self, name: str, *args) -> None:
-        """调用钩子（静默忽略错误）"""
-        hook = getattr(self, f"_on_{name}", None)
-        if hook:
-            try:
-                hook(*args)
-            except Exception:
-                pass
+    def _emit_hook(self, hook: HookName, **payload: Any) -> None:
+        """发出钩子信号（静默忽略钩子内部错误）。"""
+        try:
+            self.on_hook(hook, **payload)
+        except Exception:
+            pass
+
+    def on_hook(self, hook: HookName, **payload: Any) -> None:
+        """默认分发到可选 delegate；子类可覆盖。"""
+        if self._hook_delegate is not None:
+            self._hook_delegate.on_hook(hook, **payload)
+
+    def set_hook_delegate(self, delegate: AgentLifecycleHooks) -> None:
+        """Set external hook dispatcher without subclass override."""
+        self._hook_delegate = delegate
 
     def stop(self) -> None:
         """请求停止"""
@@ -86,7 +77,7 @@ class BaseAgentLoop:
     def request_stop(self) -> None:
         """请求停止（别名，兼容性）"""
         self.stop()
-        self._emit("stop")
+        self._emit_hook(HookName.ON_STOP)
 
     def run(self, messages: list[dict]) -> str:
         """执行 Agent 循环
@@ -99,135 +90,129 @@ class BaseAgentLoop:
         """
         import logging
         logging.getLogger(__name__).debug(f"[BaseAgentLoop] Starting run with max_tokens={self.max_tokens}, max_rounds={self.max_rounds}, tools={len(self.tools)}")
+        self._emit_hook(HookName.ON_BEFORE_RUN, messages=messages)
+        if self.provider is None:
+            raise RuntimeError("No provider available. Please configure provider environment variables.")
+        provider = self.provider
         rounds = 0
         final_content = ""
 
-        while not self._stopped and rounds < self.max_rounds:
-            rounds += 1
+        try:
+            while not self._stopped and rounds < self.max_rounds:
+                rounds += 1
 
-            try:
-                # 使用列表存储流式结果，避免在闭包中修改外部变量的问题
-                stream_results = {
-                    "content": "",
-                    "tool_calls": [],
-                    "thinking": "",
-                    "errors": "",
-                    "final": "",
-                    "done": False,
-                    "has_error": False,
-                    "usage": None,
-                }
-
-                async def _chat():
-                    # 构建消息列表
-                    chat_messages = messages.copy()
-                    if self.system:
-                        chat_messages = [{"role": "system", "content": self.system}] + chat_messages
-
-                    async for chunk in self.provider.chat_stream(
-                        messages=chat_messages,
-                        tools=self.tools or None,
-                        model=self.model,
-                        max_tokens=self.max_tokens,
-                    ):
-                        self._emit("stream_token", chunk)
-                        # 内容块
-                        if chunk.is_content:
-                            stream_results["content"] += chunk.content
-                            # if self._on_stream_token:
-                            #     self._emit("stream_token", "is_content", chunk.content)
-                        
-                        # 工具调用
-                        elif chunk.is_tool_call:
-                            stream_results["tool_calls"].append(chunk.tool_call)
-                            # if self._on_tool_call:
-                                # self._emit("stream_token", "is_tool_call", chunk.tool_call)
-                        
-                        # 完成
-                        elif chunk.is_done:
-                            stream_results["final"] += stream_results["content"]
-                            stream_results["done"] = True
-                            logger.debug(f"[BaseAgentLoop] Chunk is_done, finish_reason={chunk.finish_reason}, content_len={len(stream_results['content'])}")
-                            # if self._on_complete:
-                            #     self._emit("stream_token", "is_done", chunk.finish_reason)
-                        
-                        # 错误
-                        elif chunk.is_error:
-                            stream_results["errors"] += chunk.error
-                            stream_results["has_error"] = True
-                            # if self._on_error:
-                            #     self._emit("stream_token", "is_error", chunk.error)
-                        
-                        # 推理内容
-                        elif chunk.is_reasoning:
-                            stream_results["thinking"] += chunk.reasoning_content
-                            # if self._on_reasoning:
-                            #     self._emit("stream_token", "is_reasoning", chunk.reasoning_content)
-                        #token用量
-                        elif chunk.usage:
-                            stream_results["usage"] = chunk.usage
-                            # self._emit("stream_token", "usage", chunk.usage)
-
-                # 运行异步
                 try:
-                    loop = asyncio.get_running_loop()
-                    asyncio.run_coroutine_threadsafe(_chat(), loop).result(timeout=120)
-                except RuntimeError:
-                    asyncio.run(_chat())
+                    # 使用列表存储流式结果，避免在闭包中修改外部变量的问题
+                    stream_results = {
+                        "content": "",
+                        "tool_calls": [],
+                        "thinking": "",
+                        "errors": "",
+                        "final": "",
+                        "done": False,
+                        "finish_reason": None,
+                        "has_error": False,
+                        "usage": None,
+                    }
 
-                # 检查错误
-                if stream_results["has_error"]:
-                    raise RuntimeError(stream_results["errors"])
+                    async def _chat():
+                        # 构建消息列表
+                        chat_messages = messages.copy()
+                        if self.system:
+                            chat_messages = [{"role": "system", "content": self.system}] + chat_messages
 
-                content = stream_results["content"]
-                tool_calls = stream_results["tool_calls"]
+                        async for chunk in provider.chat_stream(
+                            messages=chat_messages,
+                            tools=self.tools or None,
+                            model=self.model,
+                            max_tokens=self.max_tokens,
+                        ):
+                            self._emit_hook(HookName.ON_STREAM_TOKEN, chunk=chunk)
+                            if chunk.is_content:
+                                stream_results["content"] += chunk.content
+                            elif chunk.is_tool_call:
+                                stream_results["tool_calls"].append(chunk.tool_call)
+                            elif chunk.is_done:
+                                stream_results["final"] += stream_results["content"]
+                                stream_results["done"] = True
+                                stream_results["finish_reason"] = chunk.finish_reason
+                                logger.debug(f"[BaseAgentLoop] Chunk is_done, finish_reason={chunk.finish_reason}, content_len={len(stream_results['content'])}")
+                            elif chunk.is_error:
+                                stream_results["errors"] += chunk.error
+                                stream_results["has_error"] = True
+                            elif chunk.is_reasoning:
+                                stream_results["thinking"] += chunk.reasoning_content
+                            elif chunk.usage:
+                                stream_results["usage"] = chunk.usage
 
-                # 构建 assistant 消息
-                assistant_msg: dict = {"role": "assistant", "content": content, "reasoning_content": stream_results["thinking"]}
-                if tool_calls:
-                    assistant_msg["tool_calls"] = [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
-                            },
-                        }
-                        for tc in tool_calls
-                    ]
-
-                messages.append(assistant_msg)
-                final_content = content
-
-                # 检查是否完成
-                if not tool_calls:
-                    import logging
-                    logging.getLogger(__name__).debug(f"[BaseAgentLoop] No tool calls, returning final_content (len={len(final_content)})")
-                    self._emit("complete", final_content)
-                    return final_content
-
-                # 执行工具调用
-                for tc in tool_calls:
-                    self._emit("tool_call", tc.name, tc.arguments)
-
-                    handler = self.tool_handlers.get(tc.name)
                     try:
-                        result = handler(**tc.arguments) if handler else f"Unknown tool: {tc.name}"
-                    except Exception as e:
-                        result = f"Error executing {tc.name}: {str(e)}"
+                        loop = asyncio.get_running_loop()
+                        asyncio.run_coroutine_threadsafe(_chat(), loop).result(timeout=120)
+                    except RuntimeError:
+                        asyncio.run(_chat())
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": str(result),
-                    })
+                    if stream_results["has_error"]:
+                        raise RuntimeError(stream_results["errors"])
 
-            except Exception as e:
-                self._emit("error", str(e))
-                raise
+                    content = stream_results["content"]
+                    tool_calls = stream_results["tool_calls"]
+                    finish_reason = stream_results["finish_reason"]
 
-        return final_content
+                    assistant_msg: dict = {"role": "assistant", "content": content, "reasoning_content": stream_results["thinking"]}
+                    if tool_calls:
+                        assistant_msg["tool_calls"] = [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else tc.arguments,
+                                },
+                            }
+                            for tc in tool_calls
+                        ]
+
+                    messages.append(assistant_msg)
+                    final_content = content
+
+                    if not tool_calls and finish_reason not in ("tool_calls", "function_call"):
+                        import logging
+                        logging.getLogger(__name__).debug(f"[BaseAgentLoop] No tool calls, returning final_content (len={len(final_content)})")
+                        self._emit_hook(HookName.ON_COMPLETE, content=final_content)
+                        return final_content
+
+                    if not tool_calls and finish_reason in ("tool_calls", "function_call"):
+                        raise RuntimeError("Model requested tool calls but none were parsed from stream chunks")
+
+                    for tc in tool_calls:
+                        self._emit_hook(HookName.ON_TOOL_CALL, name=tc.name, arguments=tc.arguments)
+
+                        handler = self.tool_handlers.get(tc.name)
+                        try:
+                            result = handler(**tc.arguments) if handler else f"Unknown tool: {tc.name}"
+                        except Exception as e:
+                            result = f"Error executing {tc.name}: {str(e)}"
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": str(result),
+                        })
+                        self._emit_hook(
+                            HookName.ON_TOOL_RESULT,
+                            name=tc.name,
+                            result=str(result),
+                            tool_call_id=tc.id,
+                            assistant_message=assistant_msg,
+                        )
+
+                except Exception as e:
+                    self._emit_hook(HookName.ON_ERROR, error=e)
+                    raise
+
+            return final_content
+        finally:
+            self._emit_hook(HookName.ON_AFTER_RUN, messages=messages, rounds=rounds)
 
 
 def run_agent(
@@ -235,8 +220,6 @@ def run_agent(
     system: str = "",
     tools: list | None = None,
     tool_handlers: dict | None = None,
-    on_tool_call: Callable | None = None,
-    on_stream_token: Callable | None = None,
 ) -> str:
     """函数式接口 - 一行代码运行 Agent
 
@@ -244,15 +227,12 @@ def run_agent(
         result = run_agent(
             messages=[{"role": "user", "content": "Hello"}],
             system="You are helpful",
-            on_stream_token=lambda t: print(t, end=""),
         )
     """
     agent = BaseAgentLoop(
         system=system,
         tools=tools,
         tool_handlers=tool_handlers,
-        on_tool_call=on_tool_call,
-        on_stream_token=on_stream_token,
     )
     return agent.run(messages)
 

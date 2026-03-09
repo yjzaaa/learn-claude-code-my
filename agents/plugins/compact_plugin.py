@@ -80,6 +80,9 @@ class CompactPlugin(AgentPlugin):
             logger.info("[CompactPlugin] Auto-compact triggered")
             self._auto_compact(messages)
 
+    def on_stream_token(self, chunk: Any) -> None:
+        return None
+
     def on_tool_call(self, name: str, arguments: Dict) -> None:
         """
         检测是否调用了 compact 工具
@@ -89,6 +92,27 @@ class CompactPlugin(AgentPlugin):
         if name == "compact":
             self._manual_compact_triggered = True
             logger.info("[CompactPlugin] Manual compact triggered")
+
+    def on_tool_result(
+        self,
+        name: str,
+        result: str,
+        assistant_message: Dict[str, Any] | None = None,
+        tool_call_id: str = "",
+    ) -> None:
+        _ = (name, result, assistant_message, tool_call_id)
+
+    def on_complete(self, content: str) -> None:
+        return None
+
+    def on_error(self, error: Exception) -> None:
+        return None
+
+    def on_after_run(self, messages: List[Dict], rounds: int) -> None:
+        _ = (messages, rounds)
+
+    def on_stop(self) -> None:
+        return None
 
     def get_additional_tools(self) -> List[Callable]:
         """返回 compact 工具"""
