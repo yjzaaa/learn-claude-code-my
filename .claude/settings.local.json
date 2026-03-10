@@ -39,7 +39,9 @@
       "Bash(pkill:*)",
       "Bash(powershell:*)",
       "Bash(wmic process:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git add:*)"
     ]
   }
 }

@@ -40,6 +40,17 @@ export type {
   AgentErrorEvent,
   AgentStoppedEvent,
   AgentStreamState,
+  TodoItem,
+  TodoUpdateEvent,
+  TodoReminderEvent,
 } from "./agent-event";
 
 export { isAgentEvent, createInitialStreamState } from "./agent-event";
+
+// Dialog 类型
+export type {
+  TodoItem as DialogTodoItem,
+  TodoState,
+  TodoUpdatedEvent as DialogTodoUpdatedEvent,
+  TodoReminderEvent as DialogTodoReminderEvent,
+} from "./dialog";

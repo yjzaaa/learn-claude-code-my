@@ -17,7 +17,9 @@ export type AgentEventType =
   | "agent:message_complete" // 消息完成
   | "agent:run_summary" // 运行摘要/钩子统计
   | "agent:error" // 错误
-  | "agent:stopped"; // 停止
+  | "agent:stopped" // 停止
+  | "todo:updated"   // Todo 列表更新
+  | "todo:reminder"; // Todo 提醒
 
 export interface HookToolCallSummary {
   name: string;
@@ -159,6 +161,31 @@ export interface AgentStoppedEvent extends AgentEventBase {
   };
 }
 
+/** Todo 项目 */
+export interface TodoItem {
+  id: string;
+  text: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+/** Todo 更新事件 */
+export interface TodoUpdateEvent extends AgentEventBase {
+  type: "todo:updated";
+  data: {
+    todos: TodoItem[];
+    rounds_since_todo: number;
+  };
+}
+
+/** Todo 提醒事件 */
+export interface TodoReminderEvent extends AgentEventBase {
+  type: "todo:reminder";
+  data: {
+    message: string;
+    rounds_since_todo: number;
+  };
+}
+
 /** 联合类型: 所有 Agent 事件 */
 export type AgentEvent =
   | AgentMessageStartEvent
@@ -169,7 +196,9 @@ export type AgentEvent =
   | AgentMessageCompleteEvent
   | AgentRunSummaryEvent
   | AgentErrorEvent
-  | AgentStoppedEvent;
+  | AgentStoppedEvent
+  | TodoUpdateEvent
+  | TodoReminderEvent;
 
 /** 检查是否为 Agent 事件 */
 export function isAgentEvent(data: unknown): data is AgentEvent {
@@ -177,7 +206,7 @@ export function isAgentEvent(data: unknown): data is AgentEvent {
   const evt = data as AgentEvent;
   return (
     typeof evt.type === "string" &&
-    evt.type.startsWith("agent:") &&
+    (evt.type.startsWith("agent:") || evt.type.startsWith("todo:")) &&
     typeof evt.dialog_id === "string"
   );
 }
@@ -200,6 +229,12 @@ export interface AgentStreamState {
   hookStats: HookStats | null;
   /** 最近一次运行的完整报告（result/hook_stats/messages） */
   runReport: AgentRunReport | null;
+  /** Todo 列表 */
+  todos: TodoItem[] | null;
+  /** 距离上次更新 todo 的轮次数 */
+  roundsSinceTodo: number;
+  /** 是否显示 todo 提醒 */
+  showTodoReminder: boolean;
 }
 
 /** 初始流式状态 */
@@ -213,5 +248,8 @@ export function createInitialStreamState(): AgentStreamState {
     showReasoning: false,
     hookStats: null,
     runReport: null,
+    todos: null,
+    roundsSinceTodo: 0,
+    showTodoReminder: false,
   };
 }
