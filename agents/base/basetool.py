@@ -4,6 +4,13 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Callable
+
+try:
+    from ..session.runtime_context import get_current_dialog_id
+    from ..session.skill_edit_hitl import skill_edit_hitl_store, is_skill_edit_hitl_enabled
+except Exception:
+    from agents.session.runtime_context import get_current_dialog_id
+    from agents.session.skill_edit_hitl import skill_edit_hitl_store, is_skill_edit_hitl_enabled
 class DefaultCommandGuard:
     """默认命令安全策略。"""
 
@@ -41,8 +48,8 @@ class WorkspaceOps:
         self.bash_script_scopes, self.allow_skills_scripts_pattern = self._build_bash_script_scopes(
             self.bash_script_whitelist
         )
-        self.write_tool_whitelist = self._resolve_path_whitelist("WRITE_TOOL_WHITELIST", ".workspace")
-        self.edit_tool_whitelist = self._resolve_path_whitelist("EDIT_TOOL_WHITELIST", ".workspace")
+        self.write_tool_whitelist = self._resolve_path_whitelist("WRITE_TOOL_WHITELIST", ".workspace;skills")
+        self.edit_tool_whitelist = self._resolve_path_whitelist("EDIT_TOOL_WHITELIST", ".workspace;skills")
         self.read_tool_blacklist = self._resolve_path_whitelist("READ_TOOL_BLACKLIST", ".env")
         self.write_scopes = self._build_simple_scopes(self.write_tool_whitelist)
         self.edit_scopes = self._build_simple_scopes(self.edit_tool_whitelist)
@@ -84,7 +91,11 @@ class WorkspaceOps:
         env_value = os.environ.get(env_key)
         dotenv_value = self._dotenv_values.get(env_key)
         raw_tokens = self._split_list_value(env_value or dotenv_value)
-        return raw_tokens if raw_tokens else [default_value]
+        if raw_tokens:
+            return raw_tokens
+
+        default_tokens = self._split_list_value(default_value)
+        return default_tokens if default_tokens else [default_value]
 
     def _build_simple_scopes(self, whitelist: list[str]) -> list[Path]:
         scopes: list[Path] = []
@@ -223,6 +234,15 @@ class WorkspaceOps:
                 return True
         return False
 
+    def _is_env_blocked_path(self, file_path: Path) -> bool:
+        """是否命中读黑名单路径（例如 .env）。"""
+        return self._is_in_any_scope(file_path, self.read_blacklist_scopes)
+
+    def _is_skills_path(self, file_path: Path) -> bool:
+        """是否位于 skills 目录下。"""
+        skills_root = (self.workdir / "skills").resolve()
+        return file_path.is_relative_to(skills_root)
+
     @staticmethod
     def _looks_like_path_token(token: str) -> bool:
         if not token:
@@ -347,11 +367,11 @@ class WorkspaceOps:
         except subprocess.TimeoutExpired:
             return f"Error: Timeout ({timeout}s)"
 
-    def run_read(self, path: str, limit: int = None) -> str:
+    def run_read(self, path: str, limit: int | None = None) -> str:
         """读取文件内容，可选按行数限制并提示剩余行数。"""
         try:
             file_path = self.safe_path(path)
-            if self._is_in_any_scope(file_path, self.read_blacklist_scopes):
+            if self._is_env_blocked_path(file_path):
                 return "Error: read_file is blocked by READ_TOOL_BLACKLIST"
 
             lines = self._read_text_safe(file_path).splitlines()
@@ -366,8 +386,28 @@ class WorkspaceOps:
         try:
             normalized_path = self._normalize_scoped_path(path, self.write_scopes)
             file_path = self.safe_path(normalized_path)
+            if self._is_env_blocked_path(file_path):
+                return "Error: write_file is blocked for this path"
             if not self._is_in_any_scope(file_path, self.write_scopes):
                 return "Error: write_file is restricted by WRITE_TOOL_WHITELIST"
+
+            # 仅允许在 skills 下修改已有文件；禁止通过 write_file 新建。
+            if self._is_skills_path(file_path) and not file_path.exists():
+                return "Error: write_file cannot create new files under skills; use edit_file on existing files"
+
+            if self._is_skills_path(file_path) and is_skill_edit_hitl_enabled():
+                old_content = self._read_text_safe(file_path) if file_path.exists() else ""
+                dialog_id = get_current_dialog_id() or "unknown"
+                proposal = skill_edit_hitl_store.create_proposal(
+                    dialog_id=dialog_id,
+                    path=self._to_rel_path_str(file_path.relative_to(self.workdir)),
+                    old_content=old_content,
+                    new_content=content,
+                    reason="write_file requested skill file modification",
+                    trigger_mode="auto",
+                )
+                return f"PENDING_SKILL_EDIT_APPROVAL:{proposal.approval_id}"
+
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
             return f"Wrote {len(content)} bytes to {normalized_path}"
@@ -379,12 +419,29 @@ class WorkspaceOps:
         try:
             normalized_path = self._normalize_scoped_path(path, self.edit_scopes)
             file_path = self.safe_path(normalized_path)
+            if self._is_env_blocked_path(file_path):
+                return "Error: edit_file is blocked for this path"
             if not self._is_in_any_scope(file_path, self.edit_scopes):
                 return "Error: edit_file is restricted by EDIT_TOOL_WHITELIST"
             content = self._read_text_safe(file_path)
             if old_text not in content:
                 return f"Error: Text not found in {path}"
-            file_path.write_text(content.replace(old_text, new_text, 1), encoding="utf-8")
+
+            replaced = content.replace(old_text, new_text, 1)
+
+            if self._is_skills_path(file_path) and is_skill_edit_hitl_enabled():
+                dialog_id = get_current_dialog_id() or "unknown"
+                proposal = skill_edit_hitl_store.create_proposal(
+                    dialog_id=dialog_id,
+                    path=self._to_rel_path_str(file_path.relative_to(self.workdir)),
+                    old_content=content,
+                    new_content=replaced,
+                    reason="edit_file requested skill file modification",
+                    trigger_mode="auto",
+                )
+                return f"PENDING_SKILL_EDIT_APPROVAL:{proposal.approval_id}"
+
+            file_path.write_text(replaced, encoding="utf-8")
             return f"Edited {normalized_path}"
         except Exception as e:
             return f"Error: {e}"

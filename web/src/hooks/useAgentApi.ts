@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
 import type { ChatMessage, ChatRole } from "@/types/openai";
+import type { SkillEditApproval } from "@/types/dialog";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
 
@@ -212,6 +213,33 @@ export function useAgentApi() {
     });
   }, [request]);
 
+  const getPendingSkillEdits = useCallback(
+    async (dialogId?: string): Promise<ApiResponse<SkillEditApproval[]>> => {
+      const query = dialogId
+        ? `/api/skill-edits/pending?dialog_id=${encodeURIComponent(dialogId)}`
+        : "/api/skill-edits/pending";
+      return request(query);
+    },
+    [request],
+  );
+
+  const decideSkillEdit = useCallback(
+    async (
+      approvalId: string,
+      decision: "accept" | "reject" | "edit_accept",
+      editedContent?: string,
+    ): Promise<ApiResponse<{ approval_id: string; status: string }>> => {
+      return request(`/api/skill-edits/${approvalId}/decision`, {
+        method: "POST",
+        body: JSON.stringify({
+          decision,
+          edited_content: editedContent,
+        }),
+      });
+    },
+    [request],
+  );
+
   return {
     isLoading,
     error,
@@ -230,5 +258,8 @@ export function useAgentApi() {
     // Agent
     getAgentStatus,
     stopAgent,
+    // Skill Edit HITL
+    getPendingSkillEdits,
+    decideSkillEdit,
   };
 }

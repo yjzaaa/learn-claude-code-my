@@ -131,7 +131,12 @@ class SkillLoader:
             return f"Error: Reference doc not found: {doc_path}"
 
         content = self._read_text_safe(target)
-        return f"<skill_reference skill=\"{name}\" path=\"{doc_path}\">\n{content}\n</skill_reference>"
+        return (
+            f"### Skill Reference\n"
+            f"- skill: `{name}`\n"
+            f"- path: `{doc_path}`\n\n"
+            f"```markdown\n{content}\n```"
+        )
 
     def get_scripts_content(self, name: str, script_path: str = "") -> str:
         """Load one scripts file progressively, or list scripts when path is empty."""
@@ -155,7 +160,12 @@ class SkillLoader:
             return f"Error: Script not found: {script_path}"
 
         content = self._read_text_safe(target)
-        return f"<skill_script skill=\"{name}\" path=\"{script_path}\">\n{content}\n</skill_script>"
+        return (
+            f"### Skill Script\n"
+            f"- skill: `{name}`\n"
+            f"- path: `{script_path}`\n\n"
+            f"```python\n{content}\n```"
+        )
 
 
 SKILL_LOADER = SkillLoader(SKILLS_DIR)
@@ -168,6 +178,12 @@ SYSTEM = f"""You are a coding agent at {WORKDIR}. Use tools to solve tasks.
 Runtime OS is Windows.
 Skills available:
 {SKILL_LOADER.get_descriptions()}
+
+Skill usage policy:
+1. If the user explicitly asks to use a skill (for example: "use finance skill", "使用finance技能"), you MUST call load_skill(name) before answering.
+2. After load_skill(name), read the returned manifest and only load extra references/scripts when required.
+3. Do not claim a skill is unavailable unless load_skill returns an explicit error.
+4. Never output pseudo tool-call JSON in plain text (for example: {{"command":"..."}}). If execution is needed, invoke the real tool/function call instead.
 
 Progressive loading rule:
 1. Call load_skill(name) first to get overview + manifest.

@@ -5,7 +5,7 @@ import { RealtimeDialog } from "@/components/realtime";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useAgentApi } from "@/hooks/useAgentApi";
 import type { Dialog } from "@/hooks/useAgentApi";
-import { useMessageStore } from "@/hooks/useMessageStore";
+import { MessageStoreProvider, useMessageStore } from "@/hooks/useMessageStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -21,6 +21,14 @@ import {
 } from "lucide-react";
 
 export function RealtimeDemoClient() {
+  return (
+    <MessageStoreProvider>
+      <RealtimeDemoClientContent />
+    </MessageStoreProvider>
+  );
+}
+
+function RealtimeDemoClientContent() {
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
   const [selectedDialogId, setSelectedDialogId] = useState<string | null>(null);
   const [newDialogTitle, setNewDialogTitle] = useState("");
@@ -34,10 +42,7 @@ export function RealtimeDemoClient() {
     getDialog,
     sendMessage,
   } = useAgentApi();
-  const {
-    isConnected: wsConnected,
-    subscribeToDialog,
-  } = useWebSocket();
+  const { isConnected: wsConnected, subscribeToDialog } = useWebSocket();
   const { currentDialog, setCurrentDialog } = useMessageStore();
 
   const loadDialogs = async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -53,7 +53,8 @@ const messageTypeConfig = {
   user: {
     icon: User,
     label: "用户",
-    bgColor: "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20",
+    bgColor:
+      "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/20",
     borderColor: "border-blue-200 dark:border-blue-800",
     headerBg: "bg-blue-500",
     textColor: "text-blue-900 dark:text-blue-100",
@@ -63,13 +64,15 @@ const messageTypeConfig = {
     label: "助手",
     bgColor: "bg-white dark:bg-zinc-900",
     borderColor: "border-zinc-200 dark:border-zinc-700",
-    headerBg: "bg-gradient-to-r from-zinc-700 to-zinc-600 dark:from-zinc-600 dark:to-zinc-500",
+    headerBg:
+      "bg-gradient-to-r from-zinc-700 to-zinc-600 dark:from-zinc-600 dark:to-zinc-500",
     textColor: "text-zinc-800 dark:text-zinc-100",
   },
   tool: {
     icon: Terminal,
     label: "工具结果",
-    bgColor: "bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950/30 dark:to-emerald-900/20",
+    bgColor:
+      "bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950/30 dark:to-emerald-900/20",
     borderColor: "border-emerald-200 dark:border-emerald-800",
     headerBg: "bg-emerald-500",
     textColor: "text-emerald-900 dark:text-emerald-100",
@@ -77,7 +80,8 @@ const messageTypeConfig = {
   system: {
     icon: MessageSquare,
     label: "系统",
-    bgColor: "bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/30 dark:to-amber-900/20",
+    bgColor:
+      "bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/30 dark:to-amber-900/20",
     borderColor: "border-amber-200 dark:border-amber-800",
     headerBg: "bg-amber-500",
     textColor: "text-amber-900 dark:text-amber-100",
@@ -100,7 +104,11 @@ function CopyButton({ code }: { code: string }) {
       className="absolute top-2 right-2 p-1.5 rounded-md bg-zinc-700/80 hover:bg-zinc-600 text-zinc-300 transition-colors"
       title="复制代码"
     >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
     </button>
   );
 }
@@ -110,7 +118,9 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   return (
     <div className="relative my-3 rounded-lg overflow-hidden border border-zinc-700">
       <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-800 border-b border-zinc-700">
-        <span className="text-xs text-zinc-400 font-mono">{language || "text"}</span>
+        <span className="text-xs text-zinc-400 font-mono">
+          {language || "text"}
+        </span>
         <CopyButton code={code} />
       </div>
       <SyntaxHighlighter
@@ -128,6 +138,19 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
       </SyntaxHighlighter>
     </div>
   );
+}
+
+function formatToolArguments(rawArgs: string): string {
+  try {
+    const parsed = JSON.parse(rawArgs);
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return rawArgs;
+  }
+}
+
+function hasVisibleText(value: string | null | undefined): boolean {
+  return !!value && value.trim().length > 0;
 }
 
 /** 可展开区域组件 */
@@ -164,7 +187,7 @@ function CollapsibleSection({
         "rounded-xl border shadow-sm overflow-hidden transition-all duration-300",
         borderColorClass,
         isActive && "ring-2 ring-blue-500/20",
-        isExpanded ? "flex-1 min-h-[120px]" : "flex-shrink-0 h-10"
+        isExpanded ? "flex-1 min-h-[120px]" : "flex-shrink-0 h-10",
       )}
     >
       {/* 头部 - 始终可见，可点击 */}
@@ -173,10 +196,15 @@ function CollapsibleSection({
         className={cn(
           "w-full flex items-center gap-2 px-3 py-2 transition-colors",
           headerBgClass,
-          "hover:opacity-90"
+          "hover:opacity-90",
         )}
       >
-        <div className={cn("flex items-center justify-center w-5 h-5 rounded-lg", iconColorClass)}>
+        <div
+          className={cn(
+            "flex items-center justify-center w-5 h-5 rounded-lg",
+            iconColorClass,
+          )}
+        >
           {isStreaming ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
@@ -198,7 +226,7 @@ function CollapsibleSection({
         <ChevronDown
           className={cn(
             "h-4 w-4 transition-transform duration-200",
-            !isExpanded && "-rotate-90"
+            !isExpanded && "-rotate-90",
           )}
         />
       </button>
@@ -207,10 +235,15 @@ function CollapsibleSection({
       <div
         className={cn(
           "overflow-hidden transition-all duration-300",
-          isExpanded ? "flex-1 opacity-100" : "h-0 opacity-0"
+          isExpanded ? "flex-1 opacity-100" : "h-0 opacity-0",
         )}
       >
-        <div className={cn("h-full overflow-y-auto scrollbar-thin", contentClassName)}>
+        <div
+          className={cn(
+            "h-full overflow-y-auto scrollbar-thin",
+            contentClassName,
+          )}
+        >
           {children}
         </div>
       </div>
@@ -240,8 +273,13 @@ export function CollapsibleMessage({
   }
 
   const displayContent = streamingContent ?? message.content ?? "";
-  const reasoningContent = streamingReasoning || message.reasoning_content || "";
-  const hasToolCalls = !!(isToolCall && message.tool_calls && message.tool_calls.length > 0);
+  const reasoningContent =
+    streamingReasoning || message.reasoning_content || "";
+  const hasToolCalls = !!(
+    isToolCall &&
+    message.tool_calls &&
+    message.tool_calls.length > 0
+  );
 
   // 调试日志
   console.log("[CollapsibleMessage] Render:", {
@@ -254,59 +292,128 @@ export function CollapsibleMessage({
 
   const config = messageTypeConfig[message.role] || messageTypeConfig.assistant;
   const Icon = config.icon;
+  const isUser = message.role === "user";
+
+  const [expandState, setExpandState] = useState({
+    sections: {
+      reasoning: false,
+      content: false,
+      tools: false,
+    },
+    toolPanels: {} as Record<string, boolean>,
+    activeToolCallId: null as string | null,
+    responsiveFlags: {
+      reasoning: false,
+      content: true,
+      tools: false,
+    },
+  });
+  const previousStreamSignalsRef = useRef({
+    contentLen: 0,
+    reasoningLen: 0,
+    toolResultsLen: 0,
+    toolResultsCount: 0,
+  });
+
+  const toolResultsTextLen = useMemo(
+    () =>
+      toolResults.reduce(
+        (sum, item) =>
+          sum + (typeof item.content === "string" ? item.content.length : 0),
+        0,
+      ),
+    [toolResults],
+  );
+
+  useEffect(() => {
+    const previous = previousStreamSignalsRef.current;
+    const next = {
+      contentLen: displayContent.length,
+      reasoningLen: reasoningContent.length,
+      toolResultsLen: toolResultsTextLen,
+      toolResultsCount: toolResults.length,
+    };
+
+    const contentDelta = next.contentLen - previous.contentLen;
+    const reasoningDelta = next.reasoningLen - previous.reasoningLen;
+    const toolDelta =
+      next.toolResultsLen - previous.toolResultsLen > 0 ||
+      next.toolResultsCount - previous.toolResultsCount > 0
+        ? 1
+        : 0;
+
+    const reasoningActive =
+      reasoningDelta > 0 &&
+      hasVisibleText(next.reasoningLen ? reasoningContent : "");
+    const contentActive =
+      contentDelta > 0 && hasVisibleText(next.contentLen ? displayContent : "");
+    const toolsActive = toolDelta > 0 && hasToolCalls;
+
+    // 统一响应式展开标志：单通道增量自动聚焦；并行增量同时展开。
+    if (reasoningActive || contentActive || toolsActive) {
+      const nextFlags = {
+        reasoning: reasoningActive,
+        content: contentActive,
+        tools: toolsActive,
+      };
+      setExpandState((prev) => ({
+        ...prev,
+        responsiveFlags: nextFlags,
+        sections: nextFlags,
+      }));
+    }
+
+    previousStreamSignalsRef.current = next;
+  }, [
+    displayContent.length,
+    displayContent,
+    hasToolCalls,
+    reasoningContent.length,
+    reasoningContent,
+    toolResults.length,
+    toolResultsTextLen,
+  ]);
 
   // 确定当前活跃的 token 类型（用于响应式布局）
   const activeSection = useMemo(() => {
-    if (!isStreaming) {
-      // 非流式状态下，有内容的展开，没内容的收起
-      return {
-        reasoning: !!reasoningContent,
-        content: !!displayContent,
-        tools: hasToolCalls,
-      };
-    }
-    // 流式状态下，根据活跃内容动态判断
-    // 如果有推理内容但没有正文，推理区域活跃
-    // 如果有正文，正文区域活跃
     return {
-      reasoning: !!reasoningContent && !displayContent,
-      content: !!displayContent,
-      tools: false, // 流式时工具区域默认不展开
+      reasoning:
+        hasVisibleText(reasoningContent) &&
+        expandState.responsiveFlags.reasoning,
+      content:
+        hasVisibleText(displayContent) && expandState.responsiveFlags.content,
+      tools: hasToolCalls && expandState.responsiveFlags.tools,
     };
-  }, [isStreaming, reasoningContent, displayContent, hasToolCalls]);
+  }, [
+    displayContent,
+    expandState.responsiveFlags,
+    hasToolCalls,
+    reasoningContent,
+  ]);
 
-  // 展开状态管理 - 默认所有区域都展开
-  const [expandedSections, setExpandedSections] = useState({
-    reasoning: true,
-    content: true,
-    tools: true,
-  });
+  const previousToolResultLensRef = useRef<Record<string, number>>({});
 
-  // 初始化时根据活跃区域设置展开状态（仅执行一次）
+  // 仅处理“无内容时关闭”，避免覆盖上面的 token 驱动展开。
   useEffect(() => {
-    const hasTools = !!(message.tool_calls && message.tool_calls.length > 0);
-    setExpandedSections({
-      reasoning: activeSection.reasoning,
-      content: activeSection.content,
-      tools: hasTools, // 有工具调用时默认展开
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 只在挂载时执行一次
-
-  // 当工具调用出现时，自动展开工具区域
-  useEffect(() => {
-    if (hasToolCalls) {
-      setExpandedSections((prev) => ({
-        ...prev,
-        tools: true,
-      }));
-    }
-  }, [hasToolCalls]);
-
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections((prev) => ({
+    setExpandState((prev) => ({
       ...prev,
-      [section]: !prev[section],
+      sections: {
+        reasoning: hasVisibleText(reasoningContent)
+          ? prev.sections.reasoning
+          : false,
+        content: hasVisibleText(displayContent) ? prev.sections.content : false,
+        tools: hasToolCalls ? prev.sections.tools : false,
+      },
+    }));
+  }, [displayContent, hasToolCalls, reasoningContent]);
+
+  const toggleSection = (section: keyof typeof expandState.sections) => {
+    setExpandState((prev) => ({
+      ...prev,
+      sections: {
+        ...prev.sections,
+        [section]: !prev.sections[section],
+      },
     }));
   };
 
@@ -314,11 +421,198 @@ export function CollapsibleMessage({
   const toolCallResults = useMemo(() => {
     // 只要 message.tool_calls 存在就计算，不管 hasToolCalls 如何
     if (!message.tool_calls?.length) return [];
+
+    const unmatchedResults = toolResults.filter((r) => r.role === "tool");
+    const usedResultIndexes = new Set<number>();
+
     return message.tool_calls.map((toolCall) => {
-      const result = toolResults.find((r) => r.tool_call_id === toolCall.id);
-      return { toolCall, result };
+      // 优先按 tool_call_id 精确关联；若缺失则回退到顺序关联，避免结果“丢失”。
+      let result = unmatchedResults.find((r, idx) => {
+        if (usedResultIndexes.has(idx)) return false;
+        return r.tool_call_id === toolCall.id;
+      });
+
+      if (!result) {
+        const fallbackIdx = unmatchedResults.findIndex(
+          (r, idx) => !usedResultIndexes.has(idx),
+        );
+        if (fallbackIdx >= 0) {
+          usedResultIndexes.add(fallbackIdx);
+          result = unmatchedResults[fallbackIdx];
+        }
+      } else {
+        const matchIdx = unmatchedResults.findIndex((r) => r === result);
+        if (matchIdx >= 0) {
+          usedResultIndexes.add(matchIdx);
+        }
+      }
+
+      const argsText = formatToolArguments(toolCall.function.arguments || "");
+      const resultContent = result?.content;
+      const resultText =
+        typeof resultContent === "string"
+          ? resultContent
+          : resultContent != null
+            ? JSON.stringify(resultContent, null, 2)
+            : "";
+      return {
+        toolCall,
+        result,
+        argsText,
+        resultText,
+        hasArgs: hasVisibleText(argsText),
+        hasResult: hasVisibleText(resultText),
+      };
     });
   }, [message.tool_calls, toolResults]);
+
+  const hasPendingTools = useMemo(
+    () => toolCallResults.some((item) => !item.hasResult),
+    [toolCallResults],
+  );
+
+  useEffect(() => {
+    if (!toolCallResults.length) {
+      setExpandState((prev) => ({
+        ...prev,
+        toolPanels: {},
+        activeToolCallId: null,
+      }));
+      previousToolResultLensRef.current = {};
+      return;
+    }
+
+    setExpandState((prev) => {
+      const nextPanels = { ...prev.toolPanels };
+      let changed = false;
+
+      for (const item of toolCallResults) {
+        const rootKey = `${item.toolCall.id}:root`;
+        const argsKey = `${item.toolCall.id}:args`;
+        const resultKey = `${item.toolCall.id}:result`;
+
+        if (!(rootKey in nextPanels)) {
+          nextPanels[rootKey] = activeSection.tools || item.hasResult;
+          changed = true;
+        }
+        if (!(argsKey in nextPanels)) {
+          nextPanels[argsKey] = item.hasArgs && activeSection.tools;
+          changed = true;
+        }
+        if (!(resultKey in nextPanels)) {
+          nextPanels[resultKey] = false;
+          changed = true;
+        }
+
+        if (!item.hasArgs && nextPanels[argsKey] !== false) {
+          nextPanels[argsKey] = false;
+          changed = true;
+        }
+        if (!item.hasResult && nextPanels[resultKey] !== false) {
+          nextPanels[resultKey] = false;
+          changed = true;
+        }
+      }
+
+      if (!changed) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        toolPanels: nextPanels,
+      };
+    });
+  }, [activeSection.tools, toolCallResults]);
+
+  // 追踪工具链中“当前活跃工具”：优先选择新增/增长结果的工具，其次选择首个未完成工具。
+  useEffect(() => {
+    if (!toolCallResults.length) {
+      return;
+    }
+
+    const prevLens = previousToolResultLensRef.current;
+    let nextActiveId: string | null = null;
+    let hasNewResultDelta = false;
+
+    for (const item of toolCallResults) {
+      const currentLen = item.resultText.length;
+      const previousLen = prevLens[item.toolCall.id] || 0;
+      if (currentLen > previousLen) {
+        hasNewResultDelta = true;
+        nextActiveId = item.toolCall.id;
+      }
+    }
+
+    if (!nextActiveId && hasPendingTools) {
+      const pending = toolCallResults.find((item) => !item.hasResult);
+      nextActiveId = pending?.toolCall.id || null;
+    }
+
+    // 工具链全部完成且没有新结果增量时，释放工具聚焦，让 response 可自动接管展开。
+    if (!hasPendingTools && !hasNewResultDelta) {
+      nextActiveId = null;
+    }
+
+    setExpandState((prev) =>
+      prev.activeToolCallId === nextActiveId
+        ? prev
+        : {
+            ...prev,
+            activeToolCallId: nextActiveId,
+          },
+    );
+
+    const nextLens: Record<string, number> = {};
+    for (const item of toolCallResults) {
+      nextLens[item.toolCall.id] = item.resultText.length;
+    }
+    previousToolResultLensRef.current = nextLens;
+  }, [hasPendingTools, toolCallResults]);
+
+  // 按活跃工具自动聚焦面板：仅在工具链活跃阶段生效。
+  useEffect(() => {
+    if (!expandState.activeToolCallId || !hasPendingTools) {
+      return;
+    }
+
+    setExpandState((prev) => {
+      const nextPanels = { ...prev.toolPanels };
+
+      for (const item of toolCallResults) {
+        const toolId = item.toolCall.id;
+        const rootKey = `${toolId}:root`;
+        const argsKey = `${toolId}:args`;
+        const resultKey = `${toolId}:result`;
+        const isActiveTool = toolId === prev.activeToolCallId;
+
+        nextPanels[rootKey] = isActiveTool;
+        nextPanels[argsKey] = isActiveTool && item.hasArgs;
+        nextPanels[resultKey] = isActiveTool && item.hasResult;
+      }
+
+      return {
+        ...prev,
+        toolPanels: nextPanels,
+        sections: {
+          ...prev.sections,
+          tools: true,
+          reasoning: false,
+          content: false,
+        },
+      };
+    });
+  }, [expandState.activeToolCallId, hasPendingTools, toolCallResults]);
+
+  const toggleToolPanel = (key: string) => {
+    setExpandState((prev) => ({
+      ...prev,
+      toolPanels: {
+        ...prev.toolPanels,
+        [key]: !prev.toolPanels[key],
+      },
+    }));
+  };
 
   return (
     <motion.div
@@ -326,10 +620,11 @@ export function CollapsibleMessage({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
       className={cn(
-        "rounded-2xl border shadow-sm overflow-hidden backdrop-blur-sm",
+        "rounded-2xl border shadow-sm overflow-hidden backdrop-blur-sm w-full md:max-w-[82%]",
+        isUser ? "md:ml-auto" : "md:mr-auto",
         config.bgColor,
         config.borderColor,
-        className
+        className,
       )}
     >
       {/* 消息头部 - 始终显示 */}
@@ -355,7 +650,7 @@ export function CollapsibleMessage({
               iconColorClass="bg-violet-100 text-violet-600 dark:bg-violet-900/50 dark:text-violet-400"
               headerBgClass="bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/30 dark:to-purple-950/20 border-b border-violet-200 dark:border-violet-800/50"
               borderColorClass="border-violet-200 dark:border-violet-800/50"
-              isExpanded={expandedSections.reasoning}
+              isExpanded={expandState.sections.reasoning}
               onToggle={() => toggleSection("reasoning")}
               isActive={activeSection.reasoning}
               isStreaming={isStreaming && activeSection.reasoning}
@@ -367,7 +662,9 @@ export function CollapsibleMessage({
                   {reasoningContent}
                 </p>
               ) : (
-                <p className="text-xs text-violet-400 italic">等待推理内容...</p>
+                <p className="text-xs text-violet-400 italic">
+                  等待推理内容...
+                </p>
               )}
             </CollapsibleSection>
 
@@ -378,7 +675,7 @@ export function CollapsibleMessage({
               iconColorClass="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"
               headerBgClass="bg-blue-50 dark:bg-blue-950/20 border-b border-blue-200 dark:border-blue-800/50"
               borderColorClass="border-blue-200 dark:border-blue-800/50"
-              isExpanded={expandedSections.content}
+              isExpanded={expandState.sections.content}
               onToggle={() => toggleSection("content")}
               isActive={activeSection.content}
               isStreaming={isStreaming && activeSection.content}
@@ -386,7 +683,10 @@ export function CollapsibleMessage({
               contentClassName="p-3 bg-white dark:bg-zinc-900/50"
             >
               {displayContent ? (
-                <MarkdownContent content={displayContent} isStreaming={isStreaming} />
+                <MarkdownContent
+                  content={displayContent}
+                  isStreaming={isStreaming}
+                />
               ) : (
                 <p className="text-xs text-zinc-400 italic">等待生成内容...</p>
               )}
@@ -400,47 +700,109 @@ export function CollapsibleMessage({
                 iconColorClass="bg-slate-100 text-slate-600 dark:bg-slate-900/50 dark:text-slate-400"
                 headerBgClass="bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700"
                 borderColorClass="border-slate-200 dark:border-slate-700"
-                isExpanded={!!expandedSections.tools}
+                isExpanded={!!expandState.sections.tools}
                 onToggle={() => toggleSection("tools")}
                 isActive={false}
                 contentClassName="p-2 bg-slate-50/50 dark:bg-slate-900/20 space-y-2"
               >
-                {toolCallResults.map(({ toolCall, result }) => (
-                  <div
-                    key={toolCall.id}
-                    className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-zinc-950"
-                  >
-                    {/* 工具名称和状态 */}
-                    <div className="px-2 py-1.5 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50">
-                      <span className="font-medium text-xs text-slate-700 dark:text-slate-300">
-                        {toolCall.function.name}
-                      </span>
-                      {result ? (
-                        <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                          <CheckCircle2 className="h-3 w-3" />
-                          完成
+                {toolCallResults.map((item) => {
+                  const {
+                    toolCall,
+                    result,
+                    argsText,
+                    resultText,
+                    hasArgs,
+                    hasResult,
+                  } = item;
+                  const rootKey = `${toolCall.id}:root`;
+                  const argsKey = `${toolCall.id}:args`;
+                  const resultKey = `${toolCall.id}:result`;
+
+                  return (
+                    <div
+                      key={toolCall.id}
+                      className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-zinc-950"
+                    >
+                      {/* 工具名称和状态（可折叠） */}
+                      <button
+                        onClick={() => toggleToolPanel(rootKey)}
+                        className="w-full px-2 py-1.5 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 text-left"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 text-slate-500 transition-transform",
+                            !expandState.toolPanels[rootKey] && "-rotate-90",
+                          )}
+                        />
+                        <span className="font-medium text-xs text-slate-700 dark:text-slate-300">
+                          {toolCall.function.name}
                         </span>
-                      ) : (
-                        <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          执行中
-                        </span>
+                        {result ? (
+                          <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            <CheckCircle2 className="h-3 w-3" />
+                            完成
+                          </span>
+                        ) : (
+                          <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            执行中
+                          </span>
+                        )}
+                      </button>
+
+                      {expandState.toolPanels[rootKey] && (
+                        <div className="border-t border-slate-100 dark:border-slate-800">
+                          <button
+                            onClick={() => toggleToolPanel(argsKey)}
+                            className="w-full px-2 py-1 text-left flex items-center gap-1.5 bg-white dark:bg-zinc-950 hover:bg-slate-50 dark:hover:bg-zinc-900"
+                          >
+                            <ChevronDown
+                              className={cn(
+                                "h-3 w-3 text-slate-500 transition-transform",
+                                !expandState.toolPanels[argsKey] &&
+                                  "-rotate-90",
+                              )}
+                            />
+                            <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                              参数
+                            </span>
+                          </button>
+                          {expandState.toolPanels[argsKey] && hasArgs && (
+                            <div className="px-2 py-1 border-t border-slate-100 dark:border-slate-800">
+                              <pre className="text-[10px] text-slate-500 dark:text-slate-500 whitespace-pre-wrap break-all leading-relaxed max-h-32 overflow-y-auto scrollbar-thin">
+                                {argsText}
+                              </pre>
+                            </div>
+                          )}
+
+                          <button
+                            onClick={() => toggleToolPanel(resultKey)}
+                            className="w-full px-2 py-1 text-left flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-slate-100/60 dark:hover:bg-slate-900/40"
+                          >
+                            <ChevronDown
+                              className={cn(
+                                "h-3 w-3 text-slate-500 transition-transform",
+                                !expandState.toolPanels[resultKey] &&
+                                  "-rotate-90",
+                              )}
+                            />
+                            <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                              结果
+                            </span>
+                          </button>
+                          {expandState.toolPanels[resultKey] && hasResult && (
+                            <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 max-h-48 overflow-y-auto scrollbar-thin">
+                              <MarkdownContent
+                                content={resultText}
+                                isStreaming={false}
+                              />
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                    {/* 工具参数 */}
-                    <div className="px-2 py-1 border-t border-slate-100 dark:border-slate-800">
-                      <pre className="text-[10px] text-slate-500 dark:text-slate-500 whitespace-pre-wrap break-all leading-relaxed max-h-16 overflow-y-auto scrollbar-thin">
-                        {toolCall.function.arguments}
-                      </pre>
-                    </div>
-                    {/* 工具执行结果 - 使用 Markdown 渲染 */}
-                    {result && (
-                      <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 max-h-48 overflow-y-auto scrollbar-thin">
-                        <MarkdownContent content={String(result.content || "")} isStreaming={false} />
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </CollapsibleSection>
             )}
           </div>
@@ -476,7 +838,7 @@ function MessageHeader({
         className={cn(
           "flex items-center justify-center w-8 h-8 rounded-xl shrink-0 shadow-sm",
           config.headerBg,
-          "text-white"
+          "text-white",
         )}
       >
         <Icon className="h-4 w-4" />
@@ -521,7 +883,41 @@ function MarkdownContent({
   content: string;
   isStreaming: boolean;
 }) {
-  if (!content || content.trim() === "") {
+  const [typedContent, setTypedContent] = useState(content);
+
+  useEffect(() => {
+    if (!content) {
+      setTypedContent("");
+      return;
+    }
+
+    // 若是增量更新，延续已有打字进度；若不是同一前缀则重置重打。
+    setTypedContent((prev) => (content.startsWith(prev) ? prev : ""));
+  }, [content]);
+
+  useEffect(() => {
+    if (typedContent.length >= content.length) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTypedContent((prev) => {
+        if (prev.length >= content.length) {
+          return prev;
+        }
+
+        const remaining = content.length - prev.length;
+        const step = Math.max(1, Math.min(4, Math.ceil(remaining / 10)));
+        return content.slice(0, prev.length + step);
+      });
+    }, 28);
+
+    return () => clearInterval(timer);
+  }, [content, typedContent.length]);
+
+  const renderedContent = typedContent;
+
+  if (!renderedContent || renderedContent.trim() === "") {
     return null;
   }
 
@@ -570,7 +966,9 @@ function MarkdownContent({
             </strong>
           ),
           em: ({ children }) => (
-            <em className="italic text-zinc-600 dark:text-zinc-400">{children}</em>
+            <em className="italic text-zinc-600 dark:text-zinc-400">
+              {children}
+            </em>
           ),
           code: ({ node, inline, className, children, ...props }: any) => {
             const match = /language-(\w+)/.exec(className || "");
@@ -614,9 +1012,7 @@ function MarkdownContent({
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-zinc-100 dark:bg-zinc-800">
-              {children}
-            </thead>
+            <thead className="bg-zinc-100 dark:bg-zinc-800">{children}</thead>
           ),
           th: ({ children }) => (
             <th className="border-b border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-left font-semibold text-zinc-700 dark:text-zinc-300">
@@ -633,10 +1029,12 @@ function MarkdownContent({
               {children}
             </tr>
           ),
-          hr: () => <hr className="my-4 border-zinc-200 dark:border-zinc-700" />,
+          hr: () => (
+            <hr className="my-4 border-zinc-200 dark:border-zinc-700" />
+          ),
         }}
       >
-        {content}
+        {renderedContent}
       </ReactMarkdown>
 
       {isStreaming && (

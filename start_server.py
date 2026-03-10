@@ -21,6 +21,9 @@ from contextlib import suppress
 import uvicorn
 from loguru import logger
 from agents.base.basetool import WorkspaceOps
+from agents.logging_config import configure_project_logging
+
+configure_project_logging()
 
 try:
     import msvcrt

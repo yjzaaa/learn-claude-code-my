@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMessageStore } from "@/hooks/useMessageStore";
+import { MessageStoreProvider, useMessageStore } from "@/hooks/useMessageStore";
 import { EmbeddedDialog } from "@/components/realtime";
 import { StudioDesignDemo } from "@/components/realtime/studio-design-demo";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,14 @@ import { cn } from "@/lib/utils";
  * - 展示嵌入式对话组件（EmbeddedDialog）
  */
 export function AgentPageClient() {
+  return (
+    <MessageStoreProvider>
+      <AgentPageClientContent />
+    </MessageStoreProvider>
+  );
+}
+
+function AgentPageClientContent() {
   const { messages } = useMessageStore();
   const [activeView, setActiveView] = useState<"chat" | "studio">("chat");
 

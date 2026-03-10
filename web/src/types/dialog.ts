@@ -116,12 +116,55 @@ export interface ErrorEvent {
   timestamp: number;
 }
 
+export interface SkillEditApproval {
+  approval_id: string;
+  dialog_id: string;
+  path: string;
+  old_content: string;
+  new_content: string;
+  unified_diff: string;
+  reason: string;
+  trigger_mode: string;
+  status: string;
+  created_at: number;
+  resolved_at?: number;
+}
+
+export interface SkillEditPendingEvent {
+  type: "skill_edit:pending";
+  dialog_id: string;
+  approval: SkillEditApproval;
+  timestamp: number;
+}
+
+export interface SkillEditResolvedEvent {
+  type: "skill_edit:resolved";
+  dialog_id: string;
+  approval_id: string;
+  result: string;
+  timestamp: number;
+}
+
+export interface SkillEditErrorEvent {
+  type: "skill_edit:error";
+  dialog_id?: string;
+  approval_id?: string;
+  error: {
+    code?: string;
+    message: string;
+  };
+  timestamp?: number;
+}
+
 export type ServerPushEvent =
   | DialogSnapshotEvent
   | StreamDeltaEvent
   | ToolCallUpdateEvent
   | StatusChangeEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | SkillEditPendingEvent
+  | SkillEditResolvedEvent
+  | SkillEditErrorEvent;
 
 // 客户端发送的事件
 export interface SubscribeEvent {
