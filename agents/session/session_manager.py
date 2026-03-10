@@ -14,6 +14,11 @@ from datetime import datetime
 from threading import RLock
 from typing import Any, Optional
 
+try:
+    from .history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+except ImportError:
+    from agents.session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+
 
 @dataclass
 class SessionIdentity:
@@ -145,19 +150,9 @@ class SessionManager:
 
     def append_round(self, dialog_id: str, user_question: str, final_answer: str) -> None:
         """追加一轮历史，仅保留 user + final assistant。"""
-        user_text = (user_question or "").strip()
-        answer_text = (final_answer or "").strip()
-        if not user_text or not answer_text:
-            return
-
         with self._lock:
             session = self.get_or_create(dialog_id)
-            session.history_rounds.append(
-                {
-                    "user": user_text,
-                    "assistant": answer_text,
-                }
-            )
+            append_history_round(session.history_rounds, user_question, final_answer)
 
     def set_window_rounds(self, window_rounds: int) -> None:
         with self._lock:
@@ -171,15 +166,8 @@ class SessionManager:
         """按滑动窗口构建 OpenAI messages（仅 user/assistant）。"""
         with self._lock:
             session = self.get_or_create(dialog_id)
-            rounds = session.history_rounds
             limit = self.window_rounds if window_rounds is None else max(1, int(window_rounds))
-            selected = rounds[-limit:]
-
-            messages: list[dict[str, Any]] = []
-            for round_item in selected:
-                messages.append({"role": "user", "content": round_item["user"]})
-                messages.append({"role": "assistant", "content": round_item["assistant"]})
-            return messages
+            return build_window_messages_from_rounds(session.history_rounds, current_user=None, window_rounds=limit)
 
     # ========== 运行控制接口 ==========
     def begin_run(self, dialog_id: str, agent: Any, task: Any = None) -> SessionContext:

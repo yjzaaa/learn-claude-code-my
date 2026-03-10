@@ -1,5 +1,6 @@
 ---
 name: finance
+description: Finance analytics skill for SQL generation, budgeting/actual comparisons, and allocation rules on SmartMES_Demo.
 ---
 
 # Finance Skill
@@ -24,6 +25,10 @@ name: finance
 - 返回查询结果用于进一步分析和展示。
 
 ## 数据库信息
+
+### 表名列表
+- SSME_FI_InsightBot_Rate
+- SSME_FI_InsightBot_CCMapping
 
 - **数据库名称**: SmartMES_Demo
 - **数据库地址**: Shai438a.ad005.onehc.net

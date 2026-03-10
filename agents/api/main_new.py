@@ -25,11 +25,15 @@ from ..models.dialog_types import (
     ToolCall,
     ToolCallStatus,
 )
-from ..api.state_managed_bridge import (
+from ..hooks.state_managed_agent_bridge import (
     StateManagedAgentBridge,
     DialogStore,
     dialog_store,
 )
+from ..hooks.context_compact_hook import ContextCompactHook
+from ..hooks.composite.composite_hooks import CompositeHooks
+from ..session.skill_edit_hitl import skill_edit_hitl_store
+from ..session.runtime_context import set_current_dialog_id, reset_current_dialog_id
 
 # 导入 WebSocket 组件
 from ..websocket.server import connection_manager
@@ -75,6 +79,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    skill_edit_hitl_store.register_broadcaster(connection_manager.broadcast)
 
     # ========== REST API 端点 ==========
 
@@ -280,13 +286,15 @@ def create_app() -> FastAPI:
     async def get_agent_status():
         """获取Agent状态 - 返回所有活跃对话框的状态"""
         dialogs = dialog_store.list_dialogs()
-        active_dialogs = [
-            {
-                "dialog_id": d.id,
-                "status": dialog_store.get_session(d.id).status.value if dialog_store.get_session(d.id) else "unknown"
-            }
-            for d in dialogs
-        ]
+        active_dialogs = []
+        for d in dialogs:
+            session = dialog_store.get_session(d.id)
+            active_dialogs.append(
+                {
+                    "dialog_id": d.id,
+                    "status": session.status.value if session is not None else "unknown",
+                }
+            )
 
         return {
             "success": True,
@@ -313,6 +321,31 @@ def create_app() -> FastAPI:
                 "count": len(stopped)
             }
         }
+
+    @app.get("/api/skill-edits/pending")
+    async def get_pending_skill_edits(dialog_id: str | None = None):
+        """获取待审批的 skills 修改列表。"""
+        return {
+            "success": True,
+            "data": skill_edit_hitl_store.list_pending(dialog_id=dialog_id),
+        }
+
+    @app.post("/api/skill-edits/{approval_id}/decision")
+    async def decide_skill_edit(approval_id: str, request: Dict[str, Any]):
+        """提交 skills 修改审批结果。"""
+        decision_raw = request.get("decision", "")
+        decision = str(decision_raw).strip().lower()
+        edited_content_raw = request.get("edited_content")
+        edited_content = str(edited_content_raw) if edited_content_raw is not None else None
+
+        result = skill_edit_hitl_store.decide(
+            approval_id=approval_id,
+            decision=decision,
+            edited_content=edited_content,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("message", "invalid decision"))
+        return result
 
     # ========== WebSocket 端点 ==========
 
@@ -348,10 +381,19 @@ def create_app() -> FastAPI:
 async def handle_websocket_message(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
     """处理 WebSocket 消息"""
     msg_type = message.get("type")
-    dialog_id = message.get("dialog_id")
+    dialog_id_raw = message.get("dialog_id")
+    dialog_id = dialog_id_raw if isinstance(dialog_id_raw, str) else None
 
     if msg_type == "subscribe":
         # 订阅对话框 - 立即推送当前快照
+        if not dialog_id:
+            await websocket.send_json({
+                "type": "error",
+                "error": {"code": "INVALID_DIALOG_ID", "message": "dialog_id is required for subscribe"},
+            })
+            return
+
+        connection_manager.subscribe_to_dialog(client_id, dialog_id)
         bridge = dialog_store.get_bridge(dialog_id)
         if bridge:
             await websocket.send_json(bridge.to_snapshot())
@@ -384,6 +426,13 @@ async def handle_websocket_message(websocket: WebSocket, client_id: str, message
 
     elif msg_type == "stop":
         # 停止 Agent
+        if not dialog_id:
+            await websocket.send_json({
+                "type": "error",
+                "error": {"code": "INVALID_DIALOG_ID", "message": "dialog_id is required for stop"},
+            })
+            return
+
         bridge = dialog_store.get_bridge(dialog_id)
         if bridge:
             bridge.on_stop()
@@ -418,30 +467,40 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
 
         last_user_message = user_messages[-1].content
 
-        # 创建 Agent，设置 Hook 委托
+        # 创建 Agent，设置 Hook 委托（压缩 Hook + 状态桥接）
         agent = S02WithSkillLoaderAgent()
-        agent.set_hook_delegate(bridge)
+        compact_hook = ContextCompactHook(bridge=bridge)
+        agent.set_hook_delegate(CompositeHooks([compact_hook, bridge]))
 
         # 运行 Agent
+        dialog_token = set_current_dialog_id(dialog_id)
         try:
             logger.info(f"[ProcessAgent] Running agent...")
-            messages = [{"role": "user", "content": last_user_message}]
-            await agent.arun(messages)
+            messages = bridge.build_window_messages(last_user_message)
+            final_answer = await agent.arun(messages)
+            bridge.append_history_round(last_user_message, final_answer)
             logger.info(f"[ProcessAgent] Agent completed")
         except asyncio.CancelledError:
             logger.info(f"[ProcessAgent] Agent was cancelled")
             bridge.on_stop()
+            await bridge.flush_pending_events()
         except Exception as e:
             logger.error(f"[ProcessAgent] Agent error: {e}")
             import traceback
             traceback.print_exc()
             bridge.on_error(e)
+            await bridge.flush_pending_events()
+        finally:
+            reset_current_dialog_id(dialog_token)
+
+        await bridge.flush_pending_events()
 
     except Exception as e:
         logger.error(f"[ProcessAgent] Outer error: {e}")
         import traceback
         traceback.print_exc()
         bridge.on_error(e)
+        await bridge.flush_pending_events()
 
 
 # 创建全局应用实例

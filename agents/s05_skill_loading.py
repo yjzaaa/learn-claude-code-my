@@ -178,7 +178,12 @@ class SkillLoader:
             return f"Error: Reference doc not found: {doc_path}"
 
         content = read_text_safe(target)
-        return f"<skill_reference skill=\"{name}\" path=\"{doc_path}\">\n{content}\n</skill_reference>"
+        return (
+            f"### Skill Reference\n"
+            f"- skill: `{name}`\n"
+            f"- path: `{doc_path}`\n\n"
+            f"```markdown\n{content}\n```"
+        )
 
     def get_scripts_content(self, name: str, script_path: str = "") -> str:
         """读取 scripts 脚本；未指定 script_path 时返回可用脚本列表。"""
@@ -201,7 +206,12 @@ class SkillLoader:
             return f"Error: Script not found: {script_path}"
 
         content = read_text_safe(target)
-        return f"<skill_script skill=\"{name}\" path=\"{script_path}\">\n{content}\n</skill_script>"
+        return (
+            f"### Skill Script\n"
+            f"- skill: `{name}`\n"
+            f"- path: `{script_path}`\n\n"
+            f"```python\n{content}\n```"
+        )
 
     def _backup_skill(self, name: str, reason: str = "") -> Path:
         """备份 skill 文件到 .backups/skills/YYYY-MM-DD/skill-name/"""

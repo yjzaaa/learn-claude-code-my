@@ -23,13 +23,15 @@ from ..models import ChatMessage, ChatEvent
 from ..websocket.event_manager import event_manager
 from ..websocket.server import connection_manager, MessageHandler
 try:
-    from .agent_bridge import AgentWebSocketBridge
-    from .session_manager import SessionManager
-    from .session_hooks import CompositeHooks, SessionHistoryHooks
+    from ..hooks.agent_websocket_bridge import AgentWebSocketBridge
+    from ..session.session_manager import SessionManager
+    from ..hooks.composite.composite_hooks import CompositeHooks
+    from ..hooks.session_history_hook import SessionHistoryHook
 except ImportError:
-    from agents.api.agent_bridge import AgentWebSocketBridge
-    from agents.api.session_manager import SessionManager
-    from agents.api.session_hooks import CompositeHooks, SessionHistoryHooks
+    from agents.hooks.agent_websocket_bridge import AgentWebSocketBridge
+    from agents.session.session_manager import SessionManager
+    from agents.hooks.composite.composite_hooks import CompositeHooks
+    from agents.hooks.session_history_hook import SessionHistoryHook
 
 # 导入Agent组件
 try:
@@ -533,8 +535,11 @@ async def process_agent_request(dialog_id: str):
 
         # 创建 WebSocket Bridge，传入 agent_name
         bridge = AgentWebSocketBridge(dialog_id=dialog_id, agent_name=agent_name)
-        history_hooks = SessionHistoryHooks(dialog_id=dialog_id, session_manager=session_manager)
-        composite_hooks = CompositeHooks([history_hooks, bridge])
+        history_hook = SessionHistoryHook(
+            dialog_id=dialog_id,
+            session_manager=session_manager,
+        )
+        composite_hooks = CompositeHooks([history_hook, bridge])
 
         # 创建 Agent，并通过统一 hook delegate 绑定 WebSocket bridge
         agent = S02WithSkillLoaderAgent()

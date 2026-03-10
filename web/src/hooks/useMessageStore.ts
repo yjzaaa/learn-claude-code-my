@@ -1,6 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  createElement,
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type ReactNode,
+} from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
 import type { ChatMessage, ChatEvent, ChatEventType } from "@/types/openai";
 import type { AgentEvent, AgentStreamState } from "@/types/agent-event";
@@ -56,7 +65,7 @@ function normalizeDialog(
   };
 }
 
-export function useMessageStore() {
+function useMessageStoreInstance() {
   const [state, setState] = useState<MessageStoreState>({
     dialogs: [],
     currentDialog: null,
@@ -76,8 +85,13 @@ export function useMessageStore() {
 
   const messageBufferRef = useRef<ChatEventPayload[]>([]);
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const currentDialogRef = useRef<ChatSession | null>(null);
   // 流式消息缓存
   const streamingMessagesRef = useRef<StreamingMessages>({});
+
+  useEffect(() => {
+    currentDialogRef.current = state.currentDialog;
+  }, [state.currentDialog]);
 
   // 批量更新消息
   const flushMessages = useCallback(() => {
@@ -157,7 +171,8 @@ export function useMessageStore() {
     console.log("[MessageStore] Setting up event listeners");
 
     const handleChatEvent = (event: ChatEventPayload) => {
-      if (!state.currentDialog || event.dialog_id !== state.currentDialog.id) {
+      const currentDialog = currentDialogRef.current;
+      if (!currentDialog || event.dialog_id !== currentDialog.id) {
         return;
       }
 
@@ -185,12 +200,17 @@ export function useMessageStore() {
           // 合并消息：保留现有消息，同时添加服务器上的新消息
           let mergedMessages: ChatMessage[] = [];
           if (existingDialog) {
-            mergedMessages = [...existingDialog.messages];
-            // 添加服务器有但本地没有的消息（通过ID判断）
+            // 以本地消息顺序为基础，按 id 用服务端消息覆盖，避免占位消息长期为空。
+            const serverById = new Map(
+              normalizedDialog.messages.map((m) => [m.id, m] as const),
+            );
+            mergedMessages = existingDialog.messages.map(
+              (localMsg) => serverById.get(localMsg.id) || localMsg,
+            );
+
+            // 补齐本地不存在但服务端存在的消息。
             normalizedDialog.messages.forEach((serverMsg) => {
-              const exists = mergedMessages.some(
-                (m) => m.id === serverMsg.id,
-              );
+              const exists = mergedMessages.some((m) => m.id === serverMsg.id);
               if (!exists) {
                 mergedMessages.push(serverMsg);
               }
@@ -223,23 +243,30 @@ export function useMessageStore() {
 
     // Agent 流式事件处理
     const handleAgentEvent = (event: AgentEvent) => {
+      const currentDialog = currentDialogRef.current;
+
       // 对于 message_start 事件，如果没有 currentDialog，尝试从 event 创建
-      if (!state.currentDialog) {
+      if (!currentDialog) {
         if (event.type === "agent:message_start") {
-          console.log("[MessageStore] No current dialog, buffering message_start event");
+          console.log(
+            "[MessageStore] No current dialog, buffering message_start event",
+          );
           // 延迟处理这个事件，等待 dialog:subscribed
           setTimeout(() => {
             globalEventEmitter.emit("agent:event", event);
           }, 100);
         } else {
-          console.log("[MessageStore] Skipping agent event: no current dialog", event.type);
+          console.log(
+            "[MessageStore] Skipping agent event: no current dialog",
+            event.type,
+          );
         }
         return;
       }
-      if (event.dialog_id !== state.currentDialog.id) {
+      if (event.dialog_id !== currentDialog.id) {
         console.log("[MessageStore] Skipping agent event: dialog_id mismatch", {
           event_dialog_id: event.dialog_id,
-          current_dialog_id: state.currentDialog.id,
+          current_dialog_id: currentDialog.id,
         });
         return;
       }
@@ -257,9 +284,14 @@ export function useMessageStore() {
             const { message_id, role, agent_name } = event.data;
 
             // 检查消息是否已存在，避免重复创建
-            const existingMessage = prev.currentDialog?.messages.find(m => m.id === message_id);
+            const existingMessage = prev.currentDialog?.messages.find(
+              (m) => m.id === message_id,
+            );
             if (existingMessage) {
-              console.log("[MessageStore] Message already exists, skipping:", message_id);
+              console.log(
+                "[MessageStore] Message already exists, skipping:",
+                message_id,
+              );
               return prev;
             }
 
@@ -312,6 +344,16 @@ export function useMessageStore() {
                 ...messages[targetIdx],
                 content,
               };
+            } else {
+              // 兜底：如果 message_start 丢失/延迟，delta 也要能创建消息占位
+              messages.push({
+                id: message_id,
+                role: "assistant",
+                content,
+                agent_name:
+                  streamingMessagesRef.current[message_id]?.agentName ||
+                  "TeamLeadAgent",
+              });
             }
 
             return {
@@ -358,19 +400,29 @@ export function useMessageStore() {
 
           case "agent:tool_call": {
             const { message_id, tool_call } = event.data;
-            console.log("[MessageStore] agent:tool_call received:", { message_id, tool_call });
+            console.log("[MessageStore] agent:tool_call received:", {
+              message_id,
+              tool_call,
+            });
 
             const messages = [...(prev.currentDialog?.messages || [])];
 
             // 找到最后一条 assistant 消息来添加 tool_call
             // 因为 tool_call 可能是通过 tool_call.id 关联的，而不是 message_id
-            const assistantIdx = messages.findLastIndex((m) => m.role === "assistant");
+            const assistantIdx = messages.findLastIndex(
+              (m) => m.role === "assistant",
+            );
 
             if (assistantIdx >= 0) {
-              console.log("[MessageStore] Updating assistant message at index:", assistantIdx);
+              console.log(
+                "[MessageStore] Updating assistant message at index:",
+                assistantIdx,
+              );
               const existingToolCalls = messages[assistantIdx].tool_calls || [];
               // 检查是否已存在相同的 tool_call
-              const exists = existingToolCalls.some((tc) => tc.id === tool_call.id);
+              const exists = existingToolCalls.some(
+                (tc) => tc.id === tool_call.id,
+              );
               if (!exists) {
                 messages[assistantIdx] = {
                   ...messages[assistantIdx],
@@ -395,19 +447,29 @@ export function useMessageStore() {
 
           case "agent:tool_result": {
             const { tool_call_id, tool_name, result } = event.data;
-            console.log("[MessageStore] agent:tool_result received:", { tool_call_id, tool_name, result });
+            console.log("[MessageStore] agent:tool_result received:", {
+              tool_call_id,
+              tool_name,
+              result,
+            });
 
             // 创建工具结果消息
             const toolResultMessage: ChatMessage = {
               id: `tool_result_${Date.now()}`,
               role: "tool",
-              content: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+              content:
+                typeof result === "string"
+                  ? result
+                  : JSON.stringify(result, null, 2),
               tool_call_id: tool_call_id,
               name: tool_name,
             };
 
             // 添加到消息列表
-            const messages = [...(prev.currentDialog?.messages || []), toolResultMessage];
+            const messages = [
+              ...(prev.currentDialog?.messages || []),
+              toolResultMessage,
+            ];
 
             return {
               ...prev,
@@ -432,7 +494,8 @@ export function useMessageStore() {
               const nextContent = content || messages[targetIdx].content || "";
               const nextToolCalls =
                 tool_calls || messages[targetIdx].tool_calls;
-              const nextReasoningContent = reasoning_content || messages[targetIdx].reasoning_content;
+              const nextReasoningContent =
+                reasoning_content || messages[targetIdx].reasoning_content;
 
               messages[targetIdx] = {
                 ...messages[targetIdx],
@@ -526,7 +589,7 @@ export function useMessageStore() {
       unsubscribeDialog();
       unsubscribeAgent();
     };
-  }, [bufferEvent, state.currentDialog]);
+  }, [bufferEvent]);
 
   // 设置当前对话框
   const setCurrentDialog = useCallback((dialog: ChatSession | null) => {
@@ -581,7 +644,10 @@ export function useMessageStore() {
 
       // 先把当前对话框保存到历史列表（如果存在且不在列表中）
       let updatedDialogs = [...prev.dialogs];
-      if (prev.currentDialog && !updatedDialogs.some((d) => d.id === prev.currentDialog!.id)) {
+      if (
+        prev.currentDialog &&
+        !updatedDialogs.some((d) => d.id === prev.currentDialog!.id)
+      ) {
         updatedDialogs.push(prev.currentDialog);
       }
 
@@ -590,7 +656,9 @@ export function useMessageStore() {
         updatedDialogs.push(dialog);
       } else {
         // 更新已存在的对话框
-        updatedDialogs = updatedDialogs.map((d) => (d.id === dialog.id ? dialog : d));
+        updatedDialogs = updatedDialogs.map((d) =>
+          d.id === dialog.id ? dialog : d,
+        );
       }
 
       return {
@@ -672,7 +740,30 @@ export function useMessageStore() {
     streamingContent: state.streamState.accumulatedContent,
     /** 当前推理内容 */
     streamingReasoning: state.streamState.accumulatedReasoning,
+    /** 当前流式消息 ID */
+    currentStreamingMessageId: state.streamState.currentMessageId,
     /** 是否正在流式输出 */
     isStreaming: state.streamState.isStreaming,
   };
+}
+
+type MessageStoreApi = ReturnType<typeof useMessageStoreInstance>;
+
+const MessageStoreContext = createContext<MessageStoreApi | null>(null);
+
+export function MessageStoreProvider({ children }: { children: ReactNode }) {
+  const store = useMessageStoreInstance();
+  return createElement(
+    MessageStoreContext.Provider,
+    { value: store },
+    children,
+  );
+}
+
+export function useMessageStore(): MessageStoreApi {
+  const store = useContext(MessageStoreContext);
+  if (!store) {
+    throw new Error("useMessageStore must be used within MessageStoreProvider");
+  }
+  return store;
 }

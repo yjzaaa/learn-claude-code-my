@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { diffLines, Change } from "diff";
+import { useMemo, useState, useCallback, type WheelEvent } from "react";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { diffLines } from "diff";
 import { cn } from "@/lib/utils";
 
 interface CodeDiffProps {
@@ -11,195 +12,237 @@ interface CodeDiffProps {
   newLabel: string;
 }
 
-export function CodeDiff({ oldSource, newSource, oldLabel, newLabel }: CodeDiffProps) {
-  const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
+function detectFileKind(label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.endsWith(".md")) return "Markdown";
+  if (lower.endsWith(".py")) return "Python";
+  if (lower.endsWith(".ts")) return "TypeScript";
+  if (lower.endsWith(".tsx")) return "TSX";
+  if (lower.endsWith(".js")) return "JavaScript";
+  if (lower.endsWith(".json")) return "JSON";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "YAML";
+  if (lower.endsWith(".css")) return "CSS";
+  if (lower.endsWith(".html")) return "HTML";
+  return "Text";
+}
 
-  const changes = useMemo(() => diffLines(oldSource, newSource), [oldSource, newSource]);
+export function CodeDiff({
+  oldSource,
+  newSource,
+  oldLabel,
+  newLabel,
+}: CodeDiffProps) {
+  const [viewMode, setViewMode] = useState<"unified" | "split">("unified");
+  const [showDiffOnly, setShowDiffOnly] = useState(true);
+  const [enableWordDiff, setEnableWordDiff] = useState(true);
+  const [contextLines, setContextLines] = useState(3);
+  const styles = useMemo(
+    () => ({
+      variables: {
+        light: {
+          diffViewerBackground: "#ffffff",
+          diffViewerColor: "#18181b",
+          addedBackground: "#dcfce7",
+          removedBackground: "#fee2e2",
+          addedColor: "#14532d",
+          removedColor: "#7f1d1d",
+          wordAddedBackground: "#86efac",
+          wordRemovedBackground: "#fca5a5",
+          gutterBackground: "#f4f4f5",
+          gutterBackgroundDark: "#f4f4f5",
+          highlightBackground: "#fef9c3",
+          highlightGutterBackground: "#fef08a",
+          codeFoldGutterBackground: "#f4f4f5",
+          codeFoldBackground: "#fafafa",
+          emptyLineBackground: "#fafafa",
+        },
+        dark: {
+          diffViewerBackground: "#09090b",
+          diffViewerColor: "#f4f4f5",
+          addedBackground: "#052e16",
+          removedBackground: "#450a0a",
+          addedColor: "#86efac",
+          removedColor: "#fca5a5",
+          wordAddedBackground: "#166534",
+          wordRemovedBackground: "#991b1b",
+          gutterBackground: "#18181b",
+          gutterBackgroundDark: "#18181b",
+          highlightBackground: "#713f12",
+          highlightGutterBackground: "#854d0e",
+          codeFoldGutterBackground: "#18181b",
+          codeFoldBackground: "#0a0a0a",
+          emptyLineBackground: "#0a0a0a",
+        },
+      },
+      diffContainer: {
+        borderRadius: "0.75rem",
+        border: "1px solid rgb(228 228 231)",
+        overflow: "hidden",
+      },
+      marker: {
+        minWidth: "2rem",
+      },
+      lineNumber: {
+        minWidth: "2.5rem",
+      },
+      contentText: {
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
+        fontSize: "12px",
+        lineHeight: "1.45",
+      },
+    }),
+    [],
+  );
+
+  const oldTitle = useMemo(() => `OLD  ${oldLabel}`, [oldLabel]);
+  const newTitle = useMemo(() => `NEW  ${newLabel}`, [newLabel]);
+  const fileKind = useMemo(
+    () => detectFileKind(newLabel || oldLabel),
+    [newLabel, oldLabel],
+  );
+  const diffStats = useMemo(() => {
+    const changes = diffLines(oldSource, newSource);
+    let added = 0;
+    let removed = 0;
+
+    for (const change of changes) {
+      // Ignore trailing empty line produced by split in some cases.
+      const lines = change.value.split("\n");
+      const lineCount =
+        lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+      if (change.added) {
+        added += lineCount;
+      } else if (change.removed) {
+        removed += lineCount;
+      }
+    }
+
+    return { added, removed };
+  }, [oldSource, newSource]);
+  const hasChanges = diffStats.added > 0 || diffStats.removed > 0;
+
+  const handleDiffWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
+      e.stopPropagation();
+    }
+  }, []);
 
   return (
     <div>
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 truncate text-sm text-zinc-500 dark:text-zinc-400">
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">{oldLabel}</span>
-          {" -> "}
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">{newLabel}</span>
+      <div className="mb-3 space-y-3 rounded-lg bg-white dark:bg-zinc-950/70">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                {fileKind}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                +{diffStats.added}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                -{diffStats.removed}
+              </span>
+            </div>
+            <div className="min-w-0 truncate text-sm text-zinc-500 dark:text-zinc-400">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                {oldLabel}
+              </span>
+              {" -> "}
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                {newLabel}
+              </span>
+            </div>
+          </div>
+          <div className="flex shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700">
+            <button
+              onClick={() => setViewMode("unified")}
+              className={cn(
+                "min-h-[36px] px-3 text-xs font-medium transition-colors",
+                viewMode === "unified"
+                  ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400",
+              )}
+            >
+              Unified
+            </button>
+            <button
+              onClick={() => setViewMode("split")}
+              className={cn(
+                "min-h-[36px] px-3 text-xs font-medium transition-colors sm:inline-flex hidden",
+                viewMode === "split"
+                  ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
+                  : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400",
+              )}
+            >
+              Split
+            </button>
+          </div>
         </div>
-        <div className="flex shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700">
-          <button
-            onClick={() => setViewMode("unified")}
-            className={cn(
-              "min-h-[36px] px-3 text-xs font-medium transition-colors",
-              viewMode === "unified"
-                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
-            )}
-          >
-            Unified
-          </button>
-          <button
-            onClick={() => setViewMode("split")}
-            className={cn(
-              "min-h-[36px] px-3 text-xs font-medium transition-colors sm:inline-flex hidden",
-              viewMode === "split"
-                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
-            )}
-          >
-            Split
-          </button>
+
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-700 dark:bg-zinc-900/40">
+          <span className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-2 py-0.5 font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            status: {hasChanges ? "modified" : "unchanged"}
+          </span>
+
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-zinc-300"
+              checked={showDiffOnly}
+              onChange={(e) => setShowDiffOnly(e.target.checked)}
+            />
+            Show changes only
+          </label>
+
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-zinc-300"
+              checked={enableWordDiff}
+              onChange={(e) => setEnableWordDiff(e.target.checked)}
+            />
+            Word diff
+          </label>
+          <label className="inline-flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
+            Context
+            <select
+              className="rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              value={contextLines}
+              onChange={(e) => setContextLines(Number(e.target.value))}
+              disabled={!showDiffOnly}
+            >
+              <option value={1}>1 line</option>
+              <option value={3}>3 lines</option>
+              <option value={5}>5 lines</option>
+              <option value={10}>10 lines</option>
+            </select>
+          </label>
         </div>
       </div>
 
-      {viewMode === "unified" ? (
-        <UnifiedView changes={changes} />
-      ) : (
-        <SplitView changes={changes} />
-      )}
-    </div>
-  );
-}
-
-function UnifiedView({ changes }: { changes: Change[] }) {
-  let oldLine = 1;
-  let newLine = 1;
-
-  const rows: { oldNum: number | null; newNum: number | null; type: "add" | "remove" | "context"; text: string }[] = [];
-
-  for (const change of changes) {
-    const lines = change.value.replace(/\n$/, "").split("\n");
-    for (const line of lines) {
-      if (change.added) {
-        rows.push({ oldNum: null, newNum: newLine++, type: "add", text: line });
-      } else if (change.removed) {
-        rows.push({ oldNum: oldLine++, newNum: null, type: "remove", text: line });
-      } else {
-        rows.push({ oldNum: oldLine++, newNum: newLine++, type: "context", text: line });
-      }
-    }
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-      <table className="w-full border-collapse font-mono text-xs leading-5">
-        <tbody>
-          {rows.map((row, i) => (
-            <tr
-              key={i}
-              className={cn(
-                row.type === "add" && "bg-green-50 dark:bg-green-950/30",
-                row.type === "remove" && "bg-red-50 dark:bg-red-950/30"
-              )}
-            >
-              <td className="w-10 select-none border-r border-zinc-200 px-2 text-right text-zinc-400 dark:border-zinc-700 dark:text-zinc-600">
-                {row.oldNum ?? ""}
-              </td>
-              <td className="w-10 select-none border-r border-zinc-200 px-2 text-right text-zinc-400 dark:border-zinc-700 dark:text-zinc-600">
-                {row.newNum ?? ""}
-              </td>
-              <td className="w-4 select-none px-1 text-center">
-                {row.type === "add" && <span className="text-green-600 dark:text-green-400">+</span>}
-                {row.type === "remove" && <span className="text-red-600 dark:text-red-400">-</span>}
-              </td>
-              <td className="whitespace-pre px-2">
-                <span
-                  className={cn(
-                    row.type === "add" && "text-green-800 dark:text-green-300",
-                    row.type === "remove" && "text-red-800 dark:text-red-300",
-                    row.type === "context" && "text-zinc-700 dark:text-zinc-300"
-                  )}
-                >
-                  {row.text}
-                </span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function SplitView({ changes }: { changes: Change[] }) {
-  let oldLine = 1;
-  let newLine = 1;
-
-  type SplitRow = {
-    left: { num: number | null; text: string; type: "remove" | "context" | "empty" };
-    right: { num: number | null; text: string; type: "add" | "context" | "empty" };
-  };
-
-  const rows: SplitRow[] = [];
-
-  for (const change of changes) {
-    const lines = change.value.replace(/\n$/, "").split("\n");
-    if (change.removed) {
-      for (const line of lines) {
-        rows.push({
-          left: { num: oldLine++, text: line, type: "remove" },
-          right: { num: null, text: "", type: "empty" },
-        });
-      }
-    } else if (change.added) {
-      let filled = 0;
-      for (const line of lines) {
-        // Try to fill in empty right-side slots from preceding removes
-        const lastUnfilled = rows.length - lines.length + filled;
-        if (
-          lastUnfilled >= 0 &&
-          lastUnfilled < rows.length &&
-          rows[lastUnfilled].right.type === "empty" &&
-          rows[lastUnfilled].left.type === "remove"
-        ) {
-          rows[lastUnfilled].right = { num: newLine++, text: line, type: "add" };
-        } else {
-          rows.push({
-            left: { num: null, text: "", type: "empty" },
-            right: { num: newLine++, text: line, type: "add" },
-          });
-        }
-        filled++;
-      }
-    } else {
-      for (const line of lines) {
-        rows.push({
-          left: { num: oldLine++, text: line, type: "context" },
-          right: { num: newLine++, text: line, type: "context" },
-        });
-      }
-    }
-  }
-
-  const cellClass = (type: string) =>
-    cn(
-      "whitespace-pre px-2",
-      type === "add" && "bg-green-50 text-green-800 dark:bg-green-950/30 dark:text-green-300",
-      type === "remove" && "bg-red-50 text-red-800 dark:bg-red-950/30 dark:text-red-300",
-      type === "context" && "text-zinc-700 dark:text-zinc-300",
-      type === "empty" && "bg-zinc-50 dark:bg-zinc-900"
-    );
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-      <table className="w-full border-collapse font-mono text-xs leading-5">
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>
-              <td className="w-10 select-none border-r border-zinc-200 px-2 text-right text-zinc-400 dark:border-zinc-700 dark:text-zinc-600">
-                {row.left.num ?? ""}
-              </td>
-              <td className={cn("w-1/2 border-r border-zinc-200 dark:border-zinc-700", cellClass(row.left.type))}>
-                {row.left.text}
-              </td>
-              <td className="w-10 select-none border-r border-zinc-200 px-2 text-right text-zinc-400 dark:border-zinc-700 dark:text-zinc-600">
-                {row.right.num ?? ""}
-              </td>
-              <td className={cn("w-1/2", cellClass(row.right.type))}>
-                {row.right.text}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <div
+          onWheel={handleDiffWheel}
+          className="max-h-[460px] overflow-auto overscroll-contain"
+        >
+          <ReactDiffViewer
+            oldValue={oldSource}
+            newValue={newSource}
+            splitView={viewMode === "split"}
+            compareMethod={DiffMethod.WORDS}
+            showDiffOnly={showDiffOnly}
+            hideLineNumbers={false}
+            disableWordDiff={!enableWordDiff}
+            leftTitle={oldTitle}
+            rightTitle={newTitle}
+            useDarkTheme={false}
+            styles={styles}
+            extraLinesSurroundingDiff={contextLines}
+          />
+        </div>
+      </div>
     </div>
   );
 }

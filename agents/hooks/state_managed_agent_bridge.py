@@ -6,8 +6,11 @@ StateManagedAgentBridge - 状态管理型 Agent Bridge
 """
 
 import asyncio
+import json
+import os
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 from loguru import logger
 
@@ -25,6 +28,8 @@ try:
     )
     from ..websocket.server import connection_manager
     from ..base.abstract.hooks import FullAgentHooks, HookName
+    from ..session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+    from ..utils.workspace_cleanup import clear_workspace_dir
 except ImportError:
     from agents.models.dialog_types import (
         DialogSession,
@@ -39,6 +44,8 @@ except ImportError:
     )
     from agents.websocket.server import connection_manager
     from agents.base.abstract.hooks import FullAgentHooks, HookName
+    from agents.session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+    from agents.utils.workspace_cleanup import clear_workspace_dir
 
 
 class StateManagedAgentBridge(FullAgentHooks):
@@ -56,7 +63,18 @@ class StateManagedAgentBridge(FullAgentHooks):
             title="Agent 对话",
             agent_name=agent_name,
         )
-        logger.info(f"[StateBridge] Created session for dialog {dialog_id}")
+        window_rounds_raw = os.getenv("SESSION_WINDOW_ROUNDS", "10")
+        try:
+            # 环境变量配置窗口轮数，默认为 10，最小为 1。
+            self.window_rounds = max(1, int(window_rounds_raw))
+        except ValueError:
+            self.window_rounds = 10
+        self.history_rounds: list[dict[str, str]] = []
+        self._snapshot_history_dir = Path.cwd() / "history"
+        self._snapshot_history_dir.mkdir(parents=True, exist_ok=True)
+        self._snapshot_history_file = self._snapshot_history_dir / f"{dialog_id}.jsonl"
+        self._last_broadcast_task: Optional[asyncio.Task] = None
+        logger.debug(f"[StateBridge] Created session for dialog {dialog_id}")
 
     # ===== 状态查询方法 =====
 
@@ -91,11 +109,48 @@ class StateManagedAgentBridge(FullAgentHooks):
         except Exception as e:
             logger.error(f"[StateBridge] Broadcast error: {e}")
 
-    def _push_snapshot(self):
-        """推送完整状态快照"""
+    def _schedule_broadcast(self, event: dict):
+        """串行调度广播，确保事件顺序稳定。"""
+
+        async def _chained_broadcast(previous: Optional[asyncio.Task], payload: dict):
+            if previous:
+                try:
+                    await previous
+                except Exception:
+                    # 前一个广播失败不应阻塞后续事件。
+                    pass
+            await self._broadcast(payload)
+
+        previous_task = self._last_broadcast_task
+        task = asyncio.create_task(_chained_broadcast(previous_task, event))
+        self._last_broadcast_task = task
+
+    async def flush_pending_events(self):
+        """等待当前桥接器已排队的广播事件发送完成。"""
+        task = self._last_broadcast_task
+        if task:
+            try:
+                await task
+            except Exception as e:
+                logger.error(f"[StateBridge] flush_pending_events error: {e}")
+
+    def _push_snapshot(self, persist: bool = False):
+        """推送完整状态快照；仅在显式标记时落盘。"""
         snapshot = self.to_snapshot()
-        asyncio.create_task(self._broadcast(snapshot))
+        # 仅在轮次收尾时持久化，并且避免 token 级别写入放大。
+        if persist and self.session.streaming_message is None:
+            self._persist_snapshot(snapshot)
+        self._schedule_broadcast(snapshot)
         logger.debug(f"[StateBridge] Pushed snapshot for {self.dialog_id}, status={self.session.status.value}")
+
+    def _persist_snapshot(self, snapshot: dict) -> None:
+        """将非流式快照落盘到 history/<dialog_id>.jsonl。"""
+        try:
+            with self._snapshot_history_file.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(snapshot, ensure_ascii=False))
+                fh.write("\n")
+        except Exception as e:
+            logger.error(f"[StateBridge] Persist snapshot error: {e}")
 
     def _push_delta(self, message_id: str, delta: dict):
         """推送流式增量"""
@@ -106,7 +161,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             "delta": delta,
             "timestamp": time.time(),
         }
-        asyncio.create_task(self._broadcast(event))
+        self._schedule_broadcast(event)
 
     def _push_tool_call_update(self, tool_call: ToolCall):
         """推送工具调用状态更新"""
@@ -116,7 +171,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             "tool_call": tool_call.to_dict(),
             "timestamp": time.time(),
         }
-        asyncio.create_task(self._broadcast(event))
+        self._schedule_broadcast(event)
 
     def _push_status_change(self, old_status: DialogStatus, new_status: DialogStatus):
         """推送状态变更"""
@@ -127,7 +182,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             "to": new_status.value,
             "timestamp": time.time(),
         }
-        asyncio.create_task(self._broadcast(event))
+        self._schedule_broadcast(event)
 
     def _gen_id(self, prefix: str = "msg") -> str:
         """生成唯一ID"""
@@ -151,7 +206,7 @@ class StateManagedAgentBridge(FullAgentHooks):
 
         # 推送快照（包含新用户消息和状态变更）
         self._push_snapshot()
-        logger.info(f"[StateBridge] User input added, dialog status: {self.session.status.value}")
+        logger.debug(f"[StateBridge] User input added, dialog status: {self.session.status.value}")
 
         return user_msg
 
@@ -162,7 +217,7 @@ class StateManagedAgentBridge(FullAgentHooks):
         # 重置流式消息
         self.session.streaming_message = None
         self.session.status = DialogStatus.THINKING
-        logger.info(f"[StateBridge] Run started, status: {self.session.status.value}")
+        logger.debug(f"[StateBridge] Run started, status: {self.session.status.value}")
 
     def _ensure_streaming_message(self) -> Message:
         """确保流式消息存在"""
@@ -181,7 +236,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             self.session.status = DialogStatus.THINKING
             self.session.update_timestamp()
             self._push_snapshot()
-            logger.info(f"[StateBridge] Stream started, message_id: {assistant_msg.id}")
+            logger.debug(f"[StateBridge] Stream started, message_id: {assistant_msg.id}")
         return self.session.streaming_message
 
     def on_stream_token(self, chunk: Any) -> None:
@@ -215,8 +270,7 @@ class StateManagedAgentBridge(FullAgentHooks):
     def on_tool_call(self, name: str, arguments: dict[str, Any], tool_call_id: str = "") -> ToolCall:
         """工具调用"""
         # 确保流式消息存在
-        if not self.session.streaming_message:
-            self.on_stream_start()
+        streaming_msg = self._ensure_streaming_message()
 
         actual_id = tool_call_id or self._gen_id("call")
 
@@ -227,14 +281,14 @@ class StateManagedAgentBridge(FullAgentHooks):
             status=ToolCallStatus.PENDING,
         )
 
-        self.session.streaming_message.tool_calls = self.session.streaming_message.tool_calls or []
-        self.session.streaming_message.tool_calls.append(tool_call)
+        streaming_msg.tool_calls = streaming_msg.tool_calls or []
+        streaming_msg.tool_calls.append(tool_call)
         self.session.metadata.tool_calls_count += 1
         self.session.status = DialogStatus.TOOL_CALLING
         self.session.update_timestamp()
 
         self._push_snapshot()
-        logger.info(f"[StateBridge] Tool call added: {name}, id: {actual_id}")
+        logger.debug(f"[StateBridge] Tool call added: {name}, id: {actual_id}")
 
         return tool_call
 
@@ -247,7 +301,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             self.session.update_timestamp()
 
             self._push_tool_call_update(tool)
-            logger.info(f"[StateBridge] Tool started: {tool_call_id}")
+            logger.debug(f"[StateBridge] Tool started: {tool_call_id}")
 
     def on_tool_result(self, name: str, result: str, assistant_message: dict[str, Any] | None = None, tool_call_id: str = ""):
         """工具执行完成"""
@@ -271,7 +325,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             self.session.add_message(tool_msg)
 
             self._push_tool_call_update(tool)
-            logger.info(f"[StateBridge] Tool completed: {tool.name}")
+            logger.debug(f"[StateBridge] Tool completed: {tool.name}")
         else:
             logger.warning(f"[StateBridge] Tool not found: {actual_id}")
 
@@ -296,7 +350,7 @@ class StateManagedAgentBridge(FullAgentHooks):
             self._push_status_change(old_status, self.session.status)
 
         self._push_snapshot()
-        logger.info(f"[StateBridge] Stream completed, status: {self.session.status.value}")
+        logger.debug(f"[StateBridge] Stream completed, status: {self.session.status.value}")
 
     def on_after_run(self, messages: list[dict[str, Any]], rounds: int) -> None:
         """运行结束后清理"""
@@ -313,7 +367,11 @@ class StateManagedAgentBridge(FullAgentHooks):
             self._push_status_change(old_status, self.session.status)
 
         self._push_snapshot()
-        logger.info(f"[StateBridge] Run completed, rounds: {rounds}")
+        logger.debug(f"[StateBridge] Run completed, rounds: {rounds}")
+
+        cleared, removed = clear_workspace_dir(Path.cwd())
+        if cleared:
+            logger.debug(f"[StateBridge] Auto-cleared .workspace, removed={removed}")
 
     def on_error(self, error: Exception):
         """错误处理"""
@@ -345,10 +403,19 @@ class StateManagedAgentBridge(FullAgentHooks):
 
         self.session.status = DialogStatus.IDLE
         self._push_status_change(old_status, self.session.status)
-        self._push_snapshot()
-        logger.info(f"[StateBridge] Stopped")
+        self._push_snapshot(persist=True)
+        logger.debug(f"[StateBridge] Stopped")
 
     # ===== 辅助方法 =====
+
+    def append_history_round(self, user_question: str, final_answer: str) -> None:
+        """追加一轮历史，仅保留 user + final assistant。"""
+        append_history_round(self.history_rounds, user_question, final_answer)
+
+    def build_window_messages(self, current_user: str, window_rounds: Optional[int] = None) -> list[dict[str, Any]]:
+        """按滑动窗口构建 OpenAI messages（仅 user/assistant + 当前 user）。"""
+        limit = self.window_rounds if window_rounds is None else max(1, int(window_rounds))
+        return build_window_messages_from_rounds(self.history_rounds, current_user=current_user, window_rounds=limit)
 
     def _has_pending_tool_calls(self) -> bool:
         """检查是否有未完成的工具调用"""
@@ -387,7 +454,7 @@ class DialogStore:
         bridge = StateManagedAgentBridge(dialog_id, agent_name)
         self._sessions[dialog_id] = bridge.get_session()
         self._bridges[dialog_id] = bridge
-        logger.info(f"[DialogStore] Created dialog: {dialog_id}")
+        logger.debug(f"[DialogStore] Created dialog: {dialog_id}")
         return bridge
 
     def get_bridge(self, dialog_id: str) -> Optional[StateManagedAgentBridge]:
@@ -418,7 +485,7 @@ class DialogStore:
             del self._bridges[dialog_id]
             if dialog_id in self._sessions:
                 del self._sessions[dialog_id]
-            logger.info(f"[DialogStore] Deleted dialog: {dialog_id}")
+            logger.debug(f"[DialogStore] Deleted dialog: {dialog_id}")
             return True
         return False
 

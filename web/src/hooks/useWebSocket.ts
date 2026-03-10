@@ -8,6 +8,7 @@ import type {
   StreamDeltaEvent,
   ToolCallUpdateEvent,
   Message,
+  SkillEditApproval,
 } from "@/types/dialog";
 import type { ChatMessage } from "@/types/openai";
 import { globalEventEmitter } from "@/lib/event-emitter";
@@ -42,9 +43,10 @@ function convertToChatMessage(msg: Message): ChatMessage {
 }
 
 // WebSocket URL - 优先使用环境变量，否则使用默认值
-const WS_URL = typeof window !== 'undefined'
-  ? (process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws/client-1")
-  : "ws://localhost:8001/ws/client-1";
+const WS_URL =
+  typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws/client-1"
+    : "ws://localhost:8001/ws/client-1";
 
 console.log("[WebSocket] Initializing with URL:", WS_URL);
 
@@ -64,7 +66,11 @@ interface UseWebSocketReturn {
   /** 获取对话框列表 */
   fetchDialogList: () => Promise<void>;
   /** 创建新对话框 */
-  createDialog: (title: string) => Promise<{ success: boolean; data?: DialogSession }>;
+  createDialog: (
+    title: string,
+  ) => Promise<{ success: boolean; data?: DialogSession }>;
+  /** skills 修改待审批列表 */
+  pendingSkillEdits: SkillEditApproval[];
 }
 
 /**
@@ -73,53 +79,72 @@ interface UseWebSocketReturn {
  * 只接收后端推送的状态快照，通过 setState 更新
  */
 export function useWebSocket(): UseWebSocketReturn {
-  const [currentSnapshot, setCurrentSnapshot] = useState<DialogSession | null>(null);
+  const [currentSnapshot, setCurrentSnapshot] = useState<DialogSession | null>(
+    null,
+  );
   const [dialogList, setDialogList] = useState<DialogSummary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [pendingSkillEdits, setPendingSkillEdits] = useState<
+    SkillEditApproval[]
+  >([]);
+  const currentSnapshotRef = useRef<DialogSession | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // 跟踪流式消息的累积内容
-  const streamingContentRef = useRef<Map<string, { content: string; reasoning: string }>>(new Map());
+  const streamingContentRef = useRef<
+    Map<string, { content: string; reasoning: string }>
+  >(new Map());
   // 跟踪已发送 message_start 的消息 ID，避免重复创建
   const messageStartSentRef = useRef<Set<string>>(new Set());
 
-  // 应用增量更新到快照
-  const applyDelta = useCallback((
-    snapshot: DialogSession | null,
-    event: StreamDeltaEvent
-  ): DialogSession | null => {
-    if (!snapshot || !snapshot.streaming_message) return snapshot;
+  useEffect(() => {
+    currentSnapshotRef.current = currentSnapshot;
+  }, [currentSnapshot]);
 
-    const streaming = snapshot.streaming_message;
-    return {
-      ...snapshot,
-      streaming_message: {
-        ...streaming,
-        content: streaming.content + (event.delta.content || ""),
-        reasoning_content: (streaming.reasoning_content || "") + (event.delta.reasoning || ""),
-      },
-    };
-  }, []);
+  // 应用增量更新到快照
+  const applyDelta = useCallback(
+    (
+      snapshot: DialogSession | null,
+      event: StreamDeltaEvent,
+    ): DialogSession | null => {
+      if (!snapshot || !snapshot.streaming_message) return snapshot;
+
+      const streaming = snapshot.streaming_message;
+      return {
+        ...snapshot,
+        streaming_message: {
+          ...streaming,
+          content: streaming.content + (event.delta.content || ""),
+          reasoning_content:
+            (streaming.reasoning_content || "") + (event.delta.reasoning || ""),
+        },
+      };
+    },
+    [],
+  );
 
   // 更新工具调用状态
-  const updateToolCall = useCallback((
-    snapshot: DialogSession | null,
-    event: ToolCallUpdateEvent
-  ): DialogSession | null => {
-    if (!snapshot || !snapshot.streaming_message?.tool_calls) return snapshot;
+  const updateToolCall = useCallback(
+    (
+      snapshot: DialogSession | null,
+      event: ToolCallUpdateEvent,
+    ): DialogSession | null => {
+      if (!snapshot || !snapshot.streaming_message?.tool_calls) return snapshot;
 
-    const streaming = snapshot.streaming_message;
-    return {
-      ...snapshot,
-      streaming_message: {
-        ...streaming,
-        tool_calls: streaming.tool_calls!.map((t) =>
-          t.id === event.tool_call.id ? event.tool_call : t
-        ),
-      },
-    };
-  }, []);
+      const streaming = snapshot.streaming_message;
+      return {
+        ...snapshot,
+        streaming_message: {
+          ...streaming,
+          tool_calls: streaming.tool_calls!.map((t) =>
+            t.id === event.tool_call.id ? event.tool_call : t,
+          ),
+        },
+      };
+    },
+    [],
+  );
 
   // 连接 WebSocket
   const connect = useCallback(() => {
@@ -163,9 +188,12 @@ export function useWebSocket(): UseWebSocketReturn {
 
               // 发射 dialog:subscribed 事件给 useMessageStore
               // 包含 streaming_message（如果存在）
-              const allMessages: ChatMessage[] = msg.data.messages.map(convertToChatMessage);
+              const allMessages: ChatMessage[] =
+                msg.data.messages.map(convertToChatMessage);
               if (msg.data.streaming_message) {
-                allMessages.push(convertToChatMessage(msg.data.streaming_message));
+                allMessages.push(
+                  convertToChatMessage(msg.data.streaming_message),
+                );
               }
               globalEventEmitter.emit("dialog:subscribed", {
                 dialog_id: msg.data.id,
@@ -196,7 +224,9 @@ export function useWebSocket(): UseWebSocketReturn {
                     data: {
                       message_id: messageId,
                       role: msg.data.streaming_message.role,
-                      agent_name: msg.data.streaming_message.agent_name || "TeamLeadAgent",
+                      agent_name:
+                        msg.data.streaming_message.agent_name ||
+                        "TeamLeadAgent",
                     },
                   });
                 }
@@ -208,8 +238,25 @@ export function useWebSocket(): UseWebSocketReturn {
               // 增量更新
               setCurrentSnapshot((prev) => applyDelta(prev, msg));
 
+              // 兜底：某些情况下 delta 可能早于包含 streaming_message 的 snapshot 到达。
+              // 如果还没发过 message_start，这里先补发一次，避免 token 被消息存储层丢弃。
+              if (!messageStartSentRef.current.has(msg.message_id)) {
+                messageStartSentRef.current.add(msg.message_id);
+                globalEventEmitter.emit("agent:event", {
+                  type: "agent:message_start",
+                  dialog_id: msg.dialog_id,
+                  data: {
+                    message_id: msg.message_id,
+                    role: "assistant",
+                    agent_name: "TeamLeadAgent",
+                  },
+                });
+              }
+
               // 获取或创建当前消息的累积内容
-              const currentMsg = streamingContentRef.current.get(msg.message_id) || { content: "", reasoning: "" };
+              const currentMsg = streamingContentRef.current.get(
+                msg.message_id,
+              ) || { content: "", reasoning: "" };
 
               // 发射 content_delta 或 reasoning_delta 事件
               if (msg.delta.content) {
@@ -270,7 +317,10 @@ export function useWebSocket(): UseWebSocketReturn {
               });
 
               // 如果工具已完成且有结果，发射 tool_result
-              if (msg.tool_call.status === "completed" && msg.tool_call.result) {
+              if (
+                msg.tool_call.status === "completed" &&
+                msg.tool_call.result
+              ) {
                 globalEventEmitter.emit("agent:event", {
                   type: "agent:tool_result",
                   dialog_id: msg.dialog_id,
@@ -287,32 +337,52 @@ export function useWebSocket(): UseWebSocketReturn {
             }
 
             case "status:change": {
-              // 状态变更，等待下一个 snapshot 或手动更新
-              setCurrentSnapshot((prev) => {
-                if (!prev || prev.id !== msg.dialog_id) return prev;
+              // 状态变更：避免在 setState updater 内触发事件，防止 render 阶段副作用警告
+              const prevSnapshot = currentSnapshotRef.current;
+              if (!prevSnapshot || prevSnapshot.id !== msg.dialog_id) {
+                break;
+              }
 
-                // 如果是 completed 状态，发射 message_complete 并清理累积内容
-                if (msg.to === "completed" && prev.streaming_message) {
-                  const messageId = prev.streaming_message.id;
-                  const accumulated = streamingContentRef.current.get(messageId);
+              let messageCompleteEvent: {
+                type: "agent:message_complete";
+                dialog_id: string;
+                data: {
+                  message_id: string;
+                  content: string;
+                  reasoning_content?: string;
+                };
+              } | null = null;
 
-                  globalEventEmitter.emit("agent:event", {
-                    type: "agent:message_complete",
-                    dialog_id: msg.dialog_id,
-                    data: {
-                      message_id: messageId,
-                      content: accumulated?.content || prev.streaming_message.content || "",
-                      reasoning_content: accumulated?.reasoning || prev.streaming_message.reasoning_content,
-                    },
-                  });
+              if (msg.to === "completed" && prevSnapshot.streaming_message) {
+                const messageId = prevSnapshot.streaming_message.id;
+                const accumulated = streamingContentRef.current.get(messageId);
+                messageCompleteEvent = {
+                  type: "agent:message_complete",
+                  dialog_id: msg.dialog_id,
+                  data: {
+                    message_id: messageId,
+                    content:
+                      accumulated?.content ||
+                      prevSnapshot.streaming_message.content ||
+                      "",
+                    reasoning_content:
+                      accumulated?.reasoning ||
+                      prevSnapshot.streaming_message.reasoning_content,
+                  },
+                };
 
-                  // 清理累积内容和 message_start 记录
-                  streamingContentRef.current.delete(messageId);
-                  messageStartSentRef.current.delete(messageId);
-                }
+                // 清理累积内容和 message_start 记录
+                streamingContentRef.current.delete(messageId);
+                messageStartSentRef.current.delete(messageId);
+              }
 
-                return { ...prev, status: msg.to };
-              });
+              const nextSnapshot = { ...prevSnapshot, status: msg.to };
+              currentSnapshotRef.current = nextSnapshot;
+              setCurrentSnapshot(nextSnapshot);
+
+              if (messageCompleteEvent) {
+                globalEventEmitter.emit("agent:event", messageCompleteEvent);
+              }
               break;
             }
 
@@ -326,6 +396,35 @@ export function useWebSocket(): UseWebSocketReturn {
                 },
               });
               break;
+
+            case "skill_edit:pending": {
+              setPendingSkillEdits((prev) => {
+                const exists = prev.find(
+                  (item) => item.approval_id === msg.approval.approval_id,
+                );
+                if (exists) {
+                  return prev.map((item) =>
+                    item.approval_id === msg.approval.approval_id
+                      ? msg.approval
+                      : item,
+                  );
+                }
+                return [msg.approval, ...prev];
+              });
+              break;
+            }
+
+            case "skill_edit:resolved": {
+              setPendingSkillEdits((prev) =>
+                prev.filter((item) => item.approval_id !== msg.approval_id),
+              );
+              break;
+            }
+
+            case "skill_edit:error": {
+              console.error("[WebSocket] skill_edit:error", msg.error);
+              break;
+            }
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message:", e);
@@ -345,10 +444,17 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       ws.onerror = (error) => {
-        console.error("[WebSocket] Connection error. URL:", WS_URL, "Error:", error);
+        console.error(
+          "[WebSocket] Connection error. URL:",
+          WS_URL,
+          "Error:",
+          error,
+        );
         // 检查常见错误原因
         if (ws.readyState === WebSocket.CONNECTING) {
-          console.error("[WebSocket] Failed to establish connection. Check if backend is running on port 8001");
+          console.error(
+            "[WebSocket] Failed to establish connection. Check if backend is running on port 8001",
+          );
         }
       };
     } catch (e) {
@@ -377,7 +483,7 @@ export function useWebSocket(): UseWebSocketReturn {
         JSON.stringify({
           type: "subscribe",
           dialog_id: dialogId,
-        })
+        }),
       );
     }
   }, []);
@@ -390,7 +496,7 @@ export function useWebSocket(): UseWebSocketReturn {
           type: "user:input",
           dialog_id: dialogId,
           content,
-        })
+        }),
       );
     }
   }, []);
@@ -402,7 +508,7 @@ export function useWebSocket(): UseWebSocketReturn {
         JSON.stringify({
           type: "stop",
           dialog_id: dialogId,
-        })
+        }),
       );
     }
   }, []);
@@ -462,5 +568,6 @@ export function useWebSocket(): UseWebSocketReturn {
     stopAgent,
     fetchDialogList,
     createDialog,
+    pendingSkillEdits,
   };
 }
