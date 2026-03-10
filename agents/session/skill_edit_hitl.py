@@ -77,6 +77,9 @@ class SkillEditHITLStore:
             )
         )
 
+    '''
+    创建 一个新的技能编辑提案，包含生成 diff 和存储待审批的提案信息，并通过注册的 broadcaster 实时推送给前端。
+    '''
     def create_proposal(
         self,
         *,
