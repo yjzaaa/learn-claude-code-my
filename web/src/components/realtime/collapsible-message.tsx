@@ -63,7 +63,7 @@ const messageTypeConfig = {
     icon: Bot,
     label: "助手",
     bgColor: "bg-white dark:bg-zinc-900",
-    borderColor: "border-zinc-200 dark:border-zinc-700",
+    borderColor: "border-zinc-200/60 dark:border-zinc-700/60",
     headerBg:
       "bg-gradient-to-r from-zinc-700 to-zinc-600 dark:from-zinc-600 dark:to-zinc-500",
     textColor: "text-zinc-800 dark:text-zinc-100",
@@ -150,11 +150,13 @@ function formatToolArguments(rawArgs: string): string {
 }
 
 function hasVisibleText(value: string | null | undefined): boolean {
-  return !!value && value.trim().length > 0;
+  // 处理 undefined、null、空字符串、以及字符串 "undefined" 的情况
+  if (!value || value === "undefined") return false;
+  return value.trim().length > 0;
 }
 
-/** 可展开区域组件 */
-function CollapsibleSection({
+/** 固定高度滚动区域组件 */
+function FixedHeightSection({
   title,
   icon: Icon,
   iconColorClass,
@@ -167,6 +169,9 @@ function CollapsibleSection({
   isStreaming,
   streamLabel,
   contentClassName,
+  collapsedHeight = 120,
+  expandedHeight = 400,
+  hasContent = true,
 }: {
   title: string;
   icon: React.ElementType;
@@ -180,17 +185,33 @@ function CollapsibleSection({
   isStreaming?: boolean;
   streamLabel?: string;
   contentClassName?: string;
+  collapsedHeight?: number;
+  expandedHeight?: number;
+  hasContent?: boolean;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 自动滚动到底部
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [children, isStreaming]);
+
+  // 没有内容时完全隐藏
+  if (!hasContent) return null;
+
+  const currentHeight = isExpanded ? expandedHeight : collapsedHeight;
+
   return (
     <div
       className={cn(
         "rounded-xl border shadow-sm overflow-hidden transition-all duration-300",
         borderColorClass,
         isActive && "ring-2 ring-blue-500/20",
-        isExpanded ? "flex-1 min-h-[120px]" : "flex-shrink-0 h-10",
       )}
     >
-      {/* 头部 - 始终可见，可点击 */}
+      {/* 头部 - 始终可见，可点击展开/收起 */}
       <button
         onClick={onToggle}
         className={cn(
@@ -223,6 +244,9 @@ function CollapsibleSection({
             {streamLabel}
           </span>
         )}
+        <span className="text-[10px] text-zinc-400 mr-1">
+          {isExpanded ? "收起" : "展开"}
+        </span>
         <ChevronDown
           className={cn(
             "h-4 w-4 transition-transform duration-200",
@@ -231,16 +255,15 @@ function CollapsibleSection({
         />
       </button>
 
-      {/* 内容区域 */}
+      {/* 内容区域 - 固定高度，内部滚动 */}
       <div
-        className={cn(
-          "overflow-hidden transition-all duration-300",
-          isExpanded ? "flex-1 opacity-100" : "h-0 opacity-0",
-        )}
+        className="transition-all duration-300 overflow-hidden"
+        style={{ height: `${currentHeight}px` }}
       >
         <div
+          ref={scrollRef}
           className={cn(
-            "h-full overflow-y-auto scrollbar-thin",
+            "h-full overflow-y-auto scrollbar-thin p-3",
             contentClassName,
           )}
         >
@@ -301,10 +324,10 @@ export function CollapsibleMessage({
       tools: false,
     },
     toolPanels: {} as Record<string, boolean>,
-    activeToolCallId: null as string | null,
-    responsiveFlags: {
+    // 用户手动展开标记，一旦用户点击过，不再自动响应流式状态
+    userManuallyExpanded: {
       reasoning: false,
-      content: true,
+      content: false,
       tools: false,
     },
   });
@@ -350,16 +373,16 @@ export function CollapsibleMessage({
     const toolsActive = toolDelta > 0 && hasToolCalls;
 
     // 统一响应式展开标志：单通道增量自动聚焦；并行增量同时展开。
-    if (reasoningActive || contentActive || toolsActive) {
-      const nextFlags = {
-        reasoning: reasoningActive,
-        content: contentActive,
-        tools: toolsActive,
-      };
+    // 工具区域默认保持收起，不自动展开（除非用户已手动展开过）
+    if (reasoningActive || contentActive) {
       setExpandState((prev) => ({
         ...prev,
-        responsiveFlags: nextFlags,
-        sections: nextFlags,
+        sections: {
+          reasoning: reasoningActive && !prev.userManuallyExpanded.reasoning ? reasoningActive : prev.sections.reasoning,
+          content: contentActive && !prev.userManuallyExpanded.content ? contentActive : prev.sections.content,
+          // 工具区域始终不自动展开，保持默认收起
+          tools: prev.sections.tools,
+        },
       }));
     }
 
@@ -379,19 +402,18 @@ export function CollapsibleMessage({
     return {
       reasoning:
         hasVisibleText(reasoningContent) &&
-        expandState.responsiveFlags.reasoning,
+        expandState.sections.reasoning,
       content:
-        hasVisibleText(displayContent) && expandState.responsiveFlags.content,
-      tools: hasToolCalls && expandState.responsiveFlags.tools,
+        hasVisibleText(displayContent) && expandState.sections.content,
+      tools: hasToolCalls && expandState.sections.tools,
     };
   }, [
     displayContent,
-    expandState.responsiveFlags,
+    expandState.sections,
     hasToolCalls,
     reasoningContent,
   ]);
 
-  const previousToolResultLensRef = useRef<Record<string, number>>({});
 
   // 仅处理“无内容时关闭”，避免覆盖上面的 token 驱动展开。
   useEffect(() => {
@@ -408,13 +430,21 @@ export function CollapsibleMessage({
   }, [displayContent, hasToolCalls, reasoningContent]);
 
   const toggleSection = (section: keyof typeof expandState.sections) => {
-    setExpandState((prev) => ({
-      ...prev,
-      sections: {
-        ...prev.sections,
-        [section]: !prev.sections[section],
-      },
-    }));
+    setExpandState((prev) => {
+      const newExpanded = !prev.sections[section];
+      return {
+        ...prev,
+        sections: {
+          ...prev.sections,
+          [section]: newExpanded,
+        },
+        // 标记用户已手动操作过此区域
+        userManuallyExpanded: {
+          ...prev.userManuallyExpanded,
+          [section]: true,
+        },
+      };
+    });
   };
 
   // 构建工具调用和结果的映射
@@ -466,19 +496,13 @@ export function CollapsibleMessage({
     });
   }, [message.tool_calls, toolResults]);
 
-  const hasPendingTools = useMemo(
-    () => toolCallResults.some((item) => !item.hasResult),
-    [toolCallResults],
-  );
-
+  // 初始化工具面板状态：新工具默认全部折叠
   useEffect(() => {
     if (!toolCallResults.length) {
       setExpandState((prev) => ({
         ...prev,
         toolPanels: {},
-        activeToolCallId: null,
       }));
-      previousToolResultLensRef.current = {};
       return;
     }
 
@@ -491,12 +515,13 @@ export function CollapsibleMessage({
         const argsKey = `${item.toolCall.id}:args`;
         const resultKey = `${item.toolCall.id}:result`;
 
+        // 新工具默认全部折叠，不自动展开
         if (!(rootKey in nextPanels)) {
-          nextPanels[rootKey] = activeSection.tools || item.hasResult;
+          nextPanels[rootKey] = false;
           changed = true;
         }
         if (!(argsKey in nextPanels)) {
-          nextPanels[argsKey] = item.hasArgs && activeSection.tools;
+          nextPanels[argsKey] = false;
           changed = true;
         }
         if (!(resultKey in nextPanels)) {
@@ -523,86 +548,8 @@ export function CollapsibleMessage({
         toolPanels: nextPanels,
       };
     });
-  }, [activeSection.tools, toolCallResults]);
+  }, [toolCallResults]);
 
-  // 追踪工具链中“当前活跃工具”：优先选择新增/增长结果的工具，其次选择首个未完成工具。
-  useEffect(() => {
-    if (!toolCallResults.length) {
-      return;
-    }
-
-    const prevLens = previousToolResultLensRef.current;
-    let nextActiveId: string | null = null;
-    let hasNewResultDelta = false;
-
-    for (const item of toolCallResults) {
-      const currentLen = item.resultText.length;
-      const previousLen = prevLens[item.toolCall.id] || 0;
-      if (currentLen > previousLen) {
-        hasNewResultDelta = true;
-        nextActiveId = item.toolCall.id;
-      }
-    }
-
-    if (!nextActiveId && hasPendingTools) {
-      const pending = toolCallResults.find((item) => !item.hasResult);
-      nextActiveId = pending?.toolCall.id || null;
-    }
-
-    // 工具链全部完成且没有新结果增量时，释放工具聚焦，让 response 可自动接管展开。
-    if (!hasPendingTools && !hasNewResultDelta) {
-      nextActiveId = null;
-    }
-
-    setExpandState((prev) =>
-      prev.activeToolCallId === nextActiveId
-        ? prev
-        : {
-            ...prev,
-            activeToolCallId: nextActiveId,
-          },
-    );
-
-    const nextLens: Record<string, number> = {};
-    for (const item of toolCallResults) {
-      nextLens[item.toolCall.id] = item.resultText.length;
-    }
-    previousToolResultLensRef.current = nextLens;
-  }, [hasPendingTools, toolCallResults]);
-
-  // 按活跃工具自动聚焦面板：仅在工具链活跃阶段生效。
-  useEffect(() => {
-    if (!expandState.activeToolCallId || !hasPendingTools) {
-      return;
-    }
-
-    setExpandState((prev) => {
-      const nextPanels = { ...prev.toolPanels };
-
-      for (const item of toolCallResults) {
-        const toolId = item.toolCall.id;
-        const rootKey = `${toolId}:root`;
-        const argsKey = `${toolId}:args`;
-        const resultKey = `${toolId}:result`;
-        const isActiveTool = toolId === prev.activeToolCallId;
-
-        nextPanels[rootKey] = isActiveTool;
-        nextPanels[argsKey] = isActiveTool && item.hasArgs;
-        nextPanels[resultKey] = isActiveTool && item.hasResult;
-      }
-
-      return {
-        ...prev,
-        toolPanels: nextPanels,
-        sections: {
-          ...prev.sections,
-          tools: true,
-          reasoning: false,
-          content: false,
-        },
-      };
-    });
-  }, [expandState.activeToolCallId, hasPendingTools, toolCallResults]);
 
   const toggleToolPanel = (key: string) => {
     setExpandState((prev) => ({
@@ -643,8 +590,8 @@ export function CollapsibleMessage({
       <div className="px-4 pb-4">
         {message.role === "assistant" ? (
           <div className="flex flex-col gap-2">
-            {/* Reasoning 区域 */}
-            <CollapsibleSection
+            {/* Reasoning 区域 - 有内容时才显示 */}
+            <FixedHeightSection
               title="Thought Process"
               icon={Brain}
               iconColorClass="bg-violet-100 text-violet-600 dark:bg-violet-900/50 dark:text-violet-400"
@@ -655,21 +602,18 @@ export function CollapsibleMessage({
               isActive={activeSection.reasoning}
               isStreaming={isStreaming && activeSection.reasoning}
               streamLabel="reasoning"
-              contentClassName="p-3 bg-gradient-to-r from-violet-50/50 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/10"
+              contentClassName="bg-gradient-to-r from-violet-50/50 to-purple-50/50 dark:from-violet-950/20 dark:to-purple-950/10"
+              collapsedHeight={100}
+              expandedHeight={350}
+              hasContent={hasVisibleText(reasoningContent)}
             >
-              {reasoningContent ? (
-                <p className="text-sm text-violet-800 dark:text-violet-200 whitespace-pre-wrap leading-relaxed">
-                  {reasoningContent}
-                </p>
-              ) : (
-                <p className="text-xs text-violet-400 italic">
-                  等待推理内容...
-                </p>
-              )}
-            </CollapsibleSection>
+              <p className="text-sm text-violet-800 dark:text-violet-200 whitespace-pre-wrap leading-relaxed">
+                {reasoningContent}
+              </p>
+            </FixedHeightSection>
 
-            {/* Content 区域 */}
-            <CollapsibleSection
+            {/* Content 区域 - 有内容时才显示 */}
+            <FixedHeightSection
               title="Response"
               icon={MessageSquare}
               iconColorClass="bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400"
@@ -680,30 +624,32 @@ export function CollapsibleMessage({
               isActive={activeSection.content}
               isStreaming={isStreaming && activeSection.content}
               streamLabel="generating"
-              contentClassName="p-3 bg-white dark:bg-zinc-900/50"
+              contentClassName="bg-white dark:bg-zinc-900/50"
+              collapsedHeight={150}
+              expandedHeight={400}
+              hasContent={hasVisibleText(displayContent)}
             >
-              {displayContent ? (
-                <MarkdownContent
-                  content={displayContent}
-                  isStreaming={isStreaming}
-                />
-              ) : (
-                <p className="text-xs text-zinc-400 italic">等待生成内容...</p>
-              )}
-            </CollapsibleSection>
+              <MarkdownContent
+                content={displayContent}
+                isStreaming={isStreaming}
+              />
+            </FixedHeightSection>
 
             {/* Tools 区域 - 只要有工具调用就显示 */}
             {message.tool_calls && message.tool_calls.length > 0 && (
-              <CollapsibleSection
+              <FixedHeightSection
                 title={`Tools (${message.tool_calls.length})`}
                 icon={Wrench}
                 iconColorClass="bg-slate-100 text-slate-600 dark:bg-slate-900/50 dark:text-slate-400"
                 headerBgClass="bg-slate-50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700"
-                borderColorClass="border-slate-200 dark:border-slate-700"
+                borderColorClass="border-slate-200/60 dark:border-slate-700/60"
                 isExpanded={!!expandState.sections.tools}
                 onToggle={() => toggleSection("tools")}
                 isActive={false}
                 contentClassName="p-2 bg-slate-50/50 dark:bg-slate-900/20 space-y-2"
+                collapsedHeight={120}
+                expandedHeight={350}
+                hasContent={true}
               >
                 {toolCallResults.map((item) => {
                   const {
@@ -721,7 +667,7 @@ export function CollapsibleMessage({
                   return (
                     <div
                       key={toolCall.id}
-                      className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-zinc-950"
+                      className="rounded-lg border border-slate-200/60 dark:border-slate-700/60 overflow-hidden bg-white dark:bg-zinc-950"
                     >
                       {/* 工具名称和状态（可折叠） */}
                       <button
@@ -751,51 +697,64 @@ export function CollapsibleMessage({
                       </button>
 
                       {expandState.toolPanels[rootKey] && (
-                        <div className="border-t border-slate-100 dark:border-slate-800">
-                          <button
-                            onClick={() => toggleToolPanel(argsKey)}
-                            className="w-full px-2 py-1 text-left flex items-center gap-1.5 bg-white dark:bg-zinc-950 hover:bg-slate-50 dark:hover:bg-zinc-900"
-                          >
-                            <ChevronDown
-                              className={cn(
-                                "h-3 w-3 text-slate-500 transition-transform",
-                                !expandState.toolPanels[argsKey] &&
-                                  "-rotate-90",
-                              )}
-                            />
-                            <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                              参数
-                            </span>
-                          </button>
-                          {expandState.toolPanels[argsKey] && hasArgs && (
-                            <div className="px-2 py-1 border-t border-slate-100 dark:border-slate-800">
-                              <pre className="text-[10px] text-slate-500 dark:text-slate-500 whitespace-pre-wrap break-all leading-relaxed max-h-32 overflow-y-auto scrollbar-thin">
-                                {argsText}
-                              </pre>
+                        <div className="border-t border-slate-100/60 dark:border-slate-800/60 p-2 space-y-2">
+                          {/* 参数部分 */}
+                          {hasArgs && (
+                            <div className="rounded border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
+                              <button
+                                onClick={() => toggleToolPanel(argsKey)}
+                                className="w-full px-2 py-1 flex items-center gap-1.5 bg-slate-100/50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                <ChevronDown
+                                  className={cn(
+                                    "h-3 w-3 text-slate-500 transition-transform",
+                                    !expandState.toolPanels[argsKey] && "-rotate-90",
+                                  )}
+                                />
+                                <span className="text-[10px] font-medium text-slate-600">参数</span>
+                              </button>
+                              <div
+                                className="overflow-y-auto scrollbar-thin bg-white dark:bg-zinc-950 transition-all"
+                                style={{ height: expandState.toolPanels[argsKey] ? "80px" : "40px" }}
+                              >
+                                <pre className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-all leading-relaxed p-2">
+                                  {argsText}
+                                </pre>
+                              </div>
                             </div>
                           )}
 
-                          <button
-                            onClick={() => toggleToolPanel(resultKey)}
-                            className="w-full px-2 py-1 text-left flex items-center gap-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/20 hover:bg-slate-100/60 dark:hover:bg-slate-900/40"
-                          >
-                            <ChevronDown
-                              className={cn(
-                                "h-3 w-3 text-slate-500 transition-transform",
-                                !expandState.toolPanels[resultKey] &&
-                                  "-rotate-90",
-                              )}
-                            />
-                            <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                              结果
-                            </span>
-                          </button>
-                          {expandState.toolPanels[resultKey] && hasResult && (
-                            <div className="px-2 py-1.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 max-h-48 overflow-y-auto scrollbar-thin">
-                              <MarkdownContent
-                                content={resultText}
-                                isStreaming={false}
-                              />
+                          {/* 结果部分 */}
+                          {hasResult && (
+                            <div className="rounded border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
+                              <button
+                                onClick={() => toggleToolPanel(resultKey)}
+                                className="w-full px-2 py-1 flex items-center gap-1.5 bg-slate-100/50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                <ChevronDown
+                                  className={cn(
+                                    "h-3 w-3 text-slate-500 transition-transform",
+                                    !expandState.toolPanels[resultKey] && "-rotate-90",
+                                  )}
+                                />
+                                <span className="text-[10px] font-medium text-slate-600">结果</span>
+                              </button>
+                              <div
+                                className="overflow-y-auto scrollbar-thin bg-white dark:bg-zinc-950 transition-all"
+                                style={{ height: expandState.toolPanels[resultKey] ? "100px" : "50px" }}
+                              >
+                                <div className="p-2">
+                                  <MarkdownContent content={resultText} isStreaming={false} />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 等待结果提示 */}
+                          {!hasResult && (
+                            <div className="px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1.5 bg-amber-50/50 dark:bg-amber-950/20 rounded">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              等待工具执行结果...
                             </div>
                           )}
                         </div>
@@ -803,7 +762,7 @@ export function CollapsibleMessage({
                     </div>
                   );
                 })}
-              </CollapsibleSection>
+              </FixedHeightSection>
             )}
           </div>
         ) : (

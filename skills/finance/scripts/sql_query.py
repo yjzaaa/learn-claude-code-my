@@ -20,6 +20,27 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
         normalized,
         flags=re.IGNORECASE,
     )
+    
+    # Normalize rate table names
+    normalized = re.sub(
+        r"\bSSME_FI_InsightBot_Rate\b",
+        "rate_table",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    
+    # Normalize cc mapping table names
+    normalized = re.sub(
+        r"\bSSME_FI_InsightBot_CCMapping\b",
+        "cc_mapping",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    
+    # Normalize column names for rate table
+    normalized = re.sub(r"(?<![\w\[])RateNo(?![\w\]])", "rate_no", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(?<![\w\[])BL(?![\w\]])", "bl", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(?<![\w\[])CC(?![\w\]])", "cc", normalized, flags=re.IGNORECASE)
 
     if use_sql_server:
         # SQL Server source table uses spaced, bracketed column names.
@@ -27,6 +48,10 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
         normalized = re.sub(r"(?<![\w\[])year(?![\w\]])", "[Year]", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"(?<![\w\[])scenario(?![\w\]])", "[Scenario]", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"(?<![\w\[])function(?![\w\]])", "[Function]", normalized, flags=re.IGNORECASE)
+        # For SQL Server, keep original column names
+        normalized = re.sub(r"(?<![\w\[])rate_no(?![\w\]])", "[RateNo]", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![\w\[])bl(?![\w\]])", "[BL]", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(?<![\w\[])cc(?![\w\]])", "[CC]", normalized, flags=re.IGNORECASE)
 
     return normalized
 

@@ -50,6 +50,44 @@ const WS_URL =
 
 console.log("[WebSocket] Initializing with URL:", WS_URL);
 
+// 应用增量更新到快照 - 定义在 hook 外部避免重新创建
+function applyDelta(
+  snapshot: DialogSession | null,
+  event: StreamDeltaEvent,
+): DialogSession | null {
+  if (!snapshot || !snapshot.streaming_message) return snapshot;
+
+  const streaming = snapshot.streaming_message;
+  return {
+    ...snapshot,
+    streaming_message: {
+      ...streaming,
+      content: streaming.content + (event.delta.content || ""),
+      reasoning_content:
+        (streaming.reasoning_content || "") + (event.delta.reasoning || ""),
+    },
+  };
+}
+
+// 更新工具调用状态 - 定义在 hook 外部避免重新创建
+function updateToolCall(
+  snapshot: DialogSession | null,
+  event: ToolCallUpdateEvent,
+): DialogSession | null {
+  if (!snapshot || !snapshot.streaming_message?.tool_calls) return snapshot;
+
+  const streaming = snapshot.streaming_message;
+  return {
+    ...snapshot,
+    streaming_message: {
+      ...streaming,
+      tool_calls: streaming.tool_calls!.map((t) =>
+        t.id === event.tool_call.id ? event.tool_call : t,
+      ),
+    },
+  };
+}
+
 interface UseWebSocketReturn {
   /** 当前对话框完整状态快照 */
   currentSnapshot: DialogSession | null;
@@ -98,56 +136,84 @@ export function useWebSocket(): UseWebSocketReturn {
   // 跟踪已发送 message_start 的消息 ID，避免重复创建
   const messageStartSentRef = useRef<Set<string>>(new Set());
 
+  // RAF 批处理相关 refs
+  const rafScheduledRef = useRef(false);
+  const pendingDeltaRef = useRef<StreamDeltaEvent | null>(null);
+
+  // 同步 currentSnapshot 到 ref
   useEffect(() => {
     currentSnapshotRef.current = currentSnapshot;
   }, [currentSnapshot]);
 
-  // 应用增量更新到快照
-  const applyDelta = useCallback(
-    (
-      snapshot: DialogSession | null,
-      event: StreamDeltaEvent,
-    ): DialogSession | null => {
-      if (!snapshot || !snapshot.streaming_message) return snapshot;
-
-      const streaming = snapshot.streaming_message;
-      return {
-        ...snapshot,
-        streaming_message: {
-          ...streaming,
-          content: streaming.content + (event.delta.content || ""),
-          reasoning_content:
-            (streaming.reasoning_content || "") + (event.delta.reasoning || ""),
+  // RAF 批处理增量更新
+  const scheduleDeltaUpdate = useCallback((msg: StreamDeltaEvent) => {
+    // 累积 delta 到 pending
+    if (pendingDeltaRef.current) {
+      // 合并到现有的 pending delta
+      pendingDeltaRef.current.delta.content += msg.delta.content || "";
+      pendingDeltaRef.current.delta.reasoning += msg.delta.reasoning || "";
+    } else {
+      // 创建新的 pending delta，确保 content 和 reasoning 不为 undefined
+      pendingDeltaRef.current = {
+        ...msg,
+        delta: {
+          content: msg.delta.content || "",
+          reasoning: msg.delta.reasoning || "",
         },
       };
-    },
-    [],
-  );
+    }
 
-  // 更新工具调用状态
-  const updateToolCall = useCallback(
-    (
-      snapshot: DialogSession | null,
-      event: ToolCallUpdateEvent,
-    ): DialogSession | null => {
-      if (!snapshot || !snapshot.streaming_message?.tool_calls) return snapshot;
+    // 如果已经调度了 RAF，不再重复调度
+    if (rafScheduledRef.current) return;
 
-      const streaming = snapshot.streaming_message;
-      return {
-        ...snapshot,
-        streaming_message: {
-          ...streaming,
-          tool_calls: streaming.tool_calls!.map((t) =>
-            t.id === event.tool_call.id ? event.tool_call : t,
-          ),
-        },
+    rafScheduledRef.current = true;
+    requestAnimationFrame(() => {
+      rafScheduledRef.current = false;
+      const delta = pendingDeltaRef.current;
+      if (!delta) return;
+
+      pendingDeltaRef.current = null;
+
+      // 获取当前累积的内容（已经在 onmessage 中累积好了）
+      const currentMsg = streamingContentRef.current.get(delta.message_id) || {
+        content: "",
+        reasoning: "",
       };
-    },
-    [],
-  );
 
-  // 连接 WebSocket
-  const connect = useCallback(() => {
+      // 批量更新状态
+      setCurrentSnapshot((prev) => applyDelta(prev, delta));
+
+      // 发射事件 - 使用累积后的完整内容，delta 只用于标记本次更新量
+      if (delta.delta.content) {
+        globalEventEmitter.emit("agent:event", {
+          type: "agent:content_delta",
+          dialog_id: delta.dialog_id,
+          data: {
+            message_id: delta.message_id,
+            delta: delta.delta.content,
+            content: currentMsg.content, // 使用 ref 中已累积的完整内容
+          },
+        });
+      }
+      if (delta.delta.reasoning) {
+        globalEventEmitter.emit("agent:event", {
+          type: "agent:reasoning_delta",
+          dialog_id: delta.dialog_id,
+          data: {
+            message_id: delta.message_id,
+            delta: delta.delta.reasoning,
+            reasoning_content: currentMsg.reasoning, // 使用 ref 中已累积的完整内容
+          },
+        });
+      }
+    });
+  }, []);
+
+  // 使用 ref 存储连接函数，避免 useCallback 依赖问题
+  const connectRef = useRef<() => void>(() => {});
+
+  // 定义连接函数
+  connectRef.current = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -235,9 +301,6 @@ export function useWebSocket(): UseWebSocketReturn {
             }
 
             case "stream:delta": {
-              // 增量更新
-              setCurrentSnapshot((prev) => applyDelta(prev, msg));
-
               // 兜底：某些情况下 delta 可能早于包含 streaming_message 的 snapshot 到达。
               // 如果还没发过 message_start，这里先补发一次，避免 token 被消息存储层丢弃。
               if (!messageStartSentRef.current.has(msg.message_id)) {
@@ -258,37 +321,17 @@ export function useWebSocket(): UseWebSocketReturn {
                 msg.message_id,
               ) || { content: "", reasoning: "" };
 
-              // 发射 content_delta 或 reasoning_delta 事件
+              // 累积内容
               if (msg.delta.content) {
-                const newContent = currentMsg.content + msg.delta.content;
-                currentMsg.content = newContent;
-                streamingContentRef.current.set(msg.message_id, currentMsg);
-
-                globalEventEmitter.emit("agent:event", {
-                  type: "agent:content_delta",
-                  dialog_id: msg.dialog_id,
-                  data: {
-                    message_id: msg.message_id,
-                    delta: msg.delta.content,
-                    content: newContent, // 累积后的完整内容
-                  },
-                });
+                currentMsg.content += msg.delta.content;
               }
               if (msg.delta.reasoning) {
-                const newReasoning = currentMsg.reasoning + msg.delta.reasoning;
-                currentMsg.reasoning = newReasoning;
-                streamingContentRef.current.set(msg.message_id, currentMsg);
-
-                globalEventEmitter.emit("agent:event", {
-                  type: "agent:reasoning_delta",
-                  dialog_id: msg.dialog_id,
-                  data: {
-                    message_id: msg.message_id,
-                    delta: msg.delta.reasoning,
-                    reasoning_content: newReasoning, // 累积后的完整推理内容
-                  },
-                });
+                currentMsg.reasoning += msg.delta.reasoning;
               }
+              streamingContentRef.current.set(msg.message_id, currentMsg);
+
+              // 使用 RAF 批量处理更新
+              scheduleDeltaUpdate(msg);
               break;
             }
 
@@ -425,6 +468,30 @@ export function useWebSocket(): UseWebSocketReturn {
               console.error("[WebSocket] skill_edit:error", msg.error);
               break;
             }
+
+            case "todo:updated": {
+              globalEventEmitter.emit("agent:event", {
+                type: "todo:updated",
+                dialog_id: msg.dialog_id,
+                data: {
+                  todos: msg.todos,
+                  rounds_since_todo: msg.rounds_since_todo,
+                },
+              });
+              break;
+            }
+
+            case "todo:reminder": {
+              globalEventEmitter.emit("agent:event", {
+                type: "todo:reminder",
+                dialog_id: msg.dialog_id,
+                data: {
+                  message: msg.message,
+                  rounds_since_todo: msg.rounds_since_todo,
+                },
+              });
+              break;
+            }
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message:", e);
@@ -439,7 +506,7 @@ export function useWebSocket(): UseWebSocketReturn {
         // 自动重连
         reconnectTimeoutRef.current = setTimeout(() => {
           console.log("[WebSocket] Reconnecting...");
-          connect();
+          connectRef.current();
         }, 3000);
       };
 
@@ -460,11 +527,11 @@ export function useWebSocket(): UseWebSocketReturn {
     } catch (e) {
       console.error("[WebSocket] Failed to connect:", e);
     }
-  }, [applyDelta, updateToolCall]);
+  };
 
   // 初始连接
   useEffect(() => {
-    connect();
+    connectRef.current();
 
     return () => {
       if (reconnectTimeoutRef.current) {
@@ -474,7 +541,7 @@ export function useWebSocket(): UseWebSocketReturn {
         wsRef.current.close();
       }
     };
-  }, [connect]);
+  }, []); // 空依赖数组，只在组件挂载时连接一次
 
   // 订阅对话框
   const subscribeToDialog = useCallback((dialogId: string) => {

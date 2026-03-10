@@ -156,6 +156,37 @@ export interface SkillEditErrorEvent {
   timestamp?: number;
 }
 
+// Todo 类型
+export interface TodoItem {
+  id: string;
+  text: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+export interface TodoState {
+  dialog_id: string;
+  items: TodoItem[];
+  rounds_since_todo: number;
+  updated_at: number;
+}
+
+// Todo WebSocket 事件
+export interface TodoUpdatedEvent {
+  type: "todo:updated";
+  dialog_id: string;
+  todos: TodoItem[];
+  rounds_since_todo: number;
+  timestamp: number;
+}
+
+export interface TodoReminderEvent {
+  type: "todo:reminder";
+  dialog_id: string;
+  message: string;
+  rounds_since_todo: number;
+  timestamp: number;
+}
+
 export type ServerPushEvent =
   | DialogSnapshotEvent
   | StreamDeltaEvent
@@ -164,7 +195,9 @@ export type ServerPushEvent =
   | ErrorEvent
   | SkillEditPendingEvent
   | SkillEditResolvedEvent
-  | SkillEditErrorEvent;
+  | SkillEditErrorEvent
+  | TodoUpdatedEvent
+  | TodoReminderEvent;
 
 // 客户端发送的事件
 export interface SubscribeEvent {

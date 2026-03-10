@@ -27,15 +27,16 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
 ## 数据库信息
 
 ### 表名列表
+- cost_database (PostgreSQL版本)
 - SSME_FI_InsightBot_Rate
 - SSME_FI_InsightBot_CCMapping
 
-- **数据库名称**: SmartMES_Demo
-- **数据库地址**: Shai438a.ad005.onehc.net
-- **驱动类型**: Microsoft SQL Server
-- **端口号**: 1433
-- **用户名**: testlogin
-- **密码**: WIN@superman7119
+- **数据库名称**: cost_allocation
+- **数据库地址**: localhost
+- **驱动类型**: PostgreSQL
+- **端口号**: 5432
+- **用户名**: postgres
+- **密码**: 123456
 
 ## 术语对照
 
@@ -110,13 +111,14 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
 
 ## 执行防错规则（强制）
 
-- 禁止使用历史表名 `cost_database` 作为最终 SQL 输出；标准表名为 `dbo.SSME_FI_InsightBot_CostDataBase`。
+- PostgreSQL表名为 `cost_database`，SQL Server表名为 `dbo.SSME_FI_InsightBot_CostDataBase`
 - 禁止在工具中使用 `python -c`（容易触发安全限制和转义错误）。
 - 禁止使用 `powershell -File ...run_query.py` 直接运行 `.py` 文件。
 - 统一执行方式：
   - `python skills/finance/scripts/run_query.py --sql "SELECT ..."`
   - 或 `python skills/finance/scripts/sql_query.py --sql "SELECT ..."`
-- SQL Server 字段应使用当前库字段：`[Year]`、`[Scenario]`、`[Function]`、`[Year Total]`、`[Amount]`。
+- PostgreSQL字段应使用：`year`、`scenario`、`function`、`year_total`、`amount`
+- SQL Server字段应使用：`[Year]`、`[Scenario]`、`[Function]`、`[Year Total]`、`[Amount]`
 
 说明：`sql_query.py` 已内置旧字段/旧表名兼容转换，但这仅用于兜底，生成 SQL 时仍必须优先输出标准写法。
 

@@ -32,7 +32,9 @@ from ..hooks.state_managed_agent_bridge import (
 )
 from ..hooks.context_compact_hook import ContextCompactHook
 from ..hooks.composite.composite_hooks import CompositeHooks
+from ..hooks.todo_manager_hook import TodoManagerHook
 from ..session.skill_edit_hitl import skill_edit_hitl_store
+from ..session.todo_hitl import todo_store, is_todo_hook_enabled
 from ..session.runtime_context import set_current_dialog_id, reset_current_dialog_id
 
 # 导入 WebSocket 组件
@@ -42,10 +44,12 @@ from ..websocket.server import connection_manager
 try:
     from ..agent.s02_with_skill_loader import S02WithSkillLoaderAgent
     from ..utils.agent_helpers import get_last_user_message
+    from ..utils.helpers import inject_todo_tool
     from ..s05_skill_loading import SKILL_LOADER
 except ImportError:
     from agents.agent.s02_with_skill_loader import S02WithSkillLoaderAgent
     from agents.utils.agent_helpers import get_last_user_message
+    from agents.utils.helpers import inject_todo_tool
     from agents.s05_skill_loading import SKILL_LOADER
 
 
@@ -81,6 +85,18 @@ def create_app() -> FastAPI:
     )
 
     skill_edit_hitl_store.register_broadcaster(connection_manager.broadcast)
+
+    # 为 todo_store 创建按 dialog_id 广播的包装器
+    async def broadcast_todo_event(event: dict[str, Any]) -> None:
+        """按 dialog_id 广播 todo 事件到订阅的客户端"""
+        dialog_id = event.get("dialog_id")
+        if dialog_id:
+            await connection_manager.broadcast_to_dialog(dialog_id, event)
+        else:
+            # 如果没有 dialog_id，广播给所有客户端（向后兼容）
+            await connection_manager.broadcast(event)
+
+    todo_store.register_broadcaster(broadcast_todo_event)
 
     # ========== REST API 端点 ==========
 
@@ -347,6 +363,40 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=result.get("message", "invalid decision"))
         return result
 
+    # ---- Todo API ----
+
+    @app.get("/api/dialogs/{dialog_id}/todos")
+    async def get_dialog_todos(dialog_id: str):
+        """获取对话框的任务列表"""
+        session = dialog_store.get_session(dialog_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Dialog not found")
+
+        return {
+            "success": True,
+            "data": todo_store.get_todos(dialog_id)
+        }
+
+    @app.post("/api/dialogs/{dialog_id}/todos")
+    async def update_dialog_todos(dialog_id: str, request: Dict[str, Any]):
+        """手动更新对话框的任务列表"""
+        session = dialog_store.get_session(dialog_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Dialog not found")
+
+        items = request.get("items", [])
+        if not isinstance(items, list):
+            raise HTTPException(status_code=400, detail="items must be a list")
+
+        success, error = todo_store.update_todos(dialog_id, items)
+        if not success:
+            raise HTTPException(status_code=400, detail=error)
+
+        return {
+            "success": True,
+            "data": todo_store.get_todos(dialog_id)
+        }
+
     # ========== WebSocket 端点 ==========
 
     @app.websocket("/ws/{client_id}")
@@ -467,10 +517,15 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
 
         last_user_message = user_messages[-1].content
 
-        # 创建 Agent，设置 Hook 委托（压缩 Hook + 状态桥接）
+        # 创建 Agent，设置 Hook 委托（Todo Hook + 压缩 Hook + 状态桥接）
         agent = S02WithSkillLoaderAgent()
+
+        # 动态注入 todo 工具（非侵入式）
+        inject_todo_tool(agent, dialog_id)
+
+        todo_hook = TodoManagerHook(dialog_id=dialog_id, store=todo_store)
         compact_hook = ContextCompactHook(bridge=bridge)
-        agent.set_hook_delegate(CompositeHooks([compact_hook, bridge]))
+        agent.set_hook_delegate(CompositeHooks([todo_hook, compact_hook, bridge]))
 
         # 运行 Agent
         dialog_token = set_current_dialog_id(dialog_id)

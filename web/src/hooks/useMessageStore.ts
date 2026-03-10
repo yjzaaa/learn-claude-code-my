@@ -80,71 +80,86 @@ function useMessageStoreInstance() {
       showReasoning: false,
       hookStats: null,
       runReport: null,
+      todos: null,
+      roundsSinceTodo: 0,
+      showTodoReminder: false,
     },
   });
 
   const messageBufferRef = useRef<ChatEventPayload[]>([]);
-  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const flushRafRef = useRef<number | null>(null);
   const currentDialogRef = useRef<ChatSession | null>(null);
   // 流式消息缓存
   const streamingMessagesRef = useRef<StreamingMessages>({});
+  // 累积的流式内容
+  const pendingContentRef = useRef<{ content: string; reasoning: string }>({
+    content: "",
+    reasoning: "",
+  });
 
   useEffect(() => {
     currentDialogRef.current = state.currentDialog;
   }, [state.currentDialog]);
 
-  // 批量更新消息
-  const flushMessages = useCallback(() => {
-    if (messageBufferRef.current.length === 0) return;
+  // RAF 批量更新消息
+  const scheduleFlush = useCallback(() => {
+    if (flushRafRef.current) return; // 已经调度了
 
-    const events = [...messageBufferRef.current];
-    messageBufferRef.current = [];
+    flushRafRef.current = requestAnimationFrame(() => {
+      flushRafRef.current = null;
+      if (messageBufferRef.current.length === 0) return;
 
-    setState((prev) => {
-      if (!prev.currentDialog) return prev;
+      const events = [...messageBufferRef.current];
+      messageBufferRef.current = [];
+      const pending = pendingContentRef.current;
+      pendingContentRef.current = { content: "", reasoning: "" };
 
-      // 按消息角色和类型合并
-      const messages = [...prev.currentDialog.messages];
+      setState((prev) => {
+        if (!prev.currentDialog) return prev;
 
-      events.forEach((event) => {
-        if (event.type === "delta") {
-          // 流式增量 - 追加到最后一条 assistant 消息
-          const lastMsg = messages[messages.length - 1];
-          if (lastMsg && lastMsg.role === "assistant") {
-            lastMsg.content =
-              (lastMsg.content || "") + (event.message.content || "");
+        // 按消息角色和类型合并
+        const messages = [...prev.currentDialog.messages];
+
+        events.forEach((event) => {
+          if (event.type === "delta") {
+            // 流式增量 - 追加到最后一条 assistant 消息
+            const lastMsg = messages[messages.length - 1];
+            if (lastMsg && lastMsg.role === "assistant") {
+              lastMsg.content =
+                (lastMsg.content || "") + (event.message.content || "");
+            } else {
+              messages.push(event.message);
+            }
+          } else if (event.type === "message") {
+            // 新消息 - 检查是否已存在
+            const existingIdx = messages.findIndex(
+              (m) =>
+                m.role === event.message.role &&
+                m.content === event.message.content,
+            );
+            if (existingIdx === -1) {
+              messages.push(event.message);
+            }
           } else {
+            // 其他类型直接添加
             messages.push(event.message);
           }
-        } else if (event.type === "message") {
-          // 新消息 - 检查是否已存在
-          const existingIdx = messages.findIndex(
-            (m) =>
-              m.role === event.message.role &&
-              m.content === event.message.content,
-          );
-          if (existingIdx === -1) {
-            messages.push(event.message);
-          }
-        } else {
-          // 其他类型直接添加
-          messages.push(event.message);
-        }
+        });
+
+        const updatedDialog = {
+          ...prev.currentDialog,
+          messages,
+          updated_at: Date.now(),
+        };
+
+        return {
+          ...prev,
+          currentDialog: updatedDialog,
+          dialogs: prev.dialogs.map((d) =>
+            d.id === updatedDialog.id ? updatedDialog : d,
+          ),
+        };
       });
-
-      const updatedDialog = {
-        ...prev.currentDialog,
-        messages,
-        updated_at: Date.now(),
-      };
-
-      return {
-        ...prev,
-        currentDialog: updatedDialog,
-        dialogs: prev.dialogs.map((d) =>
-          d.id === updatedDialog.id ? updatedDialog : d,
-        ),
-      };
     });
   }, []);
 
@@ -153,17 +168,18 @@ function useMessageStoreInstance() {
     (event: ChatEventPayload) => {
       messageBufferRef.current.push(event);
 
-      // 立即刷新流式增量，缓冲其他消息
-      if (event.type === "delta") {
-        flushMessages();
-      } else if (!flushTimerRef.current) {
-        flushTimerRef.current = setTimeout(() => {
-          flushMessages();
-          flushTimerRef.current = null;
-        }, 50);
+      // 累积内容
+      if (event.message.content) {
+        pendingContentRef.current.content += event.message.content;
       }
+      if (event.message.reasoning_content) {
+        pendingContentRef.current.reasoning += event.message.reasoning_content;
+      }
+
+      // 使用 RAF 批量刷新
+      scheduleFlush();
     },
-    [flushMessages],
+    [scheduleFlush],
   );
 
   // 监听WebSocket事件
@@ -329,9 +345,11 @@ function useMessageStoreInstance() {
 
           case "agent:content_delta": {
             const { message_id, delta, content } = event.data;
+            // 确保 content 是有效字符串
+            const validContent = content || "";
             streamingMessagesRef.current[message_id] = {
               ...streamingMessagesRef.current[message_id],
-              content,
+              content: validContent,
             };
 
             // 使用 message_id 找到并更新对应的消息
@@ -342,14 +360,14 @@ function useMessageStoreInstance() {
               // 更新已有消息
               messages[targetIdx] = {
                 ...messages[targetIdx],
-                content,
+                content: validContent,
               };
             } else {
               // 兜底：如果 message_start 丢失/延迟，delta 也要能创建消息占位
               messages.push({
                 id: message_id,
                 role: "assistant",
-                content,
+                content: validContent,
                 agent_name:
                   streamingMessagesRef.current[message_id]?.agentName ||
                   "TeamLeadAgent",
@@ -360,7 +378,7 @@ function useMessageStoreInstance() {
               ...prev,
               streamState: {
                 ...streamState,
-                accumulatedContent: content,
+                accumulatedContent: validContent,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages }
@@ -370,9 +388,11 @@ function useMessageStoreInstance() {
 
           case "agent:reasoning_delta": {
             const { message_id, delta, reasoning_content } = event.data;
+            // 确保 reasoning_content 是有效字符串，避免 undefined 转换为字符串 "undefined"
+            const validReasoning = reasoning_content || "";
             const currentMsg = streamingMessagesRef.current[message_id];
             if (currentMsg) {
-              currentMsg.reasoning = reasoning_content;
+              currentMsg.reasoning = validReasoning;
             }
 
             // 同时更新消息对象中的 reasoning_content
@@ -381,7 +401,7 @@ function useMessageStoreInstance() {
             if (targetIdx >= 0) {
               messages[targetIdx] = {
                 ...messages[targetIdx],
-                reasoning_content: reasoning_content,
+                reasoning_content: validReasoning,
               };
             }
 
@@ -389,8 +409,8 @@ function useMessageStoreInstance() {
               ...prev,
               streamState: {
                 ...streamState,
-                accumulatedReasoning: reasoning_content,
-                showReasoning: true,
+                accumulatedReasoning: validReasoning,
+                showReasoning: !!validReasoning,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages }
@@ -565,6 +585,31 @@ function useMessageStoreInstance() {
             };
           }
 
+          case "todo:updated": {
+            const { todos, rounds_since_todo } = event.data;
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                todos,
+                roundsSinceTodo: rounds_since_todo,
+                showTodoReminder: false,
+              },
+            };
+          }
+
+          case "todo:reminder": {
+            const { rounds_since_todo } = event.data;
+            return {
+              ...prev,
+              streamState: {
+                ...streamState,
+                roundsSinceTodo: rounds_since_todo,
+                showTodoReminder: true,
+              },
+            };
+          }
+
           default:
             return prev;
         }
@@ -588,6 +633,11 @@ function useMessageStoreInstance() {
       unsubscribeChat();
       unsubscribeDialog();
       unsubscribeAgent();
+      // 取消待执行的 RAF
+      if (flushRafRef.current) {
+        cancelAnimationFrame(flushRafRef.current);
+        flushRafRef.current = null;
+      }
     };
   }, [bufferEvent]);
 
@@ -638,6 +688,9 @@ function useMessageStoreInstance() {
             showReasoning: false,
             hookStats: null,
             runReport: null,
+            todos: null,
+            roundsSinceTodo: 0,
+            showTodoReminder: false,
           },
         };
       }
@@ -674,6 +727,9 @@ function useMessageStoreInstance() {
           showReasoning: false,
           hookStats: null,
           runReport: null,
+          todos: null,
+          roundsSinceTodo: 0,
+          showTodoReminder: false,
         },
       };
     });
