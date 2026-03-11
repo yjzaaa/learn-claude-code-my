@@ -345,11 +345,27 @@ function useMessageStoreInstance() {
 
           case "agent:content_delta": {
             const { message_id, delta, content } = event.data;
-            // 确保 content 是有效字符串
-            const validContent = content || "";
+            const prevContent =
+              streamingMessagesRef.current[message_id]?.content || "";
+            const deltaText = delta || "";
+            const contentText = content || "";
+
+            // 兼容两种后端形态：
+            // 1) content 为累积全量；2) 仅 delta 有值。
+            let nextContent = prevContent;
+            if (contentText) {
+              if (deltaText && contentText === deltaText && prevContent) {
+                nextContent = prevContent + deltaText;
+              } else {
+                nextContent = contentText;
+              }
+            } else if (deltaText) {
+              nextContent = prevContent + deltaText;
+            }
+
             streamingMessagesRef.current[message_id] = {
               ...streamingMessagesRef.current[message_id],
-              content: validContent,
+              content: nextContent,
             };
 
             // 使用 message_id 找到并更新对应的消息
@@ -360,14 +376,14 @@ function useMessageStoreInstance() {
               // 更新已有消息
               messages[targetIdx] = {
                 ...messages[targetIdx],
-                content: validContent,
+                content: nextContent,
               };
             } else {
               // 兜底：如果 message_start 丢失/延迟，delta 也要能创建消息占位
               messages.push({
                 id: message_id,
                 role: "assistant",
-                content: validContent,
+                content: nextContent,
                 agent_name:
                   streamingMessagesRef.current[message_id]?.agentName ||
                   "TeamLeadAgent",
@@ -378,7 +394,7 @@ function useMessageStoreInstance() {
               ...prev,
               streamState: {
                 ...streamState,
-                accumulatedContent: validContent,
+                accumulatedContent: nextContent,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages }
@@ -388,11 +404,29 @@ function useMessageStoreInstance() {
 
           case "agent:reasoning_delta": {
             const { message_id, delta, reasoning_content } = event.data;
-            // 确保 reasoning_content 是有效字符串，避免 undefined 转换为字符串 "undefined"
-            const validReasoning = reasoning_content || "";
+            const prevReasoning =
+              streamingMessagesRef.current[message_id]?.reasoning || "";
+            const deltaReasoning = delta || "";
+            const reasoningText = reasoning_content || "";
+
+            let nextReasoning = prevReasoning;
+            if (reasoningText) {
+              if (
+                deltaReasoning &&
+                reasoningText === deltaReasoning &&
+                prevReasoning
+              ) {
+                nextReasoning = prevReasoning + deltaReasoning;
+              } else {
+                nextReasoning = reasoningText;
+              }
+            } else if (deltaReasoning) {
+              nextReasoning = prevReasoning + deltaReasoning;
+            }
+
             const currentMsg = streamingMessagesRef.current[message_id];
             if (currentMsg) {
-              currentMsg.reasoning = validReasoning;
+              currentMsg.reasoning = nextReasoning;
             }
 
             // 同时更新消息对象中的 reasoning_content
@@ -401,7 +435,7 @@ function useMessageStoreInstance() {
             if (targetIdx >= 0) {
               messages[targetIdx] = {
                 ...messages[targetIdx],
-                reasoning_content: validReasoning,
+                reasoning_content: nextReasoning,
               };
             }
 
@@ -409,8 +443,8 @@ function useMessageStoreInstance() {
               ...prev,
               streamState: {
                 ...streamState,
-                accumulatedReasoning: validReasoning,
-                showReasoning: !!validReasoning,
+                accumulatedReasoning: nextReasoning,
+                showReasoning: !!nextReasoning,
               },
               currentDialog: prev.currentDialog
                 ? { ...prev.currentDialog, messages }
@@ -530,6 +564,28 @@ function useMessageStoreInstance() {
                 Array.isArray(nextToolCalls) && nextToolCalls.length > 0;
               if (!hasContent && !hasToolCalls) {
                 messages.splice(targetIdx, 1);
+              }
+            } else {
+              const nextContent = content || "";
+              const nextToolCalls = tool_calls;
+              const nextReasoningContent = reasoning_content;
+
+              // message_start 可能因网络时序丢失；完成事件也应能独立落一条 assistant 消息。
+              const hasContent = (nextContent || "").trim().length > 0;
+              const hasToolCalls =
+                Array.isArray(nextToolCalls) && nextToolCalls.length > 0;
+
+              if (hasContent || hasToolCalls) {
+                messages.push({
+                  id: message_id,
+                  role: "assistant",
+                  content: nextContent,
+                  tool_calls: nextToolCalls,
+                  reasoning_content: nextReasoningContent,
+                  agent_name:
+                    streamingMessagesRef.current[message_id]?.agentName ||
+                    "TeamLeadAgent",
+                });
               }
             }
 

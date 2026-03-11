@@ -9,51 +9,146 @@ from pathlib import Path
 _ENV_LOADED = False
 
 
-def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
-    """Normalize legacy table/column names to the current schema."""
-    normalized = sql
+def _build_error_payload(code: str, message: str, *, stage: str, sql: str | None = None, reasons: list[dict] | None = None) -> str:
+    """Return machine-readable error payload for model-side handling."""
+    payload = {
+        "ok": False,
+        "stage": stage,
+        "error": {
+            "code": code,
+            "message": message,
+        },
+    }
+    if sql is not None:
+        payload["sql"] = sql
+    if reasons:
+        payload["error"]["reasons"] = reasons
+    return json.dumps(payload, ensure_ascii=False)
 
-    # Old demo table name still appears in historical prompts/tool traces.
-    normalized = re.sub(
-        r"\bcost_database\b",
-        "dbo.SSME_FI_InsightBot_CostDataBase" if use_sql_server else "cost_database",
-        normalized,
-        flags=re.IGNORECASE,
-    )
-    
-    # Normalize rate table names
-    normalized = re.sub(
-        r"\bSSME_FI_InsightBot_Rate\b",
-        "rate_table",
-        normalized,
-        flags=re.IGNORECASE,
-    )
-    
-    # Normalize cc mapping table names
-    normalized = re.sub(
-        r"\bSSME_FI_InsightBot_CCMapping\b",
-        "cc_mapping",
-        normalized,
-        flags=re.IGNORECASE,
-    )
-    
-    # Normalize column names for rate table
-    normalized = re.sub(r"(?<![\w\[])RateNo(?![\w\]])", "rate_no", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(?<![\w\[])BL(?![\w\]])", "bl", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(?<![\w\[])CC(?![\w\]])", "cc", normalized, flags=re.IGNORECASE)
 
-    if use_sql_server:
-        # SQL Server source table uses spaced, bracketed column names.
-        normalized = re.sub(r"(?<![\w\[])year_total(?![\w\]])", "[Year Total]", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![\w\[])year(?![\w\]])", "[Year]", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![\w\[])scenario(?![\w\]])", "[Scenario]", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![\w\[])function(?![\w\]])", "[Function]", normalized, flags=re.IGNORECASE)
-        # For SQL Server, keep original column names
-        normalized = re.sub(r"(?<![\w\[])rate_no(?![\w\]])", "[RateNo]", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![\w\[])bl(?![\w\]])", "[BL]", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"(?<![\w\[])cc(?![\w\]])", "[CC]", normalized, flags=re.IGNORECASE)
+def _has_unbalanced_single_quotes(sql: str) -> bool:
+    """Check for unbalanced single quotes while handling escaped '' pairs."""
+    in_string = False
+    i = 0
+    while i < len(sql):
+        char = sql[i]
+        if char == "'":
+            if in_string and i + 1 < len(sql) and sql[i + 1] == "'":
+                i += 2
+                continue
+            in_string = not in_string
+        i += 1
+    return in_string
 
-    return normalized
+
+def _has_unbalanced_parentheses(sql: str) -> bool:
+    """Check parentheses balance outside single-quoted strings."""
+    depth = 0
+    in_string = False
+    i = 0
+    while i < len(sql):
+        char = sql[i]
+        if char == "'":
+            if in_string and i + 1 < len(sql) and sql[i + 1] == "'":
+                i += 2
+                continue
+            in_string = not in_string
+            i += 1
+            continue
+        if not in_string:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    return True
+        i += 1
+    return in_string or depth != 0
+
+
+def _validate_sql_query(sql: str) -> dict:
+    """Validate SQL before execution and return structured reasons on failure."""
+    reasons: list[dict] = []
+    trimmed = sql.strip()
+
+    if not trimmed:
+        reasons.append(
+            {
+                "code": "EMPTY_SQL",
+                "message": "SQL is empty.",
+                "detail": "Provide a non-empty SELECT/WITH query.",
+            }
+        )
+        return {"valid": False, "reasons": reasons}
+
+    # Allow one optional trailing semicolon only.
+    without_trailing = re.sub(r";\s*$", "", trimmed)
+    if ";" in without_trailing:
+        reasons.append(
+            {
+                "code": "MULTI_STATEMENT",
+                "message": "Multiple SQL statements are not allowed.",
+                "detail": "Only a single statement is supported.",
+            }
+        )
+
+    if not re.match(r"^(select|with)\b", without_trailing, flags=re.IGNORECASE):
+        reasons.append(
+            {
+                "code": "INVALID_START",
+                "message": "SQL must start with SELECT or WITH.",
+                "detail": "DDL/DML/EXEC statements are not allowed.",
+            }
+        )
+
+    if not re.search(r"\bselect\b", without_trailing, flags=re.IGNORECASE):
+        reasons.append(
+            {
+                "code": "MISSING_SELECT",
+                "message": "Only query statements are allowed.",
+                "detail": "SQL must contain a SELECT clause.",
+            }
+        )
+
+    forbidden_patterns = [
+        (r"\b(drop|truncate|alter|create)\b", "DDL_NOT_ALLOWED", "DDL statements are not allowed."),
+        (r"\b(delete|update|insert|merge)\b", "DML_NOT_ALLOWED", "Data modification statements are not allowed."),
+        (r"\b(exec|execute)\b", "EXEC_NOT_ALLOWED", "EXEC statements are not allowed."),
+        (r"\b(begin|commit|rollback|savepoint)\b", "TRANSACTION_NOT_ALLOWED", "Transaction control statements are not allowed."),
+        (r"\b(call|do|copy)\b", "PROCEDURE_NOT_ALLOWED", "Procedure or bulk execution statements are not allowed."),
+        (r"\bselect\b[\s\S]*\binto\b\s+[#\[\]`\"\w]", "SELECT_INTO_NOT_ALLOWED", "SELECT INTO is not allowed in query-only mode."),
+    ]
+
+    for pattern, code, message in forbidden_patterns:
+        if re.search(pattern, without_trailing, flags=re.IGNORECASE):
+            reasons.append(
+                {
+                    "code": code,
+                    "message": message,
+                    "detail": f"Matched pattern: {pattern}",
+                }
+            )
+
+    if _has_unbalanced_single_quotes(without_trailing):
+        reasons.append(
+            {
+                "code": "UNBALANCED_QUOTES",
+                "message": "Single quotes are not balanced.",
+                "detail": "Check string literals and escaped quotes.",
+            }
+        )
+
+    if _has_unbalanced_parentheses(without_trailing):
+        reasons.append(
+            {
+                "code": "UNBALANCED_PARENTHESES",
+                "message": "Parentheses are not balanced.",
+                "detail": "Check opening and closing parentheses.",
+            }
+        )
+
+    return {"valid": len(reasons) == 0, "reasons": reasons}
+
 
 
 def _find_project_env_file() -> Path | None:
@@ -95,8 +190,15 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
     """Execute SQL against configured SQL Server or PostgreSQL."""
     _load_project_env_once()
 
-    if not sql.strip():
-        return "Error: Empty SQL query"
+    validation = _validate_sql_query(sql)
+    if not validation["valid"]:
+        return _build_error_payload(
+            "SQL_VALIDATION_FAILED",
+            "SQL failed validation before execution.",
+            stage="validation",
+            sql=sql,
+            reasons=validation["reasons"],
+        )
 
     # 标准变量：DB_HOST / DB_NAME / DB_USER / DB_PASSWORD / DB_PORT
     # 兼容旧变量：database_url / database_name / database_username / database_password
@@ -118,11 +220,16 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
         missing.append("DB_PASSWORD")
 
     if missing:
-        return f"Error: Missing DB config in environment: {', '.join(missing)}"
+        return _build_error_payload(
+            "MISSING_DB_CONFIG",
+            f"Missing DB config in environment: {', '.join(missing)}",
+            stage="configuration",
+            sql=sql,
+        )
 
     # Route to SQL Server when explicitly configured (or common SQL Server port is used).
     use_sql_server = "sql server" in db_driver or port == "1433"
-    sql = _normalize_legacy_sql(sql, use_sql_server)
+    # sql = _normalize_legacy_sql(sql, use_sql_server)
 
     if use_sql_server:
         conn = None
@@ -130,7 +237,12 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
         try:
             import pyodbc
         except Exception as e:
-            return f"Error: pyodbc is required for SQL Server but is not available: {e}"
+            return _build_error_payload(
+                "MISSING_DRIVER",
+                f"pyodbc is required for SQL Server but is not available: {e}",
+                stage="configuration",
+                sql=sql,
+            )
 
         odbc_driver = os.getenv("ODBC_DRIVER") or "ODBC Driver 17 for SQL Server"
         conn_str = (
@@ -158,10 +270,26 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
                 }
                 return json.dumps(payload, ensure_ascii=False, default=str)
 
-            conn.commit()
-            return f"OK: {cursor.rowcount} rows affected"
+            return _build_error_payload(
+                "QUERY_ONLY_ENFORCED",
+                "Only query statements that return a result set are allowed.",
+                stage="validation",
+                sql=sql,
+                reasons=[
+                    {
+                        "code": "NO_RESULT_SET",
+                        "message": "Statement did not return a result set.",
+                        "detail": "Use a SELECT/WITH query that returns rows.",
+                    }
+                ],
+            )
         except Exception as e:
-            return f"Error: SQL execution failed: {e}"
+            return _build_error_payload(
+                "SQL_EXECUTION_FAILED",
+                f"SQL execution failed: {e}",
+                stage="execution",
+                sql=sql,
+            )
         finally:
             try:
                 if cursor is not None:
@@ -199,10 +327,26 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
             }
             return json.dumps(payload, ensure_ascii=False, default=str)
 
-        conn.commit()
-        return f"OK: {cursor.rowcount} rows affected"
+        return _build_error_payload(
+            "QUERY_ONLY_ENFORCED",
+            "Only query statements that return a result set are allowed.",
+            stage="validation",
+            sql=sql,
+            reasons=[
+                {
+                    "code": "NO_RESULT_SET",
+                    "message": "Statement did not return a result set.",
+                    "detail": "Use a SELECT/WITH query that returns rows.",
+                }
+            ],
+        )
     except Exception as e:
-        return f"Error: SQL execution failed: {e}"
+        return _build_error_payload(
+            "SQL_EXECUTION_FAILED",
+            f"SQL execution failed: {e}",
+            stage="execution",
+            sql=sql,
+        )
     finally:
         try:
             if cursor is not None:

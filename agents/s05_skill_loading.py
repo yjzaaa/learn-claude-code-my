@@ -199,17 +199,38 @@ class SkillLoader:
             files = sorted(p.relative_to(scripts_dir).as_posix() for p in scripts_dir.rglob("*.py"))
             return json.dumps({"skill": name, "scripts": files}, ensure_ascii=False, indent=2)
 
-        target = (scripts_dir / script_path).resolve()
-        if not target.is_relative_to(scripts_dir):
-            return "Error: scripts path escapes skill directory"
-        if not target.exists() or not target.is_file():
+        normalized = str(script_path).strip().replace("\\", "/")
+        normalized = re.sub(r"^\./", "", normalized)
+        if normalized.lower().startswith("scripts/"):
+            normalized = normalized[len("scripts/"):]
+
+        # 兼容省略 .py 的调用。
+        candidates = [normalized]
+        if normalized and not normalized.lower().endswith(".py"):
+            candidates.append(f"{normalized}.py")
+
+        target = None
+        used_path = normalized
+        scripts_root = scripts_dir.resolve()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            candidate_target = (scripts_dir / candidate).resolve()
+            if not candidate_target.is_relative_to(scripts_root):
+                continue
+            if candidate_target.exists() and candidate_target.is_file():
+                target = candidate_target
+                used_path = candidate
+                break
+
+        if target is None:
             return f"Error: Script not found: {script_path}"
 
         content = read_text_safe(target)
         return (
             f"### Skill Script\n"
             f"- skill: `{name}`\n"
-            f"- path: `{script_path}`\n\n"
+            f"- path: `{used_path}`\n\n"
             f"```python\n{content}\n```"
         )
 

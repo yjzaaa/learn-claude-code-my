@@ -6,6 +6,8 @@ FastAPI 主应用 (重构版)
 
 from loguru import logger
 import asyncio
+import json
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -56,6 +58,43 @@ except ImportError:
 def _get_agent_name() -> str:
     """获取 Agent 名称"""
     return S02WithSkillLoaderAgent.__name__
+
+
+def _start_dialog_task(dialog_id: str, bridge: StateManagedAgentBridge) -> None:
+    """启动并登记对话任务，供 stop 请求取消。"""
+    task = asyncio.create_task(process_agent_request(dialog_id, bridge))
+    dialog_store.set_task(dialog_id, task)
+
+
+def _latest_sql_tool_failed(messages: list[dict[str, Any]]) -> bool:
+    """Return whether the latest SQL-related tool outcome is a failure."""
+    for msg in reversed(messages):
+        if msg.get("role") != "tool":
+            continue
+
+        raw = str(msg.get("content", "")).strip()
+        if not raw:
+            continue
+
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        error = data.get("error")
+        if isinstance(error, dict):
+            code = str(error.get("code", ""))
+            if code in {"SQL_EXECUTION_FAILED", "SQL_VALIDATION_FAILED", "QUERY_ONLY_ENFORCED"}:
+                return True
+
+        # Consider this a successful SQL query outcome and stop looking further back.
+        if "rows" in data and "limit" in data:
+            return False
+
+    return False
 
 
 @asynccontextmanager
@@ -185,7 +224,7 @@ def create_app() -> FastAPI:
         bridge.on_user_input(content)
 
         # 异步启动 Agent 处理
-        asyncio.create_task(process_agent_request(dialog_id, bridge))
+        _start_dialog_task(dialog_id, bridge)
 
         return {
             "success": True,
@@ -202,11 +241,44 @@ def create_app() -> FastAPI:
         if not bridge:
             raise HTTPException(status_code=404, detail="Dialog not found")
 
+        dialog_store.cancel_task(dialog_id)
         bridge.on_stop()
 
         return {
             "success": True,
             "data": bridge.get_session().to_dict()
+        }
+
+    @app.post("/api/dialogs/{dialog_id}/resume")
+    async def resume_dialog(dialog_id: str):
+        """继续当前对话框（基于已存在上下文）"""
+        bridge = dialog_store.get_bridge(dialog_id)
+        if not bridge:
+            raise HTTPException(status_code=404, detail="Dialog not found")
+
+        running_task = dialog_store.get_task(dialog_id)
+        if running_task and not running_task.done():
+            return {
+                "success": True,
+                "data": {
+                    "dialog_id": dialog_id,
+                    "status": bridge.get_session().status.value,
+                    "message": "Dialog is already running",
+                },
+            }
+
+        session = bridge.get_session()
+        has_user_input = any(m.role == Role.USER for m in session.messages)
+        if not has_user_input:
+            raise HTTPException(status_code=400, detail="No user context to resume")
+
+        _start_dialog_task(dialog_id, bridge)
+        return {
+            "success": True,
+            "data": {
+                "dialog_id": dialog_id,
+                "status": "resuming",
+            },
         }
 
     @app.delete("/api/dialogs/{dialog_id}")
@@ -327,6 +399,7 @@ def create_app() -> FastAPI:
         for summary in dialog_store.list_dialogs():
             bridge = dialog_store.get_bridge(summary.id)
             if bridge and bridge.get_session().status in [DialogStatus.THINKING, DialogStatus.TOOL_CALLING]:
+                dialog_store.cancel_task(summary.id)
                 bridge.on_stop()
                 stopped.append(summary.id)
 
@@ -472,7 +545,7 @@ async def handle_websocket_message(websocket: WebSocket, client_id: str, message
         bridge.on_user_input(content)
 
         # 启动 Agent 处理
-        asyncio.create_task(process_agent_request(dialog_id, bridge))
+        _start_dialog_task(dialog_id, bridge)
 
     elif msg_type == "stop":
         # 停止 Agent
@@ -485,7 +558,42 @@ async def handle_websocket_message(websocket: WebSocket, client_id: str, message
 
         bridge = dialog_store.get_bridge(dialog_id)
         if bridge:
+            dialog_store.cancel_task(dialog_id)
             bridge.on_stop()
+
+    elif msg_type == "resume":
+        # 继续 Agent
+        if not dialog_id:
+            await websocket.send_json({
+                "type": "error",
+                "error": {"code": "INVALID_DIALOG_ID", "message": "dialog_id is required for resume"},
+            })
+            return
+
+        bridge = dialog_store.get_bridge(dialog_id)
+        if not bridge:
+            await websocket.send_json({
+                "type": "error",
+                "dialog_id": dialog_id,
+                "error": {"code": "DIALOG_NOT_FOUND", "message": "Dialog not found"},
+            })
+            return
+
+        running_task = dialog_store.get_task(dialog_id)
+        if running_task and not running_task.done():
+            return
+
+        session = bridge.get_session()
+        has_user_input = any(m.role == Role.USER for m in session.messages)
+        if not has_user_input:
+            await websocket.send_json({
+                "type": "error",
+                "dialog_id": dialog_id,
+                "error": {"code": "NO_CONTEXT", "message": "No user context to resume"},
+            })
+            return
+
+        _start_dialog_task(dialog_id, bridge)
 
     else:
         # 未知消息类型
@@ -532,7 +640,80 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
         try:
             logger.info(f"[ProcessAgent] Running agent...")
             messages = bridge.build_window_messages(last_user_message)
-            final_answer = await agent.arun(messages)
+
+            # Todo 硬约束：存在未完成任务时，本次请求内不得直接结束。
+            # 为避免死循环，限制强制续跑次数。
+            max_todo_enforce_retries = max(
+                0, int(os.getenv("TODO_ENFORCE_MAX_RETRIES", "2"))
+            )
+            max_sql_enforce_retries = max(
+                0, int(os.getenv("SQL_ENFORCE_MAX_RETRIES", "2"))
+            )
+            enforce_attempt = 0
+            sql_enforce_attempt = 0
+            final_answer = ""
+
+            while True:
+                final_answer = await agent.arun(messages)
+
+                state = todo_store.get_state(dialog_id)
+                unfinished_count = sum(
+                    1 for item in state.items if item.status != "completed"
+                )
+                sql_failed = _latest_sql_tool_failed(messages)
+
+                if unfinished_count == 0 and not sql_failed:
+                    break
+
+                if sql_failed:
+                    if sql_enforce_attempt >= max_sql_enforce_retries:
+                        logger.warning(
+                            "[ProcessAgent] SQL hard-constraint retries exhausted, "
+                            f"dialog={dialog_id}"
+                        )
+                    else:
+                        sql_enforce_attempt += 1
+                        logger.info(
+                            "[ProcessAgent] SQL hard-constraint triggered, "
+                            f"attempt={sql_enforce_attempt}"
+                        )
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "<reminder>SQL hard constraint: latest SQL execution/validation failed. "
+                                    "You MUST correct and re-run SQL before ending this round.</reminder>"
+                                ),
+                            }
+                        )
+                        continue
+
+                if enforce_attempt >= max_todo_enforce_retries:
+                    logger.warning(
+                        "[ProcessAgent] Todo hard-constraint retries exhausted, "
+                        f"unfinished={unfinished_count}, dialog={dialog_id}"
+                    )
+                    break
+
+                enforce_attempt += 1
+                logger.info(
+                    "[ProcessAgent] Todo hard-constraint triggered, "
+                    f"unfinished={unfinished_count}, attempt={enforce_attempt}"
+                )
+
+                # 强提醒插入到当前上下文，迫使模型先更新 todo 再继续。
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "<reminder>Todo hard constraint: there are unfinished todo items. "
+                            "Before ending this round, you MUST call the todo tool to update "
+                            "statuses for completed work and keep exactly one in_progress item "
+                            "if any work remains.</reminder>"
+                        ),
+                    }
+                )
+
             bridge.append_history_round(last_user_message, final_answer)
             logger.info(f"[ProcessAgent] Agent completed")
         except asyncio.CancelledError:
@@ -556,6 +737,10 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
         traceback.print_exc()
         bridge.on_error(e)
         await bridge.flush_pending_events()
+    finally:
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            dialog_store.clear_task(dialog_id, current_task)
 
 
 # 创建全局应用实例

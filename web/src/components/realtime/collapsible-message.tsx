@@ -46,6 +46,20 @@ interface CollapsibleMessageProps {
   defaultExpanded?: boolean;
   toolResults?: ChatMessage[];
   attachedAssistant?: ChatMessage | null;
+  selectedToolId?: string | null;
+  onToolSelect?: (detail: ToolDetailPayload) => void;
+  onToolClose?: (toolId: string) => void;
+}
+
+export interface ToolDetailPayload {
+  id: string;
+  name: string;
+  markdown: string;
+  argsText: string;
+  resultText: string;
+  hasArgs: boolean;
+  hasResult: boolean;
+  status: "running" | "completed";
 }
 
 /** 消息类型配置 */
@@ -153,6 +167,42 @@ function hasVisibleText(value: string | null | undefined): boolean {
   // 处理 undefined、null、空字符串、以及字符串 "undefined" 的情况
   if (!value || value === "undefined") return false;
   return value.trim().length > 0;
+}
+
+function toMarkdownCodeBlock(content: string, language = "text"): string {
+  const safeContent = content.trim().replace(/```/g, "``\\`");
+  return `\`\`\`${language}\n${safeContent}\n\`\`\``;
+}
+
+export function buildToolDetailMarkdown({
+  toolName,
+  argsText,
+  resultText,
+  hasArgs,
+  hasResult,
+}: {
+  toolName: string;
+  argsText: string;
+  resultText: string;
+  hasArgs: boolean;
+  hasResult: boolean;
+}): string {
+  const sections = [`## ${toolName}`];
+
+  if (hasArgs) {
+    sections.push("### 参数");
+    sections.push(toMarkdownCodeBlock(argsText, "json"));
+  }
+
+  if (hasResult) {
+    sections.push("### 结果");
+    sections.push(resultText);
+  } else {
+    sections.push("### 状态");
+    sections.push("等待工具执行结果...");
+  }
+
+  return sections.join("\n\n");
 }
 
 /** 固定高度滚动区域组件 */
@@ -283,6 +333,9 @@ export function CollapsibleMessage({
   defaultExpanded = false,
   toolResults = [],
   attachedAssistant,
+  selectedToolId,
+  onToolSelect,
+  onToolClose,
 }: CollapsibleMessageProps) {
   const isToolCall =
     message.role === "assistant" &&
@@ -298,6 +351,11 @@ export function CollapsibleMessage({
   const displayContent = streamingContent ?? message.content ?? "";
   const reasoningContent =
     streamingReasoning || message.reasoning_content || "";
+  const attachedAssistantContent =
+    attachedAssistant?.content || attachedAssistant?.reasoning_content || "";
+  const responseContent = hasVisibleText(displayContent)
+    ? displayContent
+    : attachedAssistantContent;
   const hasToolCalls = !!(
     isToolCall &&
     message.tool_calls &&
@@ -351,7 +409,7 @@ export function CollapsibleMessage({
   useEffect(() => {
     const previous = previousStreamSignalsRef.current;
     const next = {
-      contentLen: displayContent.length,
+      contentLen: responseContent.length,
       reasoningLen: reasoningContent.length,
       toolResultsLen: toolResultsTextLen,
       toolResultsCount: toolResults.length,
@@ -369,7 +427,8 @@ export function CollapsibleMessage({
       reasoningDelta > 0 &&
       hasVisibleText(next.reasoningLen ? reasoningContent : "");
     const contentActive =
-      contentDelta > 0 && hasVisibleText(next.contentLen ? displayContent : "");
+      contentDelta > 0 &&
+      hasVisibleText(next.contentLen ? responseContent : "");
     const toolsActive = toolDelta > 0 && hasToolCalls;
 
     // 统一响应式展开标志：单通道增量自动聚焦；并行增量同时展开。
@@ -378,8 +437,14 @@ export function CollapsibleMessage({
       setExpandState((prev) => ({
         ...prev,
         sections: {
-          reasoning: reasoningActive && !prev.userManuallyExpanded.reasoning ? reasoningActive : prev.sections.reasoning,
-          content: contentActive && !prev.userManuallyExpanded.content ? contentActive : prev.sections.content,
+          reasoning:
+            reasoningActive && !prev.userManuallyExpanded.reasoning
+              ? reasoningActive
+              : prev.sections.reasoning,
+          content:
+            contentActive && !prev.userManuallyExpanded.content
+              ? contentActive
+              : prev.sections.content,
           // 工具区域始终不自动展开，保持默认收起
           tools: prev.sections.tools,
         },
@@ -388,8 +453,8 @@ export function CollapsibleMessage({
 
     previousStreamSignalsRef.current = next;
   }, [
-    displayContent.length,
-    displayContent,
+    responseContent.length,
+    responseContent,
     hasToolCalls,
     reasoningContent.length,
     reasoningContent,
@@ -401,19 +466,11 @@ export function CollapsibleMessage({
   const activeSection = useMemo(() => {
     return {
       reasoning:
-        hasVisibleText(reasoningContent) &&
-        expandState.sections.reasoning,
-      content:
-        hasVisibleText(displayContent) && expandState.sections.content,
+        hasVisibleText(reasoningContent) && expandState.sections.reasoning,
+      content: hasVisibleText(responseContent) && expandState.sections.content,
       tools: hasToolCalls && expandState.sections.tools,
     };
-  }, [
-    displayContent,
-    expandState.sections,
-    hasToolCalls,
-    reasoningContent,
-  ]);
-
+  }, [responseContent, expandState.sections, hasToolCalls, reasoningContent]);
 
   // 仅处理“无内容时关闭”，避免覆盖上面的 token 驱动展开。
   useEffect(() => {
@@ -423,11 +480,13 @@ export function CollapsibleMessage({
         reasoning: hasVisibleText(reasoningContent)
           ? prev.sections.reasoning
           : false,
-        content: hasVisibleText(displayContent) ? prev.sections.content : false,
+        content: hasVisibleText(responseContent)
+          ? prev.sections.content
+          : false,
         tools: hasToolCalls ? prev.sections.tools : false,
       },
     }));
-  }, [displayContent, hasToolCalls, reasoningContent]);
+  }, [responseContent, hasToolCalls, reasoningContent]);
 
   const toggleSection = (section: keyof typeof expandState.sections) => {
     setExpandState((prev) => {
@@ -550,7 +609,6 @@ export function CollapsibleMessage({
     });
   }, [toolCallResults]);
 
-
   const toggleToolPanel = (key: string) => {
     setExpandState((prev) => ({
       ...prev,
@@ -627,10 +685,10 @@ export function CollapsibleMessage({
               contentClassName="bg-white dark:bg-zinc-900/50"
               collapsedHeight={150}
               expandedHeight={400}
-              hasContent={hasVisibleText(displayContent)}
+              hasContent={hasVisibleText(responseContent)}
             >
               <MarkdownContent
-                content={displayContent}
+                content={responseContent}
                 isStreaming={isStreaming}
               />
             </FixedHeightSection>
@@ -651,117 +709,79 @@ export function CollapsibleMessage({
                 expandedHeight={350}
                 hasContent={true}
               >
-                {toolCallResults.map((item) => {
-                  const {
-                    toolCall,
-                    result,
-                    argsText,
-                    resultText,
-                    hasArgs,
-                    hasResult,
-                  } = item;
-                  const rootKey = `${toolCall.id}:root`;
-                  const argsKey = `${toolCall.id}:args`;
-                  const resultKey = `${toolCall.id}:result`;
+                <div className="h-full overflow-y-auto scrollbar-thin space-y-2 rounded-xl border border-slate-200/70 bg-white/80 p-2 dark:border-slate-700/70 dark:bg-slate-950/60">
+                  {toolCallResults.map((item) => {
+                    const {
+                      toolCall,
+                      result,
+                      argsText,
+                      resultText,
+                      hasArgs,
+                      hasResult,
+                    } = item;
 
-                  return (
-                    <div
-                      key={toolCall.id}
-                      className="rounded-lg border border-slate-200/60 dark:border-slate-700/60 overflow-hidden bg-white dark:bg-zinc-950"
-                    >
-                      {/* 工具名称和状态（可折叠） */}
+                    return (
                       <button
-                        onClick={() => toggleToolPanel(rootKey)}
-                        className="w-full px-2 py-1.5 flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 text-left"
-                      >
-                        <ChevronDown
-                          className={cn(
-                            "h-3.5 w-3.5 text-slate-500 transition-transform",
-                            !expandState.toolPanels[rootKey] && "-rotate-90",
-                          )}
-                        />
-                        <span className="font-medium text-xs text-slate-700 dark:text-slate-300">
-                          {toolCall.function.name}
-                        </span>
-                        {result ? (
-                          <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            <CheckCircle2 className="h-3 w-3" />
-                            完成
-                          </span>
-                        ) : (
-                          <span className="ml-auto flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            执行中
-                          </span>
+                        key={toolCall.id}
+                        onClick={() => {
+                          if (selectedToolId === toolCall.id) {
+                            onToolClose?.(toolCall.id);
+                            return;
+                          }
+
+                          onToolSelect?.({
+                            id: toolCall.id,
+                            name: toolCall.function.name,
+                            markdown: buildToolDetailMarkdown({
+                              toolName: toolCall.function.name,
+                              argsText,
+                              resultText,
+                              hasArgs,
+                              hasResult,
+                            }),
+                            argsText,
+                            resultText,
+                            hasArgs,
+                            hasResult,
+                            status: result ? "completed" : "running",
+                          });
+                        }}
+                        className={cn(
+                          "w-full rounded-lg border px-2.5 py-1.5 text-left transition-all duration-200",
+                          "bg-slate-50/90 hover:bg-slate-100 dark:bg-slate-900/70 dark:hover:bg-slate-900",
+                          "border-slate-200/80 dark:border-slate-700/80",
+                          selectedToolId === toolCall.id &&
+                            "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/30",
                         )}
-                      </button>
-
-                      {expandState.toolPanels[rootKey] && (
-                        <div className="border-t border-slate-100/60 dark:border-slate-800/60 p-2 space-y-2">
-                          {/* 参数部分 */}
-                          {hasArgs && (
-                            <div className="rounded border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
-                              <button
-                                onClick={() => toggleToolPanel(argsKey)}
-                                className="w-full px-2 py-1 flex items-center gap-1.5 bg-slate-100/50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
-                              >
-                                <ChevronDown
-                                  className={cn(
-                                    "h-3 w-3 text-slate-500 transition-transform",
-                                    !expandState.toolPanels[argsKey] && "-rotate-90",
-                                  )}
-                                />
-                                <span className="text-[10px] font-medium text-slate-600">参数</span>
-                              </button>
-                              <div
-                                className="overflow-y-auto scrollbar-thin bg-white dark:bg-zinc-950 transition-all"
-                                style={{ height: expandState.toolPanels[argsKey] ? "80px" : "40px" }}
-                              >
-                                <pre className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-all leading-relaxed p-2">
-                                  {argsText}
-                                </pre>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 结果部分 */}
-                          {hasResult && (
-                            <div className="rounded border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
-                              <button
-                                onClick={() => toggleToolPanel(resultKey)}
-                                className="w-full px-2 py-1 flex items-center gap-1.5 bg-slate-100/50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
-                              >
-                                <ChevronDown
-                                  className={cn(
-                                    "h-3 w-3 text-slate-500 transition-transform",
-                                    !expandState.toolPanels[resultKey] && "-rotate-90",
-                                  )}
-                                />
-                                <span className="text-[10px] font-medium text-slate-600">结果</span>
-                              </button>
-                              <div
-                                className="overflow-y-auto scrollbar-thin bg-white dark:bg-zinc-950 transition-all"
-                                style={{ height: expandState.toolPanels[resultKey] ? "100px" : "50px" }}
-                              >
-                                <div className="p-2">
-                                  <MarkdownContent content={resultText} isStreaming={false} />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 等待结果提示 */}
-                          {!hasResult && (
-                            <div className="px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1.5 bg-amber-50/50 dark:bg-amber-950/20 rounded">
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {result ? (
+                              <CheckCircle2 className="h-3 w-3" />
+                            ) : (
                               <Loader2 className="h-3 w-3 animate-spin" />
-                              等待工具执行结果...
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[11px] font-semibold text-slate-800 dark:text-slate-100">
+                              {toolCall.function.name}
                             </div>
-                          )}
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                              result
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                            )}
+                          >
+                            {result ? "完成" : "执行中"}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
               </FixedHeightSection>
             )}
           </div>
@@ -835,7 +855,7 @@ function MessageHeader({
 }
 
 /** Markdown 内容渲染组件 */
-function MarkdownContent({
+export function MarkdownContent({
   content,
   isStreaming,
 }: {

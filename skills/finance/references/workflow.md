@@ -1,80 +1,77 @@
 # 工作流说明（finance skill）
 
-本文档描述 src/graph/graph.py 中的核心工作流，并明确如何在流程中保证 SQL 生成准确性与可执行性。
-
 ## 目标
 
-- 以清晰、稳定的节点顺序完成从用户问题到最终回答的闭环。
-- 在 SQL 生成与执行阶段加入严格的校验与失败回退，确保最终 SQL 可在目标数据库执行。
-- 保证技能上下文、表结构与业务约束被准确传递给 SQL 生成节点。
+把 finance 技能固定为“文档驱动 + 单执行脚本”模式，减少 SQL 生成漂移和执行风险。
 
-## 主流程（当前实现）
+## 标准流程
 
-1. 选择技能（select_skill）
-   - 根据用户问题和技能摘要选择目标技能。
-   - 加载完整技能内容（含 references/scripts），为后续 SQL 生成提供业务规则与表名线索。
-   - 提取 table_names（如从 skill 内容中解析出核心表）。
+1. 读取规则与模板
+   - 读取 `references/metadata.md`、`references/react_rules.md`、`references/react_constraints.md`。
+   - 若需要字段级结构，再读取 `references/schema_query_guide.md`。
 
-2. 加载上下文（load_context）
-   - 根据 table_names 拉取数据源结构信息。
-   - 生成 data_source_schema，作为 SQL 生成的结构依据。
+2. 查询表结构与示例数据
+   - 先查询候选表结构（字段名、类型、可空）。
+   - 再查询每张候选表的少量样例数据（如 TOP 5/10）。
+   - 目的：确认字段语义、取值形态与过滤条件可行性。
 
-3. 生成 SQL（generate_sql）
-   - 结合 user_query、skill_context、data_source_schema 生成 SQL。
-   - 严格遵守 finance 规则（见 references/react_rules.md）。
+3. 术语归一化
+   - 把用户口语映射为标准值（例如 `预算 -> Budget1`，`实际 -> Actual`）。
 
-4. SQL 校验（sql_validation）
-   - 校验 SQL 安全性与合规性。
-   - 未通过时回退到 generate_sql 重新生成。
+4. Todo 计划与状态更新
+   - 多步骤任务先调用 `todo` 建立任务清单。
+   - 每个关键步骤结束后更新状态（`pending -> in_progress -> completed`）。
+   - 若出现 `<reminder>Update your todos.</reminder>`，必须优先更新 `todo`。
 
-5. SQL 执行（sql_execution）
-   - 执行 SQL 并返回结果。
-   - 若执行出错，回退到 generate_sql 重新生成。
+5. 基于模板构造 SQL
+   - 参考 `references/sql_templates.md` 选取最接近模板。
+   - 产出单条 SQL（允许 CTE，不允许多语句）。
 
-6. 精炼答案（refine_answer）
-   - 结合查询结果生成最终回答。
+6. 执行前校验
+   - 通过 `scripts/sql_query.py` 的私有校验方法检查。
+   - 校验失败时返回结构化错误，模型应按原因重写 SQL。
+   - 校验重点：
+     - 仅允许 `SELECT`/`WITH` 查询；
+     - 必须是单语句；
+     - 禁止 DDL/DML/EXEC；
+     - 禁止事务与过程控制语句；
+     - 禁止 `SELECT INTO`；
+     - 语句必须能返回结果集。
+       - 分摊场景必须满足四重关联（Year/Scenario/Key/Month）与 `Function + Key` 绑定。
 
-## 关键路由规则
+7. 执行 SQL
+   - 只允许调用 `scripts/sql_query.py`。
+   - 执行结果为结构化 JSON。
 
-- sql_validation：
-  - sql_valid == true -> sql_execution
-  - 否则 -> generate_sql
+8. 结果解释
+   - 用自然语言输出结论。
+   - 对比类问题补充差值和变化率。
 
-- sql_execution：
-  - 执行出错 -> generate_sql
-  - 否则 -> refine_answer
+## 最终 SQL 产出链路（执行检查清单）
 
-> 说明：当前流程入口是 select_skill，未启用意图分析与结果审查节点。
+在提交最终 SQL 前，必须逐项自检：
 
-## 确保 SQL 准确性的关键要求
+1. 我是否先确定了问题类型（尤其是否为分摊场景）？
+2. 我是否完成了 Scenario 归一化，并使用库内真实取值？
+3. 分摊题是否已经绑定 `Function + Key`？
+4. 分摊主体是否明确为 `CC` 或 `BL`，且过滤条件已落到 SQL？
+5. 联接是否严格为 `Year + Scenario + Key + Month` 四重关联？
+6. 是否对 `Rate` 重复粒度做了归一化/去重，避免重复乘法放大？
+7. 计算路径是否为“月度 amount \* 月度 rate -> 汇总”，而不是先汇总后乘比例？
+8. SQL 是否为单语句查询、可返回结果集、可直接执行？
 
-1. 表名必须明确
-   - table_names 必须从 skill 内容中可靠提取。
-   - 为空时无法加载 schema，SQL 生成会缺失结构依据。
+任一问题回答为“否”，则当前 SQL 视为未完成，不得执行。
 
-2. 技能规则优先
-   - finance 规则必须优先于通用策略，尤其是分摊计算、预算/实际对比逻辑。
-   - 参考 references/react_rules.md 与 references/react_constraints.md。
+## 回退策略
 
-3. 数据源结构一致
-   - data_source_schema 必须来自 load_context 的真实结构。
-   - SQL 生成必须使用 schema 中存在的字段名与表名。
+- 校验失败：回到“模板构造 SQL”。
+- 执行失败：根据错误信息回到“模板构造 SQL”。
+- 当返回 `error.reasons` 时，优先按原因精准修复，不要盲目改写整条 SQL。
+- 若命中分摊硬门槛失败（缺四重关联或缺 `allocation_key` 绑定），必须直接重生成，不允许执行当前 SQL。
 
-4. 单语句、可执行
-   - SQL 必须为单条语句（允许 CTE）。
-   - 禁止多语句、临时表与非 SQL Server 语法。
+## 禁止项
 
-5. 错误回退策略
-   - 校验失败或执行失败必须返回 generate_sql 重新生成。
-   - 直到 sql_validation 通过并执行成功才进入 refine_answer。
-
-## 建议的补充约束（可选）
-
-- 当 table_names 为空时，建议直接回退到 select_skill 或触发提示，让模型补充表名。
-- 可恢复结果审查节点（review_result）用于过滤无效结果，减少误答。
-
-## 相关参考
-
-- references/react_rules.md
-- references/react_constraints.md
-- references/react_examples.md
+- 禁止调用历史脚本（`run_query.py`、`generate_alloc_sql.py`、`dynamic_skill_sql.py`、`example_overview.py`）。
+- 禁止多语句 SQL。
+- 禁止 DDL/DML/执行类语句。
+- 禁止事务控制与 `SELECT INTO`。
