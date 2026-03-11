@@ -70,6 +70,7 @@ class StateManagedAgentBridge(FullAgentHooks):
         except ValueError:
             self.window_rounds = 10
         self.history_rounds: list[dict[str, str]] = []
+        self.pending_round: Optional[dict[str, str]] = None
         self._snapshot_history_dir = Path.cwd() / "history"
         self._snapshot_history_dir.mkdir(parents=True, exist_ok=True)
         self._snapshot_history_file = self._snapshot_history_dir / f"{dialog_id}.jsonl"
@@ -209,6 +210,38 @@ class StateManagedAgentBridge(FullAgentHooks):
         logger.debug(f"[StateBridge] User input added, dialog status: {self.session.status.value}")
 
         return user_msg
+
+    def _get_last_user_question(self) -> str:
+        """获取最近一条用户消息内容。"""
+        for message in reversed(self.session.messages):
+            if message.role == Role.USER:
+                return (message.content or "").strip()
+        return ""
+
+    def _capture_pending_round(self) -> None:
+        """在暂停时保存未完成的 user/assistant 轮次，供后续恢复。"""
+        if not self.session.streaming_message:
+            return
+
+        last_user = self._get_last_user_question()
+        partial_answer = (self.session.streaming_message.content or "").strip()
+        if not last_user or not partial_answer:
+            return
+
+        self.pending_round = {
+            "user": last_user,
+            "assistant": partial_answer,
+        }
+
+    def _consume_pending_round(self, current_user: str | None) -> tuple[Optional[dict[str, str]], bool]:
+        """读取待恢复轮次，并判断是否为同一用户问题的继续。"""
+        if not self.pending_round:
+            return None, False
+
+        pending = dict(self.pending_round)
+        current_text = (current_user or "").strip()
+        is_resume_same_turn = bool(current_text) and current_text == pending["user"]
+        return pending, is_resume_same_turn
 
     # ===== Agent Hook Handlers =====
 
@@ -395,6 +428,8 @@ class StateManagedAgentBridge(FullAgentHooks):
         """停止处理"""
         old_status = self.session.status
 
+        self._capture_pending_round()
+
         # 保存当前的流式消息
         if self.session.streaming_message:
             self.session.streaming_message.status = MessageStatus.COMPLETED
@@ -410,12 +445,41 @@ class StateManagedAgentBridge(FullAgentHooks):
 
     def append_history_round(self, user_question: str, final_answer: str) -> None:
         """追加一轮历史，仅保留 user + final assistant。"""
-        append_history_round(self.history_rounds, user_question, final_answer)
+        user_text = (user_question or "").strip()
+        answer_text = (final_answer or "").strip()
+
+        pending, is_resume_same_turn = self._consume_pending_round(user_text)
+        if pending and not is_resume_same_turn:
+            append_history_round(
+                self.history_rounds,
+                pending["user"],
+                pending["assistant"],
+            )
+
+        if pending and is_resume_same_turn:
+            answer_text = f"{pending['assistant']}{answer_text}".strip()
+
+        append_history_round(self.history_rounds, user_text, answer_text)
+        self.pending_round = None
 
     def build_window_messages(self, current_user: str, window_rounds: Optional[int] = None) -> list[dict[str, Any]]:
         """按滑动窗口构建 OpenAI messages（仅 user/assistant + 当前 user）。"""
         limit = self.window_rounds if window_rounds is None else max(1, int(window_rounds))
-        return build_window_messages_from_rounds(self.history_rounds, current_user=current_user, window_rounds=limit)
+        pending, is_resume_same_turn = self._consume_pending_round(current_user)
+
+        history_rounds = list(self.history_rounds)
+        if pending:
+            history_rounds.append(pending)
+
+        effective_user = current_user
+        if pending and is_resume_same_turn:
+            effective_user = "Continue from your last unfinished answer. Keep the same context, do not restart, and continue seamlessly from the partial answer above."
+
+        return build_window_messages_from_rounds(
+            history_rounds,
+            current_user=effective_user,
+            window_rounds=limit,
+        )
 
     def _has_pending_tool_calls(self) -> bool:
         """检查是否有未完成的工具调用"""
@@ -447,6 +511,7 @@ class DialogStore:
             return
         self._sessions: dict[str, DialogSession] = {}
         self._bridges: dict[str, StateManagedAgentBridge] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
         self._initialized = True
 
     def create_dialog(self, dialog_id: str, title: str = "新对话", agent_name: str = "TeamLeadAgent") -> StateManagedAgentBridge:
@@ -485,7 +550,33 @@ class DialogStore:
             del self._bridges[dialog_id]
             if dialog_id in self._sessions:
                 del self._sessions[dialog_id]
+            self._tasks.pop(dialog_id, None)
             logger.debug(f"[DialogStore] Deleted dialog: {dialog_id}")
+            return True
+        return False
+
+    def set_task(self, dialog_id: str, task: asyncio.Task) -> None:
+        """记录对话框对应的运行任务。"""
+        self._tasks[dialog_id] = task
+
+    def get_task(self, dialog_id: str) -> Optional[asyncio.Task]:
+        """获取对话框运行任务。"""
+        return self._tasks.get(dialog_id)
+
+    def clear_task(self, dialog_id: str, task: Optional[asyncio.Task] = None) -> None:
+        """清理任务引用，避免取消已替换的新任务。"""
+        current = self._tasks.get(dialog_id)
+        if not current:
+            return
+        if task is not None and current is not task:
+            return
+        self._tasks.pop(dialog_id, None)
+
+    def cancel_task(self, dialog_id: str) -> bool:
+        """取消对话框当前任务。"""
+        task = self._tasks.get(dialog_id)
+        if task and not task.done():
+            task.cancel()
             return True
         return False
 

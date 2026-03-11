@@ -120,6 +120,48 @@ class TodoStore:
 
         return True, ""
 
+    def _normalize_items(self, items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+        """
+        对任务列表做容错归一化。
+
+        Returns:
+            (normalized_items, truncated)
+        """
+        normalized: list[dict[str, Any]] = []
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            status = str(item.get("status", "pending"))
+            if status not in self.VALID_STATUSES:
+                status = "pending"
+            normalized.append(
+                {
+                    "id": str(item.get("id", str(i + 1))),
+                    "text": text,
+                    "status": status,
+                }
+            )
+
+        truncated = False
+        if len(normalized) > self.MAX_ITEMS:
+            normalized = normalized[: self.MAX_ITEMS]
+            truncated = True
+
+        # 保证仅有一个 in_progress，多余项自动降级为 pending。
+        seen_in_progress = False
+        for item in normalized:
+            if item["status"] != "in_progress":
+                continue
+            if not seen_in_progress:
+                seen_in_progress = True
+            else:
+                item["status"] = "pending"
+
+        return normalized, truncated
+
     def get_state(self, dialog_id: str) -> TodoState:
         """获取或创建对话的 Todo 状态。"""
         with self._lock:
@@ -140,8 +182,11 @@ class TodoStore:
         Returns:
             (success, message)
         """
+        # 先归一化，再校验，避免模型轻微偏差直接失败。
+        normalized_items, truncated = self._normalize_items(items)
+
         # 校验数据
-        valid, error = self._validate_items(items)
+        valid, error = self._validate_items(normalized_items)
         if not valid:
             logger.warning(f"[TodoStore] Validation failed for {dialog_id}: {error}")
             return False, error
@@ -149,7 +194,7 @@ class TodoStore:
         # 更新状态
         with self._lock:
             state = self.get_state(dialog_id)
-            state.items = [TodoItem.from_dict(item) for item in items]
+            state.items = [TodoItem.from_dict(item) for item in normalized_items]
             state.used_todo_in_round = True
             state.rounds_since_todo = 0
             state.updated_at = time.time()
@@ -166,6 +211,8 @@ class TodoStore:
         )
 
         logger.debug(f"[TodoStore] Updated {len(items)} todos for {dialog_id}")
+        if truncated:
+            return True, f"Truncated to {self.MAX_ITEMS} items"
         return True, ""
 
     def mark_todo_used(self, dialog_id: str) -> None:

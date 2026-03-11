@@ -199,19 +199,36 @@ export function useAgentApi() {
 
   const getAgentStatus = useCallback(async (): Promise<
     ApiResponse<{
-      is_running: boolean;
-      current_dialog_id: string | null;
-      model: string;
+      active_dialogs: Array<{
+        dialog_id: string;
+        status: string;
+      }>;
+      total_dialogs: number;
     }>
   > => {
     return request("/api/agent/status");
   }, [request]);
 
-  const stopAgent = useCallback(async (): Promise<ApiResponse<void>> => {
+  const stopAgent = useCallback(async (): Promise<
+    ApiResponse<{ stopped_dialogs: string[]; count: number }>
+  > => {
     return request("/api/agent/stop", {
       method: "POST",
     });
   }, [request]);
+
+  const resumeDialog = useCallback(
+    async (
+      dialogId: string,
+    ): Promise<
+      ApiResponse<{ dialog_id: string; status: string; message?: string }>
+    > => {
+      return request(`/api/dialogs/${dialogId}/resume`, {
+        method: "POST",
+      });
+    },
+    [request],
+  );
 
   const getPendingSkillEdits = useCallback(
     async (dialogId?: string): Promise<ApiResponse<SkillEditApproval[]>> => {
@@ -258,6 +275,7 @@ export function useAgentApi() {
     // Agent
     getAgentStatus,
     stopAgent,
+    resumeDialog,
     // Skill Edit HITL
     getPendingSkillEdits,
     decideSkillEdit,

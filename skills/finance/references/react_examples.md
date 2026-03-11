@@ -1,61 +1,71 @@
-# 示例库与使用示例
+# 示例库与模板映射
 
-## 三、内置问题 - SQL 示例库（精准匹配需求生成，风格 / 逻辑统一）
+本文件用于把常见业务问题映射到 `sql_templates.md` 中的模板。
 
-**Q2：FY26 计划了多少 HR 费用预算？（明细查询 + 单独聚合汇总）**
+## Q1 预算汇总
 
-需求特征：筛选指定 Year/Scenario/Function，先查明细，再单独聚合总金额；聚合用 SUM (CAST ([Amount] AS FLOAT))。
+- 问题类型：某年某场景某职能费用汇总
+- 使用模板：`TEMPLATE_SUMMARY_BY_FILTERS`
 
-统一示例：scripts/example_overview.py（Python 生成 → 执行 SQL）
+## Q2 预算 vs 实际对比
 
-### 3.2 复杂分摊计算类（跨表关联）
+- 问题类型：两个周期金额差异与变化率
+- 使用模板：`TEMPLATE_VARIANCE_BETWEEN_PERIODS`
 
-**Q3：FY25 实际分摊给 CT 的 IT 费用是多少？（双表联查 + BL 维度分摊 + 聚合）**
+## Q3 分摊金额
 
-需求特征：主表 + 规则表四重关联，按 BL 字段筛选分摊主体，核心计算：基础金额 × 分摊比例，按维度分组聚合。
+- 问题类型：按 BL 或 CC 计算分摊金额
+- 使用模板：`TEMPLATE_ALLOCATION_COST`
 
-说明：分摊模板的具体 SQL 已由脚本维护为 `ALLOC_TEMPLATE` 字符串，不再在文档中直接输出复杂 SQL。请在 Python 中调用 `generate_alloc_sql(...)` 以获得单条 CTE SQL，并执行 SQL 后在 Python 中做汇总/对比分析。
+### 分摊场景识别示例（避免漏判）
 
-统一示例：scripts/example_overview.py
+- 示例 1：`FY25 实际分摊给 CT 的 IT 费用是多少？`
+  - 识别：分摊场景
+  - Function：`IT Allocation`
+  - 维度：`r.[BL] = 'CT'`
+  - 关联表：`CostDataBase + Rate`
 
-**Q4：分摊给 413001 的 HR 费用变化 (FY26 BGT vs FY25 Actual)（双表联查 + CC 维度 + 跨周期对比 + UNION ALL）**
+- 示例 2：`FY26 预算分摊给 413001 的 HR 费用是多少？`
+  - 识别：分摊场景
+  - Function：`HR Allocation`
+  - 维度：`r.[CC] = '413001'`
+  - 关联表：`CostDataBase + Rate`
 
-需求特征：双表联查 + CC 字段优先筛选，跨 Year/Scenario 对比，UNION ALL 合并结果，按月排序。
+- 示例 3：`比较 FY26 BGT 分摊给 413001 与 FY25 Actual 分摊给 XP 的 HR 费用`
+  - 识别：分摊 + 跨周期对比
+  - 模板组合：`TEMPLATE_ALLOCATION_COST` + `TEMPLATE_VARIANCE_BETWEEN_PERIODS`
+  - 若 CC/BL 归属冲突：增加 `CCMapping` 探测与映射
 
-说明：Q4 的复杂 SQL 已改造成调用 `generate_alloc_sql()` 的流程，建议系统执行步骤如下：
+### 触发关键词（命中任一即优先按分摊处理）
 
-1. 在 Python 中调用 `generate_alloc_sql(years=['FY26','FY25'], scenarios=['Budget1','Actual'], function_name='HR Allocation', party_field='t7.[CC]', party_value="'413001'")` 生成 SQL 字符串。
-2. 使用 SQL 执行工具执行生成的 SQL 并返回年度分摊与同比对比结果。
-3. 在 Python 中对结果做进一步分析或直接输出自然语言结论：
-   - 提取各年的年度分摊金额（Year_Allocated_Cost）；
-   - 查看同比差值与变动率（Allocated_Cost_Diff、Allocated_Cost_Diff_Rate(%)）。
-   - 差值 > 0 表示增加，差值 < 0 表示减少。
-4. 将分析结果以自然语言回答给用户（示例："FY26 分摊给 413001 的年度分摊金额为 X，较 FY25 增长 Y，增幅 Z%"）。
+- `分摊`
+- `allocation`
+- `allocated to`
+- `按比例`
+- `分摊给`
+- `rate`
 
-统一示例：scripts/example_overview.py
+### 反例与正例（防止生成劣质 SQL）
 
-### 3.3 同比 / 环比分析与趋势类（CTE 实现 + 变化率 / 环比计算）
+- 反例：只按 `Month` 联 `Rate`，且没有 `Key` 约束。
+- 正例：必须使用四重关联
+  - `c.[Year] = r.[Year]`
+  - `c.[Scenario] = r.[Scenario]`
+  - `c.[Key] = r.[Key]`
+  - `c.[Month] = r.[Month]`
 
-**Q5：采购费用从 FY25 Actual 到 FY26 BGT 的变化？（CTE + 跨周期对比 + 变化额 / 变化率计算）**
+- 反例：`c.[Function] = 'IT Allocation'` 但不限制 `c.[Key]`。
+- 正例：`IT Allocation` 同时要求 `c.[Key] = '480056 Cycle'`；`HR Allocation` 同时要求 `c.[Key] = '480055 Cycle'`。
 
-需求特征：单条 SQL 实现，CTE 分步计算基础数据、提取对比值、计算变化额 / 变化率，UNION ALL 合并结果，排序键控制展示顺序；变化率含除零保护，保留 2 位小数。
+- 反例：年份直接写 `2025`（若库内是 `FY25`）。
+- 正例：先探测 Year/Scenario 枚举值，再填入模板参数。
 
-统一示例：scripts/example_overview.py（Python 生成 → 执行 SQL → Python 分析）
+## Q4 月度趋势
 
-**Q6：HR 费用的月度趋势如何？（CTE + 月度汇总 + 环比增长率计算）**
+- 问题类型：按月输出金额和环比
+- 使用模板：`TEMPLATE_MONTHLY_TREND`
 
-需求特征：CTE 生成月度基础数据（含 month_num 数字排序），自关联实现环比计算，环比增长率含除零 / 空值保护，保留 2 位小数，按 month_num 升序排序。
+## 统一执行方式
 
-统一示例：scripts/example_overview.py（Python 生成 → 执行 SQL → Python 分析）
-
-**Q7：26 财年预算分摊给 413001 的 HR 费用和 25 财年实际分摊给 XP 的 HR 费用对比变化（跨维度跨周期对比）**
-
-需求特征：双表联查，不同周期（FY26 Budget1/FY25 Actual）+ 不同分摊维度（CC/BL）对比，参考 Q4/Q5 逻辑，合并分摊计算 + 变化率计算。
-
-核心逻辑：CC 号 413001、BL 值 XP 分别作为不同周期的筛选条件，这两个赛选字段有优先级，元数据中 BL 与 CC 是一对多关系，如果 CC 号包含在 BL 的取值范围中则以 CC 号作为筛选字段。在当前场景下已知 413001 属于 XP 因此以 CC 号作为筛选条件。双表四重关联，计算各周期分摊金额后对比变化额 / 变化率。
-
-统一示例：scripts/example_overview.py（Python 生成 → 执行 SQL → Python 对比分析）
-
-```
-
-```
+- SQL 生成后，必须使用 `scripts/sql_query.py` 执行。
+- 若执行脚本返回结构化校验错误，先修复 SQL 再执行。

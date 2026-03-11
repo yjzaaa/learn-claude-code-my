@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from loguru import logger
@@ -148,8 +149,26 @@ class TodoManagerHook(FullAgentHooks):
         if not result or not result.strip():
             return None
 
+        raw = result.strip()
+
+        # 优先提取 fenced json，处理模型输出 ```json ... ``` 场景。
+        fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*\}|\[[\s\S]*\])\s*```", raw, re.IGNORECASE)
+        if fenced_match:
+            raw = fenced_match.group(1).strip()
+
+        # 兼容 JSON 字符串包裹 JSON 内容的情况。
+        if (raw.startswith('"') and raw.endswith('"')) or (
+            raw.startswith("'") and raw.endswith("'")
+        ):
+            try:
+                unwrapped = json.loads(raw)
+                if isinstance(unwrapped, str) and unwrapped.strip():
+                    raw = unwrapped.strip()
+            except Exception:
+                pass
+
         try:
-            data = json.loads(result)
+            data = json.loads(raw)
 
             # 如果是数组，直接使用
             if isinstance(data, list):
@@ -170,18 +189,53 @@ class TodoManagerHook(FullAgentHooks):
             logger.warning(
                 f"[TodoManagerHook] Could not find items in result: {result[:200]}"
             )
-            return None
 
         except json.JSONDecodeError:
             logger.warning(
                 f"[TodoManagerHook] Failed to parse result as JSON: {result[:200]}"
             )
-            return None
         except Exception as e:
             logger.warning(
                 f"[TodoManagerHook] Error parsing result: {e}"
             )
-            return None
+
+        # 文本兜底：解析如下格式
+        # [ ] #1: do X
+        # 1. do Y
+        text_items: list[dict[str, Any]] = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            m = re.match(r"^\[( |x|>|X)\]\s*(?:#?(\S+)\s*[:.-]\s*)?(.*)$", line)
+            if m:
+                marker = m.group(1)
+                item_id = m.group(2) or str(len(text_items) + 1)
+                text = (m.group(3) or "").strip()
+                if not text:
+                    continue
+                status = "pending"
+                if marker in {"x", "X"}:
+                    status = "completed"
+                elif marker == ">":
+                    status = "in_progress"
+                text_items.append({"id": item_id, "text": text, "status": status})
+                continue
+
+            m = re.match(r"^\d+[\.)]\s*(.*)$", line)
+            if m:
+                text = (m.group(1) or "").strip()
+                if text:
+                    text_items.append(
+                        {
+                            "id": str(len(text_items) + 1),
+                            "text": text,
+                            "status": "pending",
+                        }
+                    )
+
+        return text_items or None
 
     def on_complete(self, content: str) -> None:
         """忽略消息完成。"""
