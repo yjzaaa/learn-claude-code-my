@@ -9,18 +9,17 @@ import type { ChatCompletionMessageToolCall } from "./openai";
 
 /** Agent 事件类型 */
 export type AgentEventType =
-  | "agent:message_start" // 助手消息开始
-  | "agent:content_delta" // 内容增量
-  | "agent:reasoning_delta" // 推理内容增量 (DeepSeek-R1等)
-  | "agent:tool_call" // 工具调用
-  | "agent:tool_result" // 工具执行结果
+  | "agent:message_start"    // 助手消息开始
+  | "agent:content_delta"    // 内容增量
+  | "agent:reasoning_delta"  // 推理内容增量 (DeepSeek-R1等)
+  | "agent:tool_call"        // 工具调用
+  | "agent:tool_result"      // 工具执行结果
   | "agent:message_complete" // 消息完成
   | "agent:run_summary" // 运行摘要/钩子统计
   | "agent:error" // 错误
   | "agent:stopped" // 停止
-  | "todo:updated" // Todo 列表更新
-  | "todo:reminder" // Todo 提醒
-  | "session:hard_blocked"; // 会话硬约束阻断
+  | "todo:updated"   // Todo 列表更新
+  | "todo:reminder"; // Todo 提醒
 
 export interface HookToolCallSummary {
   name: string;
@@ -187,15 +186,6 @@ export interface TodoReminderEvent extends AgentEventBase {
   };
 }
 
-/** 会话硬阻断事件 */
-export interface SessionHardBlockedEvent extends AgentEventBase {
-  type: "session:hard_blocked";
-  data: {
-    reasons: string[];
-    unfinished_todo_count?: number;
-  };
-}
-
 /** 联合类型: 所有 Agent 事件 */
 export type AgentEvent =
   | AgentMessageStartEvent
@@ -208,8 +198,7 @@ export type AgentEvent =
   | AgentErrorEvent
   | AgentStoppedEvent
   | TodoUpdateEvent
-  | TodoReminderEvent
-  | SessionHardBlockedEvent;
+  | TodoReminderEvent;
 
 /** 检查是否为 Agent 事件 */
 export function isAgentEvent(data: unknown): data is AgentEvent {
@@ -217,9 +206,7 @@ export function isAgentEvent(data: unknown): data is AgentEvent {
   const evt = data as AgentEvent;
   return (
     typeof evt.type === "string" &&
-    (evt.type.startsWith("agent:") ||
-      evt.type.startsWith("todo:") ||
-      evt.type.startsWith("session:")) &&
+    (evt.type.startsWith("agent:") || evt.type.startsWith("todo:")) &&
     typeof evt.dialog_id === "string"
   );
 }
@@ -248,10 +235,6 @@ export interface AgentStreamState {
   roundsSinceTodo: number;
   /** 是否显示 todo 提醒 */
   showTodoReminder: boolean;
-  /** 会话级硬约束阻断原因 */
-  hardBlockedReasons: string[];
-  /** 会话级硬约束提示文本 */
-  hardBlockedMessage: string;
 }
 
 /** 初始流式状态 */
@@ -268,7 +251,5 @@ export function createInitialStreamState(): AgentStreamState {
     todos: null,
     roundsSinceTodo: 0,
     showTodoReminder: false,
-    hardBlockedReasons: [],
-    hardBlockedMessage: "",
   };
 }

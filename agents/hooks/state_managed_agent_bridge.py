@@ -185,17 +185,6 @@ class StateManagedAgentBridge(FullAgentHooks):
         }
         self._schedule_broadcast(event)
 
-    def emit_custom_event(self, event_type: str, data: dict[str, Any] | None = None) -> None:
-        """推送自定义事件到当前对话订阅方。"""
-        payload = {
-            "type": event_type,
-            "dialog_id": self.dialog_id,
-            "timestamp": time.time(),
-        }
-        if data:
-            payload.update(data)
-        self._schedule_broadcast(payload)
-
     def _gen_id(self, prefix: str = "msg") -> str:
         """生成唯一ID"""
         return f"{prefix}_{self.dialog_id}_{int(time.time() * 1000)}"

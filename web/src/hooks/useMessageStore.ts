@@ -83,8 +83,6 @@ function useMessageStoreInstance() {
       todos: null,
       roundsSinceTodo: 0,
       showTodoReminder: false,
-      hardBlockedReasons: [],
-      hardBlockedMessage: "",
     },
   });
 
@@ -668,26 +666,6 @@ function useMessageStoreInstance() {
             };
           }
 
-          case "session:hard_blocked": {
-            const reasons = event.data?.reasons || [];
-            const todoCount = event.data?.unfinished_todo_count;
-            const todoTip =
-              typeof todoCount === "number" && todoCount > 0
-                ? `（未完成 todo: ${todoCount}）`
-                : "";
-            const message =
-              `当前轮次被硬约束阻断：${reasons.join(", ")} ${todoTip}`.trim();
-
-            return {
-              ...prev,
-              streamState: {
-                ...streamState,
-                hardBlockedReasons: reasons,
-                hardBlockedMessage: message,
-              },
-            };
-          }
-
           default:
             return prev;
         }
@@ -769,8 +747,6 @@ function useMessageStoreInstance() {
             todos: null,
             roundsSinceTodo: 0,
             showTodoReminder: false,
-            hardBlockedReasons: [],
-            hardBlockedMessage: "",
           },
         };
       }
@@ -810,8 +786,6 @@ function useMessageStoreInstance() {
           todos: null,
           roundsSinceTodo: 0,
           showTodoReminder: false,
-          hardBlockedReasons: [],
-          hardBlockedMessage: "",
         },
       };
     });
