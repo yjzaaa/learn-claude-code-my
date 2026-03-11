@@ -492,6 +492,18 @@ export function useWebSocket(): UseWebSocketReturn {
               });
               break;
             }
+
+            case "session:hard_blocked": {
+              globalEventEmitter.emit("agent:event", {
+                type: "session:hard_blocked",
+                dialog_id: msg.dialog_id,
+                data: {
+                  reasons: msg.reasons || [],
+                  unfinished_todo_count: msg.unfinished_todo_count,
+                },
+              });
+              break;
+            }
           }
         } catch (e) {
           console.error("[WebSocket] Failed to parse message:", e);
