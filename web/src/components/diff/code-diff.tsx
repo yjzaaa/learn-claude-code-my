@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, useCallback, type WheelEvent } from "react";
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  type WheelEvent,
+  type MouseEvent,
+} from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { diffLines } from "diff";
 import { cn } from "@/lib/utils";
@@ -36,6 +44,7 @@ export function CodeDiff({
   const [showDiffOnly, setShowDiffOnly] = useState(true);
   const [enableWordDiff, setEnableWordDiff] = useState(true);
   const [contextLines, setContextLines] = useState(3);
+  const [isDragging, setIsDragging] = useState(false);
   const styles = useMemo(
     () => ({
       variables: {
@@ -90,6 +99,10 @@ export function CodeDiff({
           "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace",
         fontSize: "12px",
         lineHeight: "1.45",
+        whiteSpace: "pre",
+      },
+      titleBlock: {
+        whiteSpace: "pre",
       },
     }),
     [],
@@ -120,13 +133,100 @@ export function CodeDiff({
 
     return { added, removed };
   }, [oldSource, newSource]);
+  const longestLineLength = useMemo(() => {
+    const allLines = `${oldSource}\n${newSource}`.split("\n");
+    let maxLen = 0;
+    for (const line of allLines) {
+      if (line.length > maxLen) maxLen = line.length;
+    }
+    return maxLen;
+  }, [oldSource, newSource]);
+
+  const diffMinWidthPx = useMemo(() => {
+    const charWidth = 7;
+    const basePadding = viewMode === "split" ? 520 : 300;
+    const estimated = longestLineLength * charWidth + basePadding;
+    return Math.max(900, Math.min(6000, estimated));
+  }, [longestLineLength, viewMode]);
+
   const hasChanges = diffStats.added > 0 || diffStats.removed > 0;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    scrollLeft: number;
+    scrollTop: number;
+    isDragging: boolean;
+  } | null>(null);
 
   const handleDiffWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
       e.stopPropagation();
     }
+  }, []);
+
+  const handleMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    e.preventDefault();
+
+    if (
+      el.scrollWidth <= el.clientWidth &&
+      el.scrollHeight <= el.clientHeight
+    ) {
+      return;
+    }
+
+    dragStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+      isDragging: false,
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleWindowMouseMove = (e: globalThis.MouseEvent) => {
+      const el = scrollRef.current;
+      const drag = dragStateRef.current;
+      if (!el || !drag) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (!drag.isDragging && Math.abs(dx) + Math.abs(dy) < 4) {
+        return;
+      }
+
+      drag.isDragging = true;
+      setIsDragging(true);
+      e.preventDefault();
+      el.scrollLeft = drag.scrollLeft - dx;
+      // Keep slight vertical panning support but prioritize horizontal movement.
+      el.scrollTop = drag.scrollTop - dy * 0.35;
+    };
+
+    const handleWindowMouseUp = () => {
+      if (!dragStateRef.current) return;
+      dragStateRef.current = null;
+      setIsDragging(false);
+    };
+
+    window.addEventListener("mousemove", handleWindowMouseMove);
+    window.addEventListener("mouseup", handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleWindowMouseMove);
+      window.removeEventListener("mouseup", handleWindowMouseUp);
+    };
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (!dragStateRef.current) return;
+    if (!dragStateRef.current.isDragging) return;
+    setIsDragging(false);
   }, []);
 
   return (
@@ -224,23 +324,43 @@ export function CodeDiff({
 
       <div className="rounded-xl border border-zinc-200 dark:border-zinc-700">
         <div
+          ref={scrollRef}
           onWheel={handleDiffWheel}
-          className="max-h-[460px] overflow-auto overscroll-contain"
+          onMouseDown={handleMouseDown}
+          onMouseLeave={handleMouseLeave}
+          className="max-h-[460px] overflow-x-auto overflow-y-auto overscroll-contain touch-pan-x"
+          style={{ cursor: isDragging ? "grabbing" : "grab" }}
         >
-          <ReactDiffViewer
-            oldValue={oldSource}
-            newValue={newSource}
-            splitView={viewMode === "split"}
-            compareMethod={DiffMethod.WORDS}
-            showDiffOnly={showDiffOnly}
-            hideLineNumbers={false}
-            disableWordDiff={!enableWordDiff}
-            leftTitle={oldTitle}
-            rightTitle={newTitle}
-            useDarkTheme={false}
-            styles={styles}
-            extraLinesSurroundingDiff={contextLines}
-          />
+          <div
+            className="min-w-max diff-drag-surface"
+            style={{ minWidth: `${diffMinWidthPx}px` }}
+          >
+            <ReactDiffViewer
+              oldValue={oldSource}
+              newValue={newSource}
+              splitView={viewMode === "split"}
+              compareMethod={DiffMethod.WORDS}
+              showDiffOnly={showDiffOnly}
+              hideLineNumbers={false}
+              disableWordDiff={!enableWordDiff}
+              leftTitle={oldTitle}
+              rightTitle={newTitle}
+              useDarkTheme={false}
+              styles={styles}
+              extraLinesSurroundingDiff={contextLines}
+            />
+          </div>
+          <style jsx global>{`
+            .diff-drag-surface table {
+              width: max-content !important;
+              min-width: 100% !important;
+            }
+
+            .diff-drag-surface th,
+            .diff-drag-surface td {
+              white-space: pre !important;
+            }
+          `}</style>
         </div>
       </div>
     </div>

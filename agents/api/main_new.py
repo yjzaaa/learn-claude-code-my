@@ -35,6 +35,7 @@ from ..hooks.state_managed_agent_bridge import (
 from ..hooks.context_compact_hook import ContextCompactHook
 from ..hooks.composite.composite_hooks import CompositeHooks
 from ..hooks.todo_manager_hook import TodoManagerHook
+from ..hooks.sql_valid_hook import SqlValidHook
 from ..session.skill_edit_hitl import skill_edit_hitl_store
 from ..session.todo_hitl import todo_store, is_todo_hook_enabled
 from ..session.runtime_context import set_current_dialog_id, reset_current_dialog_id
@@ -632,8 +633,9 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
         inject_todo_tool(agent, dialog_id)
 
         todo_hook = TodoManagerHook(dialog_id=dialog_id, store=todo_store)
+        sql_valid_hook = SqlValidHook(dialog_id=dialog_id)
         compact_hook = ContextCompactHook(bridge=bridge)
-        agent.set_hook_delegate(CompositeHooks([todo_hook, compact_hook, bridge]))
+        agent.set_hook_delegate(CompositeHooks([todo_hook, sql_valid_hook, compact_hook, bridge]))
 
         # 运行 Agent
         dialog_token = set_current_dialog_id(dialog_id)
@@ -649,8 +651,12 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
             max_sql_enforce_retries = max(
                 0, int(os.getenv("SQL_ENFORCE_MAX_RETRIES", "2"))
             )
+            max_sql_workflow_enforce_retries = max(
+                0, int(os.getenv("SQL_WORKFLOW_ENFORCE_MAX_RETRIES", "3"))
+            )
             enforce_attempt = 0
             sql_enforce_attempt = 0
+            sql_workflow_enforce_attempt = 0
             final_answer = ""
 
             while True:
@@ -661,8 +667,9 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
                     1 for item in state.items if item.status != "completed"
                 )
                 sql_failed = _latest_sql_tool_failed(messages)
+                sql_workflow_valid = sql_valid_hook.is_sql_workflow_valid()
 
-                if unfinished_count == 0 and not sql_failed:
+                if unfinished_count == 0 and not sql_failed and sql_workflow_valid:
                     break
 
                 if sql_failed:
@@ -683,6 +690,31 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
                                 "content": (
                                     "<reminder>SQL hard constraint: latest SQL execution/validation failed. "
                                     "You MUST correct and re-run SQL before ending this round.</reminder>"
+                                ),
+                            }
+                        )
+                        continue
+
+                if not sql_workflow_valid:
+                    if sql_workflow_enforce_attempt >= max_sql_workflow_enforce_retries:
+                        logger.warning(
+                            "[ProcessAgent] SQL workflow hard-constraint retries exhausted, "
+                            f"dialog={dialog_id}"
+                        )
+                    else:
+                        sql_workflow_enforce_attempt += 1
+                        logger.info(
+                            "[ProcessAgent] SQL workflow hard-constraint triggered, "
+                            f"attempt={sql_workflow_enforce_attempt}"
+                        )
+                        messages.append(
+                            {
+                                "role": "system",
+                                "content": (
+                                    "<reminder>SqlValidHook: current SQL evidence is insufficient and may be fake data. "
+                                    "You MUST first run at least one schema exploration SQL "
+                                    "(information_schema/sys.tables/sys.columns/pg_catalog), "
+                                    "then run final data query SQL. Complete these two steps before ending this round.</reminder>"
                                 ),
                             }
                         )
