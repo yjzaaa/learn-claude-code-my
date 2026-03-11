@@ -35,10 +35,8 @@ from ..hooks.state_managed_agent_bridge import (
 from ..hooks.context_compact_hook import ContextCompactHook
 from ..hooks.composite.composite_hooks import CompositeHooks
 from ..hooks.todo_manager_hook import TodoManagerHook
-from ..hooks.session_tracker_hook import SessionTrackerHook
 from ..session.skill_edit_hitl import skill_edit_hitl_store
 from ..session.todo_hitl import todo_store, is_todo_hook_enabled
-from ..session.session_ledger import session_ledger_store
 from ..session.runtime_context import set_current_dialog_id, reset_current_dialog_id
 
 # 导入 WebSocket 组件
@@ -68,8 +66,8 @@ def _start_dialog_task(dialog_id: str, bridge: StateManagedAgentBridge) -> None:
     dialog_store.set_task(dialog_id, task)
 
 
-def _latest_sql_tool_status(messages: list[dict[str, Any]]) -> tuple[bool, str]:
-    """Return whether latest SQL-related tool outcome failed and its error code."""
+def _latest_sql_tool_failed(messages: list[dict[str, Any]]) -> bool:
+    """Return whether the latest SQL-related tool outcome is a failure."""
     for msg in reversed(messages):
         if msg.get("role") != "tool":
             continue
@@ -90,13 +88,13 @@ def _latest_sql_tool_status(messages: list[dict[str, Any]]) -> tuple[bool, str]:
         if isinstance(error, dict):
             code = str(error.get("code", ""))
             if code in {"SQL_EXECUTION_FAILED", "SQL_VALIDATION_FAILED", "QUERY_ONLY_ENFORCED"}:
-                return True, code
+                return True
 
         # Consider this a successful SQL query outcome and stop looking further back.
         if "rows" in data and "limit" in data:
-            return False, ""
+            return False
 
-    return False, ""
+    return False
 
 
 @asynccontextmanager
@@ -472,18 +470,6 @@ def create_app() -> FastAPI:
             "data": todo_store.get_todos(dialog_id)
         }
 
-    @app.get("/api/dialogs/{dialog_id}/session-ledger")
-    async def get_dialog_session_ledger(dialog_id: str):
-        """获取对话框的会话追踪账本。"""
-        session = dialog_store.get_session(dialog_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Dialog not found")
-
-        return {
-            "success": True,
-            "data": session_ledger_store.get_snapshot(dialog_id),
-        }
-
     # ========== WebSocket 端点 ==========
 
     @app.websocket("/ws/{client_id}")
@@ -646,9 +632,8 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
         inject_todo_tool(agent, dialog_id)
 
         todo_hook = TodoManagerHook(dialog_id=dialog_id, store=todo_store)
-        tracker_hook = SessionTrackerHook(dialog_id=dialog_id, ledger=session_ledger_store)
         compact_hook = ContextCompactHook(bridge=bridge)
-        agent.set_hook_delegate(CompositeHooks([tracker_hook, todo_hook, compact_hook, bridge]))
+        agent.set_hook_delegate(CompositeHooks([todo_hook, compact_hook, bridge]))
 
         # 运行 Agent
         dialog_token = set_current_dialog_id(dialog_id)
@@ -675,36 +660,10 @@ async def process_agent_request(dialog_id: str, bridge: StateManagedAgentBridge)
                 unfinished_count = sum(
                     1 for item in state.items if item.status != "completed"
                 )
-                sql_failed, sql_error_code = _latest_sql_tool_status(messages)
+                sql_failed = _latest_sql_tool_failed(messages)
 
-                hard_reasons: list[str] = []
-                if unfinished_count > 0:
-                    hard_reasons.append("TODO_UNFINISHED")
-                if sql_failed:
-                    hard_reasons.append(sql_error_code or "SQL_FAILED")
-
-                if not hard_reasons:
+                if unfinished_count == 0 and not sql_failed:
                     break
-
-                bridge.emit_custom_event(
-                    "session:hard_blocked",
-                    {
-                        "reasons": hard_reasons,
-                        "unfinished_todo_count": unfinished_count,
-                    },
-                )
-                session_ledger_store.record_correction(
-                    dialog_id,
-                    reason=";".join(hard_reasons),
-                    action="enforce_retry",
-                    blocked=True,
-                    metadata={
-                        "unfinished_todo_count": unfinished_count,
-                        "sql_error_code": sql_error_code,
-                        "todo_retries": enforce_attempt,
-                        "sql_retries": sql_enforce_attempt,
-                    },
-                )
 
                 if sql_failed:
                     if sql_enforce_attempt >= max_sql_enforce_retries:

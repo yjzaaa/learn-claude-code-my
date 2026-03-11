@@ -65,8 +65,6 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   const [editedSkillContent, setEditedSkillContent] = useState("");
   const [isDecidingSkillEdit, setIsDecidingSkillEdit] = useState(false);
   const [todoRoundFeedback, setTodoRoundFeedback] = useState<string>("");
-  const [sessionHardBlockFeedback, setSessionHardBlockFeedback] =
-    useState<string>("");
   const activeDialogIdRef = useRef<string>("");
   const rafRenderIdRef = useRef<number | null>(null);
 
@@ -509,18 +507,8 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
   useEffect(() => {
     if (isStreaming) {
       setIsPaused(false);
-      if (sessionHardBlockFeedback) {
-        setSessionHardBlockFeedback("");
-      }
     }
-  }, [isStreaming, sessionHardBlockFeedback]);
-
-  useEffect(() => {
-    const message = frameState.streamState.hardBlockedMessage || "";
-    if (message && message !== sessionHardBlockFeedback) {
-      setSessionHardBlockFeedback(message);
-    }
-  }, [frameState.streamState.hardBlockedMessage, sessionHardBlockFeedback]);
+  }, [isStreaming]);
 
   useEffect(() => {
     const wasStreaming = prevStreamingRef.current;
@@ -704,12 +692,6 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
       {todoRoundFeedback && (
         <div className="px-3 py-1 text-xs border-b text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-900/40">
           {todoRoundFeedback}
-        </div>
-      )}
-
-      {sessionHardBlockFeedback && (
-        <div className="px-3 py-1 text-xs border-b text-rose-700 bg-rose-50 border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-900/40">
-          {sessionHardBlockFeedback}
         </div>
       )}
 

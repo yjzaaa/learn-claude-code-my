@@ -187,14 +187,6 @@ export interface TodoReminderEvent {
   timestamp: number;
 }
 
-export interface SessionHardBlockedEvent {
-  type: "session:hard_blocked";
-  dialog_id: string;
-  reasons: string[];
-  unfinished_todo_count?: number;
-  timestamp: number;
-}
-
 export type ServerPushEvent =
   | DialogSnapshotEvent
   | StreamDeltaEvent
@@ -205,8 +197,7 @@ export type ServerPushEvent =
   | SkillEditResolvedEvent
   | SkillEditErrorEvent
   | TodoUpdatedEvent
-  | TodoReminderEvent
-  | SessionHardBlockedEvent;
+  | TodoReminderEvent;
 
 // 客户端发送的事件
 export interface SubscribeEvent {
