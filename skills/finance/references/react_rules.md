@@ -22,7 +22,7 @@
   CASE WHEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) > 1 THEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) / 100
   ELSE TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT)
   END, 0)
-- 别名规范：分摊金额别名为 [Allocated_Cost]，基础金额别名为 [Base_Cost]，比例别名为 [Allocation_Rate]，分摊主体别名为 [Allocated_CC/Allocated_BL]
+- 别名规范：分摊金额需命名为统一别名，例如 [Allocated_Cost]，基础金额为 [Base_Cost]，比例为 [Allocation_Rate]，分摊主体需明确标识为中心或业务线。
 - 分组规则：按 Year/Scenario/Function/分摊主体（CC/BL）/Month 分组，确保聚合粒度符合业务需求
 
 说明：为保持一致性与可复用性，所有分摊计算示例请改用 `ALLOC_TEMPLATE` 模板（见示例库）。模板先按月计算分摊，再按年或分摊主体汇总。

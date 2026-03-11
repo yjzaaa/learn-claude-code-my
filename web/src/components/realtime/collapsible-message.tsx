@@ -313,7 +313,7 @@ function FixedHeightSection({
         <div
           ref={scrollRef}
           className={cn(
-            "h-full overflow-y-auto scrollbar-thin p-3",
+            "h-full overflow-auto scrollbar-thin p-3",
             contentClassName,
           )}
         >

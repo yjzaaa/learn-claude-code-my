@@ -507,6 +507,12 @@ function useMessageStoreInstance() {
               result,
             });
 
+            // Todo tool results are already represented by todo:updated/todo:reminder events.
+            // Appending them as chat messages can visually override the actual final answer.
+            if (tool_name === "todo" || tool_name === "manage_todo_list") {
+              return prev;
+            }
+
             // 创建工具结果消息
             const toolResultMessage: ChatMessage = {
               id: `tool_result_${Date.now()}`,
