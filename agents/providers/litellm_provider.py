@@ -17,7 +17,7 @@ def _clear_proxy_env():
 
 class LiteLLMProvider(LLMProvider):
     """LiteLLM Provider 实现"""
-    
+
     def __init__(
         self,
         api_key: str | None = None,
@@ -27,40 +27,43 @@ class LiteLLMProvider(LLMProvider):
         timeout: float = 120.0,
         max_retries: int = 3,
         provider_id: str | None = None,
+        verbose_logging: bool = False,
         **kwargs: Any
     ):
         # 清除代理环境变量，避免连接问题
         _clear_proxy_env()
-        
+
         # 在导入 litellm 之前设置环境变量，避免启动时网络请求
         os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-        
+
         super().__init__(api_key, api_base, default_model, timeout, max_retries)
         self.provider_id = provider_id
         self.api_version = api_version
+        self.verbose_logging = verbose_logging
         self._configure_litellm(api_key, api_base)
-        self._suppress_litellm_logging()
-    
+        if not verbose_logging:
+            self._suppress_litellm_logging()
+
     def _suppress_litellm_logging(self) -> None:
         """禁用 LiteLLM 日志"""
         try:
             import litellm
             import logging
-            
+
             os.environ["LITELLM_LOG"] = "ERROR"
             litellm.suppress_debug_info = True
             setattr(litellm, "set_verbose", False)
             litellm.drop_params = True
             litellm.telemetry = False
-            
+
             # 禁用 tiktoken 以避免编码错误
             # 这会让 LiteLLM 跳过 token 计数，直接发送请求
             os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
-            
+
             # 禁用远程模型价格映射获取（避免启动时网络超时）
             litellm.suppress_debug_info = True
             litellm.turn_off_message_logging = True
-            
+
             # 设置 tiktoken 缓存目录（避免 Windows 权限问题）
             try:
                 import tempfile
@@ -69,7 +72,7 @@ class LiteLLMProvider(LLMProvider):
                 os.environ["TIKTOKEN_CACHE_DIR"] = tiktoken_cache
             except Exception:
                 pass
-            
+
             for logger_name in ["LiteLLM", "httpx", "httpcore", "openai"]:
                 logging.getLogger(logger_name).setLevel(logging.CRITICAL)
                 logging.getLogger(logger_name).disabled = True

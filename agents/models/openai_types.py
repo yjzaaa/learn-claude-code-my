@@ -1,17 +1,16 @@
 """
-OpenAI 原生风格数据模型
+OpenAI 原生风格数据模型 (Pydantic 版本)
 
 与 OpenAI API 完全兼容的消息格式，用于前后端通信。
-参考: https://platform.openai.com/docs/api-reference/chat
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
 from datetime import datetime
-import uuid
-import json
+from typing import Any, Literal, Optional
+from uuid import uuid4
+
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ============================================================================
@@ -21,94 +20,45 @@ import json
 ChatRole = Literal["system", "user", "assistant", "tool"]
 
 
-@dataclass
-class ChatCompletionMessageToolCall:
+class FunctionCall(BaseModel):
+    """函数调用定义"""
+    name: str
+    arguments: str  # JSON 字符串
+
+
+class ChatCompletionMessageToolCall(BaseModel):
     """工具调用定义 - OpenAI 标准格式"""
     id: str
     type: Literal["function"] = "function"
-    function: dict[str, str] = field(default_factory=dict)  # {"name": str, "arguments": str}
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "function": self.function
-        }
+    function: FunctionCall
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ChatCompletionMessageToolCall":
+        """从字典创建"""
+        func_data = data.get("function", {})
         return cls(
             id=data.get("id", ""),
             type=data.get("type", "function"),
-            function=data.get("function", {})
+            function=FunctionCall(
+                name=func_data.get("name", ""),
+                arguments=func_data.get("arguments", "")
+            )
         )
 
 
-@dataclass
-class ChatMessage:
+class ChatMessage(BaseModel):
     """
     聊天消息 - OpenAI 原生格式
-
-    字段:
-        id: 消息唯一标识符
-        role: 消息角色 (system/user/assistant/tool)
-        content: 消息内容 (文本或多模态内容)
-        reasoning_content: 推理内容 (仅推理模型如 DeepSeek-R1)
-        tool_calls: 工具调用列表 (仅 assistant 角色)
-        tool_call_id: 工具调用ID (仅 tool 角色)
-        name: 工具名称 (仅 tool 角色)
     """
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    model_config = ConfigDict(use_enum_values=True)
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
     role: ChatRole = "user"
     content: Optional[str] = None
     reasoning_content: Optional[str] = None
     tool_calls: Optional[list[ChatCompletionMessageToolCall]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """转换为 OpenAI API 格式"""
-        result: dict[str, Any] = {
-            "id": self.id,
-            "role": self.role,
-        }
-
-        if self.content is not None:
-            result["content"] = self.content
-
-        if self.reasoning_content is not None:
-            result["reasoning_content"] = self.reasoning_content
-
-        if self.tool_calls is not None:
-            result["tool_calls"] = [tc.to_dict() for tc in self.tool_calls]
-
-        if self.tool_call_id is not None:
-            result["tool_call_id"] = self.tool_call_id
-
-        if self.name is not None:
-            result["name"] = self.name
-
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ChatMessage":
-        """从 OpenAI API 格式创建"""
-        tool_calls = None
-        if "tool_calls" in data:
-            tool_calls = [
-                ChatCompletionMessageToolCall.from_dict(tc)
-                for tc in data["tool_calls"]
-            ]
-
-        return cls(
-            id=data.get("id", str(uuid.uuid4())),
-            role=data.get("role", "user"),
-            content=data.get("content"),
-            reasoning_content=data.get("reasoning_content"),
-            tool_calls=tool_calls,
-            tool_call_id=data.get("tool_call_id"),
-            name=data.get("name")
-        )
 
     @classmethod
     def user(cls, content: str) -> "ChatMessage":
@@ -145,90 +95,68 @@ class ChatMessage:
 # 工具定义
 # ============================================================================
 
-@dataclass
-class ChatCompletionTool:
+class ChatCompletionToolFunction(BaseModel):
+    """工具函数定义"""
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+class ChatCompletionTool(BaseModel):
     """工具定义 - OpenAI 函数调用格式"""
     type: Literal["function"] = "function"
-    function: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": self.type,
-            "function": self.function
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ChatCompletionTool":
-        return cls(
-            type=data.get("type", "function"),
-            function=data.get("function", {})
-        )
+    function: ChatCompletionToolFunction
 
 
 # ============================================================================
 # 流式响应
 # ============================================================================
 
-@dataclass
-class ChatCompletionChunk:
+class DeltaContent(BaseModel):
+    """增量内容"""
+    content: Optional[str] = None
+    tool_calls: Optional[list[dict[str, Any]]] = None
+
+
+class ChatCompletionChunkChoice(BaseModel):
+    """流式响应选择"""
+    index: int
+    delta: DeltaContent
+    finish_reason: Optional[str] = None
+
+
+class ChatCompletionChunk(BaseModel):
     """流式响应块 - OpenAI 流式格式"""
     id: str
     object: Literal["chat.completion.chunk"] = "chat.completion.chunk"
-    created: int = field(default_factory=lambda: int(datetime.now().timestamp()))
+    created: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
     model: str = ""
-    choices: list[dict[str, Any]] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "object": self.object,
-            "created": self.created,
-            "model": self.model,
-            "choices": self.choices
-        }
+    choices: list[ChatCompletionChunkChoice] = Field(default_factory=list)
 
     @classmethod
     def delta_content(cls, content: str, model: str = "", index: int = 0) -> "ChatCompletionChunk":
         """创建内容增量块"""
         return cls(
-            id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            id=f"chatcmpl-{uuid4().hex[:8]}",
             model=model,
-            choices=[{
-                "index": index,
-                "delta": {"content": content},
-                "finish_reason": None
-            }]
-        )
-
-    @classmethod
-    def delta_tool_call(
-        cls,
-        tool_call: ChatCompletionMessageToolCall,
-        model: str = "",
-        index: int = 0
-    ) -> "ChatCompletionChunk":
-        """创建工具调用增量块"""
-        return cls(
-            id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
-            model=model,
-            choices=[{
-                "index": index,
-                "delta": {"tool_calls": [tool_call.to_dict()]},
-                "finish_reason": None
-            }]
+            choices=[ChatCompletionChunkChoice(
+                index=index,
+                delta=DeltaContent(content=content),
+                finish_reason=None
+            )]
         )
 
     @classmethod
     def done(cls, model: str = "") -> "ChatCompletionChunk":
         """创建完成信号块"""
         return cls(
-            id=f"chatcmpl-{uuid.uuid4().hex[:8]}",
+            id=f"chatcmpl-{uuid4().hex[:8]}",
             model=model,
-            choices=[{
-                "index": 0,
-                "delta": {},
-                "finish_reason": "stop"
-            }]
+            choices=[ChatCompletionChunkChoice(
+                index=0,
+                delta=DeltaContent(),
+                finish_reason="stop"
+            )]
         )
 
 
@@ -236,82 +164,118 @@ class ChatCompletionChunk:
 # 对话会话
 # ============================================================================
 
-@dataclass
-class ChatSession:
+class ChatSession(BaseModel):
     """
     对话会话 - OpenAI 风格
-
-    包含消息历史和其他元数据
     """
     id: str
-    messages: list[ChatMessage] = field(default_factory=list)
+    messages: list[ChatMessage] = Field(default_factory=list)
     model: str = "gpt-4o"
-    created_at: int = field(default_factory=lambda: int(datetime.now().timestamp()))
-    updated_at: int = field(default_factory=lambda: int(datetime.now().timestamp()))
+    created_at: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
+    updated_at: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "messages": [m.to_dict() for m in self.messages],
-            "model": self.model,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
-        }
-
-    def add_message(self, message: ChatMessage) -> None:
+    def add_message(self, message: ChatMessage) -> "ChatSession":
         """添加消息并更新时间戳"""
         self.messages.append(message)
         self.updated_at = int(datetime.now().timestamp())
+        return self
 
     def get_messages_for_api(self) -> list[dict[str, Any]]:
         """获取用于 API 调用的消息列表"""
-        return [m.to_dict() for m in self.messages]
+        return [
+            {
+                "role": msg.role,
+                "content": msg.content,
+                **({"tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    } for tc in msg.tool_calls
+                ]} if msg.tool_calls else {}),
+                **({"tool_call_id": msg.tool_call_id} if msg.tool_call_id else {}),
+                **({"name": msg.name} if msg.name else {}),
+            }
+            for msg in self.messages
+        ]
 
 
 # ============================================================================
 # WebSocket 事件 (基于 OpenAI 格式)
 # ============================================================================
 
-@dataclass
-class ChatEvent:
+class ChatEvent(BaseModel):
     """
     WebSocket 事件 - 基于 OpenAI 格式的通信协议
-
-    所有事件都包含一个 OpenAI 标准消息格式
     """
+    model_config = ConfigDict(use_enum_values=True)
+
     type: Literal[
-        "message",           # 新消息
-        "delta",             # 流式增量
-        "tool_call",         # 工具调用
-        "tool_result",       # 工具结果
-        "error",             # 错误
-        "system"             # 系统事件
+        "message",
+        "delta",
+        "tool_call",
+        "tool_result",
+        "error",
+        "system",
+        "dialog:snapshot",
+        "status:change",
     ]
     dialog_id: str
-    message: ChatMessage
-    timestamp: int = field(default_factory=lambda: int(datetime.now().timestamp()))
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "type": self.type,
-            "dialog_id": self.dialog_id,
-            "message": self.message.to_dict(),
-            "timestamp": self.timestamp
-        }
-
-    def to_json(self) -> str:
-        """转换为 JSON 字符串"""
-        return json.dumps(self.to_dict(), ensure_ascii=False)
+    message: Optional[ChatMessage] = None
+    data: Optional[dict[str, Any]] = None
+    timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ChatEvent":
-        """从字典创建"""
+    def snapshot(cls, dialog_id: str, data: dict[str, Any]) -> "ChatEvent":
+        """创建对话框快照事件"""
         return cls(
-            type=data.get("type", "message"),
-            dialog_id=data.get("dialog_id", ""),
-            message=ChatMessage.from_dict(data.get("message", {})),
-            timestamp=data.get("timestamp", int(datetime.now().timestamp()))
+            type="dialog:snapshot",
+            dialog_id=dialog_id,
+            data=data
         )
+
+    @classmethod
+    def status_change(cls, dialog_id: str, status: str) -> "ChatEvent":
+        """创建状态变更事件"""
+        return cls(
+            type="status:change",
+            dialog_id=dialog_id,
+            data={"status": status}
+        )
+
+
+# ============================================================================
+# API 请求/响应模型
+# ============================================================================
+
+class ChatCompletionRequest(BaseModel):
+    """聊天完成请求"""
+    model: str
+    messages: list[dict[str, Any]]
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = None
+    tools: Optional[list[ChatCompletionTool]] = None
+    stream: bool = False
+
+
+class ChatCompletionResponseChoice(BaseModel):
+    """聊天完成响应选择"""
+    index: int
+    message: ChatMessage
+    finish_reason: Optional[str] = None
+
+
+class ChatCompletionResponse(BaseModel):
+    """聊天完成响应"""
+    id: str
+    object: Literal["chat.completion"] = "chat.completion"
+    created: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
+    model: str
+    choices: list[ChatCompletionResponseChoice]
+    usage: Optional[dict[str, int]] = None
 
 
 # ============================================================================
@@ -322,13 +286,21 @@ __all__ = [
     # 基础类型
     "ChatRole",
     "ChatMessage",
+    "FunctionCall",
     "ChatCompletionMessageToolCall",
     # 工具
     "ChatCompletionTool",
+    "ChatCompletionToolFunction",
     # 流式响应
     "ChatCompletionChunk",
+    "ChatCompletionChunkChoice",
+    "DeltaContent",
     # 会话
     "ChatSession",
     # 事件
     "ChatEvent",
+    # API 模型
+    "ChatCompletionRequest",
+    "ChatCompletionResponse",
+    "ChatCompletionResponseChoice",
 ]
