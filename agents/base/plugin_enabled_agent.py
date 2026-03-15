@@ -4,18 +4,19 @@ PluginEnabledAgent - 带插件支持的 Agent 基类
 封装所有插件基础设施，让具体 Agent 只关注业务逻辑。
 """
 
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Optional
 
 from .base_agent_loop import BaseAgentLoop
 from .toolkit import build_tools_and_handlers
 
-try:
-    from ..plugins import PluginManager, AgentPlugin
-    from ..providers import create_provider_from_env
-except ImportError:
-    from agents.plugins import PluginManager, AgentPlugin
-    from agents.providers import create_provider_from_env
-
+# Lazy imports to avoid circular imports
+def _get_plugin_manager():
+    """Lazy import PluginManager."""
+    try:
+        from ..plugins import PluginManager
+    except ImportError:
+        from agents.plugins import PluginManager
+    return PluginManager
 
 def _get_default_plugins():
     """延迟导入默认插件，避免循环导入"""
@@ -57,16 +58,16 @@ class PluginEnabledAgent(BaseAgentLoop):
 
     # 默认插件：技能加载 + 上下文压缩
     # 子类可覆盖此属性指定不同的默认插件，或覆盖 _get_default_plugins() 方法
-    _default_plugins: Optional[List[Type[AgentPlugin]]] = None
+    _default_plugins: Optional[list[type]] = None
 
     def __init__(
         self,
         # 基础配置
         system: str = "",
-        tools: Optional[List[Callable]] = None,
-        tool_handlers: Optional[Dict[str, Callable]] = None,
+        tools: Optional[list[Callable]] = None,
+        tool_handlers: Optional[dict[str, Callable]] = None,
         # 插件配置
-        plugins: Optional[List[Type[AgentPlugin]]] = None,
+        plugins: Optional[list[type]] = None,
         enable_default_plugins: bool = False,
         # BaseAgentLoop 配置
         provider=None,
@@ -77,6 +78,7 @@ class PluginEnabledAgent(BaseAgentLoop):
         **kwargs
     ):
         # 1. 初始化插件管理器
+        PluginManager = _get_plugin_manager()
         self.plugin_manager = PluginManager(self)
 
         # 2. 注册默认插件（从类属性或覆盖方法）
@@ -123,7 +125,7 @@ class PluginEnabledAgent(BaseAgentLoop):
             **wrapped_hooks
         )
 
-    def _get_default_plugins(self) -> List[Type[AgentPlugin]]:
+    def _get_default_plugins(self) -> list[type]:
         """
         获取默认插件列表
 
@@ -164,7 +166,7 @@ class PluginEnabledAgent(BaseAgentLoop):
             return result
         return wrapped_handler
 
-    def _wrap_hooks(self, kwargs: Dict) -> Dict:
+    def _wrap_hooks(self, kwargs: dict) -> dict:
         """
         包装钩子函数，添加插件支持
 
@@ -240,7 +242,7 @@ class PluginEnabledAgent(BaseAgentLoop):
 
         return wrapped
 
-    def run_with_plugins(self, messages: List[Dict]) -> str:
+    def run_with_plugins(self, messages: list[dict]) -> str:
         """
         运行 Agent（带插件支持）
 

@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """
-Agent 插件系统
+Agent Plugins Package
 
-允许以插件形式扩展 TeamLeadAgent 功能，支持：
-- 技能加载 (SkillPlugin)
-- 上下文压缩 (CompactPlugin)
+Provides modular plugins that can be combined to create custom agents.
+Each plugin encapsulates a specific functionality domain.
 
-插件生命周期：
-1. __init__(agent) - 插件初始化
-2. on_before_run(messages) - 运行前处理
-3. on_stream_token(chunk) - 流式 token 处理
-4. on_tool_call(name, arguments) - 工具调用处理
-5. on_tool_result(name, result) - 工具结果处理
-6. on_complete(content) - 完成处理
-7. on_error(error) - 错误处理
-8. get_additional_tools() - 获取额外工具
-9. get_system_prompt_addon() - 获取系统提示词追加内容
+Built-in plugins (Builder pattern):
+- TodoPlugin: Todo management for tracking multi-step tasks
+- TaskPlugin: Persistent task storage across sessions
+- BackgroundPlugin: Background command execution with monitoring
+- SubagentPlugin: Subagent spawning for task decomposition
+- TeamPlugin: Team collaboration with messaging and work claiming
+- PlanPlugin: Plan approval gate for significant changes
+
+Example:
+    from agents.plugins import TodoPlugin, TaskPlugin
+    from agents.core import AgentBuilder
+
+    agent = (
+        AgentBuilder()
+        .with_base_tools()
+        .with_plugin(TodoPlugin())
+        .with_plugin(TaskPlugin())
+        .build()
+    )
+
+Legacy plugin system (Lifecycle hooks):
+- AgentPlugin: Base class for lifecycle hook-based plugins
+- PluginManager: Manages multiple lifecycle plugins
 """
 
 from abc import abstractmethod
@@ -294,8 +306,27 @@ class PluginManager:
         return "\n".join(parts)
 
 
+# Export AgentPlugin from base.py (builder pattern)
+# This overrides the previous AgentPlugin class with the extended version
+from .base import AgentPlugin
+
+# Export specific plugins
+from .todo import TodoPlugin
+from .task import TaskPlugin
+from .background import BackgroundPlugin
+from .subagent import SubagentPlugin
+from .team import TeamPlugin
+from .plan import PlanPlugin
+
 __all__ = [
     "AgentLifecycleHooks",
     "AgentPlugin",
     "PluginManager",
+    # Builder pattern plugins
+    "TodoPlugin",
+    "TaskPlugin",
+    "BackgroundPlugin",
+    "SubagentPlugin",
+    "TeamPlugin",
+    "PlanPlugin",
 ]
