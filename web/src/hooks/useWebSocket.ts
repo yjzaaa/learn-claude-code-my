@@ -135,6 +135,8 @@ export function useWebSocket(): UseWebSocketReturn {
   >(new Map());
   // 跟踪已发送 message_start 的消息 ID，避免重复创建
   const messageStartSentRef = useRef<Set<string>>(new Set());
+  // 缓存当前 dialog 的 agent_name，避免使用硬编码默认值
+  const agentNameRef = useRef<string>("");
 
   // RAF 批处理相关 refs
   const rafScheduledRef = useRef(false);
@@ -237,6 +239,14 @@ export function useWebSocket(): UseWebSocketReturn {
             case "dialog:snapshot": {
               // 直接替换整个快照
               setCurrentSnapshot(msg.data);
+
+              // 缓存 agent_name 从 snapshot 的 metadata 中
+              const snapshotAgentName = msg.data.metadata?.agent_name;
+              if (snapshotAgentName) {
+                agentNameRef.current = snapshotAgentName;
+                console.log("[WebSocket] Cached agent_name:", snapshotAgentName);
+              }
+
               // 更新历史列表
               setDialogList((prev) => {
                 const exists = prev.find((d) => d.id === msg.data.id);
@@ -292,7 +302,8 @@ export function useWebSocket(): UseWebSocketReturn {
                       role: msg.data.streaming_message.role,
                       agent_name:
                         msg.data.streaming_message.agent_name ||
-                        "TeamLeadAgent",
+                        agentNameRef.current ||
+                        "",
                     },
                   });
                 }
@@ -305,13 +316,15 @@ export function useWebSocket(): UseWebSocketReturn {
               // 如果还没发过 message_start，这里先补发一次，避免 token 被消息存储层丢弃。
               if (!messageStartSentRef.current.has(msg.message_id)) {
                 messageStartSentRef.current.add(msg.message_id);
+                // 使用缓存的 agent_name，如果没有则使用空字符串让后端决定
+                const cachedAgentName = agentNameRef.current || "";
                 globalEventEmitter.emit("agent:event", {
                   type: "agent:message_start",
                   dialog_id: msg.dialog_id,
                   data: {
                     message_id: msg.message_id,
                     role: "assistant",
-                    agent_name: "TeamLeadAgent",
+                    agent_name: cachedAgentName,
                   },
                 });
               }
@@ -490,6 +503,15 @@ export function useWebSocket(): UseWebSocketReturn {
                   rounds_since_todo: msg.rounds_since_todo,
                 },
               });
+              break;
+            }
+
+            default: {
+              // 处理监控事件 (monitor: 前缀)
+              if (msg.type?.startsWith("monitor:")) {
+                // 转发监控事件到监控系统
+                globalEventEmitter.emit("monitor:event", msg);
+              }
               break;
             }
           }

@@ -93,7 +93,7 @@ function StatusBar({
           )}
         />
         <span className="font-medium text-sm">
-          {agentName || "TeamLeadAgent"}
+          {agentName || "Agent"}
         </span>
         {status && (
           <span

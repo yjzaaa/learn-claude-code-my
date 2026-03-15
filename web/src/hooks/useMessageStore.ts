@@ -313,7 +313,7 @@ function useMessageStoreInstance() {
 
             streamingMessagesRef.current[message_id] = {
               content: "",
-              agentName: agent_name || "TeamLeadAgent",
+              agentName: agent_name || "Agent",
             };
 
             // 添加新的流式消息占位
@@ -321,7 +321,7 @@ function useMessageStoreInstance() {
               id: message_id,
               role: "assistant",
               content: "",
-              agent_name: agent_name || "TeamLeadAgent",
+              agent_name: agent_name || "Agent",
             };
 
             return {
@@ -386,7 +386,7 @@ function useMessageStoreInstance() {
                 content: nextContent,
                 agent_name:
                   streamingMessagesRef.current[message_id]?.agentName ||
-                  "TeamLeadAgent",
+                  "Agent",
               });
             }
 
@@ -590,7 +590,7 @@ function useMessageStoreInstance() {
                   reasoning_content: nextReasoningContent,
                   agent_name:
                     streamingMessagesRef.current[message_id]?.agentName ||
-                    "TeamLeadAgent",
+                    "Agent",
                 });
               }
             }
