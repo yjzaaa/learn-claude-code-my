@@ -1,15 +1,18 @@
 """
-DialogSession 数据模型 - 后端状态管理
+DialogSession 数据模型 - 后端状态管理 (Pydantic 版本)
 
 这是后端状态管理的唯一真实数据源。
+使用 Pydantic BaseModel 提供自动验证、序列化和类型安全。
 """
 
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+import time
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
-import time
-import json
+from typing import Any, Optional, Self
+
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class DialogStatus(str, Enum):
@@ -52,50 +55,49 @@ class ToolCallStatus(str, Enum):
     ERROR = "error"
 
 
-@dataclass
-class ToolCall:
+class ToolCall(BaseModel):
     """工具调用"""
+    model_config = ConfigDict(use_enum_values=True)
+
     id: str
     name: str
-    arguments: dict
+    arguments: dict = Field(default_factory=dict)
     status: ToolCallStatus = ToolCallStatus.PENDING
     result: Optional[str] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "arguments": self.arguments,
-            "status": self.status.value,
-            "result": self.result,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-        }
+    def mark_started(self) -> Self:
+        """标记为开始运行"""
+        self.status = ToolCallStatus.RUNNING
+        self.started_at = datetime.now().isoformat()
+        return self
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "ToolCall":
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            arguments=data.get("arguments", {}),
-            status=ToolCallStatus(data.get("status", "pending")),
-            result=data.get("result"),
-            started_at=data.get("started_at"),
-            completed_at=data.get("completed_at"),
-        )
+    def mark_completed(self, result: str) -> Self:
+        """标记为完成"""
+        self.status = ToolCallStatus.COMPLETED
+        self.result = result
+        self.completed_at = datetime.now().isoformat()
+        return self
+
+    def mark_error(self, error: str) -> Self:
+        """标记为错误"""
+        self.status = ToolCallStatus.ERROR
+        self.result = error
+        self.completed_at = datetime.now().isoformat()
+        return self
 
 
-@dataclass
-class Message:
+class Message(BaseModel):
     """消息"""
+    model_config = ConfigDict(use_enum_values=True)
+
     id: str
     role: Role
-    content: str
+    content: str = ""
     content_type: ContentType = ContentType.TEXT
     status: MessageStatus = MessageStatus.COMPLETED
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
     # Assistant only
     tool_calls: Optional[list[ToolCall]] = None
@@ -106,99 +108,105 @@ class Message:
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
 
-    def to_dict(self) -> dict:
-        result = {
-            "id": self.id,
-            "role": self.role.value,
-            "content": self.content,
-            "content_type": self.content_type.value,
-            "status": self.status.value,
-            "timestamp": self.timestamp,
-        }
-
-        if self.tool_calls is not None:
-            result["tool_calls"] = [t.to_dict() for t in self.tool_calls]
-        if self.reasoning_content is not None:
-            result["reasoning_content"] = self.reasoning_content
-        if self.agent_name is not None:
-            result["agent_name"] = self.agent_name
-        if self.tool_call_id is not None:
-            result["tool_call_id"] = self.tool_call_id
-        if self.tool_name is not None:
-            result["tool_name"] = self.tool_name
-
-        return result
+    @classmethod
+    def create_user(cls, content: str, **kwargs) -> "Message":
+        """工厂方法：创建用户消息"""
+        from uuid import uuid4
+        return cls(
+            id=str(uuid4()),
+            role=Role.USER,
+            content=content,
+            **kwargs
+        )
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Message":
-        tool_calls = None
-        if "tool_calls" in data and data["tool_calls"]:
-            tool_calls = [ToolCall.from_dict(t) for t in data["tool_calls"]]
-
+    def create_assistant(
+        cls,
+        content: str = "",
+        tool_calls: Optional[list[ToolCall]] = None,
+        **kwargs
+    ) -> "Message":
+        """工厂方法：创建助手消息"""
+        from uuid import uuid4
         return cls(
-            id=data["id"],
-            role=Role(data["role"]),
-            content=data.get("content", ""),
-            content_type=ContentType(data.get("content_type", "text")),
-            status=MessageStatus(data.get("status", "completed")),
-            timestamp=data.get("timestamp", datetime.now().isoformat()),
+            id=str(uuid4()),
+            role=Role.ASSISTANT,
+            content=content,
             tool_calls=tool_calls,
-            reasoning_content=data.get("reasoning_content"),
-            agent_name=data.get("agent_name"),
-            tool_call_id=data.get("tool_call_id"),
-            tool_name=data.get("tool_name"),
+            **kwargs
+        )
+
+    @classmethod
+    def create_tool(
+        cls,
+        content: str,
+        tool_call_id: str,
+        tool_name: str = "",
+        **kwargs
+    ) -> "Message":
+        """工厂方法：创建工具结果消息"""
+        from uuid import uuid4
+        return cls(
+            id=str(uuid4()),
+            role=Role.TOOL,
+            content=content,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            **kwargs
+        )
+
+    @classmethod
+    def create_system(cls, content: str, **kwargs) -> "Message":
+        """工厂方法：创建系统消息"""
+        from uuid import uuid4
+        return cls(
+            id=str(uuid4()),
+            role=Role.SYSTEM,
+            content=content,
+            **kwargs
         )
 
 
-@dataclass
-class DialogMetadata:
+class DialogMetadata(BaseModel):
     """对话框元数据"""
     model: str = "deepseek-chat"
     agent_name: str = "TeamLeadAgent"
     tool_calls_count: int = 0
     total_tokens: int = 0
 
-    def to_dict(self) -> dict:
-        return {
-            "model": self.model,
-            "agent_name": self.agent_name,
-            "tool_calls_count": self.tool_calls_count,
-            "total_tokens": self.total_tokens,
-        }
+    def increment_tool_calls(self) -> Self:
+        """增加工具调用计数"""
+        self.tool_calls_count += 1
+        return self
+
+    def add_tokens(self, tokens: int) -> Self:
+        """增加 Token 计数"""
+        self.total_tokens += tokens
+        return self
 
 
-@dataclass
-class DialogSession:
+class DialogSession(BaseModel):
     """对话框会话 - 后端状态管理的唯一真实数据源"""
+    model_config = ConfigDict(use_enum_values=True)
+
     id: str
     title: str
     status: DialogStatus
-    messages: list[Message] = field(default_factory=list)
+    messages: list[Message] = Field(default_factory=list)
     streaming_message: Optional[Message] = None
-    metadata: DialogMetadata = field(default_factory=DialogMetadata)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    metadata: DialogMetadata = Field(default_factory=DialogMetadata)
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "title": self.title,
-            "status": self.status.value,
-            "messages": [m.to_dict() for m in self.messages],
-            "streaming_message": self.streaming_message.to_dict() if self.streaming_message else None,
-            "metadata": self.metadata.to_dict(),
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
-
-    def update_timestamp(self):
+    def update_timestamp(self) -> Self:
         """更新时间戳"""
         self.updated_at = datetime.now().isoformat()
+        return self
 
-    def add_message(self, message: Message):
+    def add_message(self, message: Message) -> Self:
         """添加消息"""
         self.messages.append(message)
-        self.update_timestamp()
+        return self.update_timestamp()
 
     def get_message_by_id(self, message_id: str) -> Optional[Message]:
         """通过ID获取消息"""
@@ -215,8 +223,18 @@ class DialogSession:
                     return tool
         return None
 
+    def set_status(self, status: DialogStatus) -> Self:
+        """设置状态"""
+        self.status = status
+        return self.update_timestamp()
+
     @classmethod
-    def create_new(cls, dialog_id: str, title: str = "新对话", agent_name: str = "TeamLeadAgent") -> "DialogSession":
+    def create_new(
+        cls,
+        dialog_id: str,
+        title: str = "新对话",
+        agent_name: str = "TeamLeadAgent"
+    ) -> "DialogSession":
         """创建新对话框"""
         return cls(
             id=dialog_id,
@@ -228,18 +246,168 @@ class DialogSession:
         )
 
 
-@dataclass
-class DialogSummary:
+class DialogSummary(BaseModel):
     """对话框摘要（用于列表展示）"""
     id: str
     title: str
-    message_count: int
-    updated_at: str
+    message_count: int = 0
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "title": self.title,
-            "message_count": self.message_count,
-            "updated_at": self.updated_at,
-        }
+    @classmethod
+    def from_session(cls, session: DialogSession) -> "DialogSummary":
+        """从 DialogSession 创建摘要"""
+        return cls(
+            id=session.id,
+            title=session.title,
+            message_count=len(session.messages),
+            updated_at=session.updated_at
+        )
+
+
+# ============================================================================
+# API 请求/响应模型
+# ============================================================================
+
+class CreateDialogRequest(BaseModel):
+    """创建对话框请求"""
+    title: str = "新对话"
+
+
+class CreateDialogResponse(BaseModel):
+    """创建对话框响应"""
+    success: bool = True
+    data: DialogSession
+
+
+class SendMessageRequest(BaseModel):
+    """发送消息请求"""
+    content: str
+    role: Role = Role.USER
+
+
+class SendMessageResponse(BaseModel):
+    """发送消息响应"""
+    success: bool = True
+    data: dict[str, Any]
+
+
+class DialogListResponse(BaseModel):
+    """对话框列表响应"""
+    success: bool = True
+    data: list[DialogSummary]
+
+
+class DialogDetailResponse(BaseModel):
+    """对话框详情响应"""
+    success: bool = True
+    data: DialogSession
+
+
+class ErrorResponse(BaseModel):
+    """错误响应"""
+    success: bool = False
+    error: dict[str, str]
+
+
+# ============================================================================
+# WebSocket 消息模型
+# ============================================================================
+
+class WebSocketErrorDetail(BaseModel):
+    """WebSocket 错误详情"""
+    code: str
+    message: str
+
+
+class WebSocketMessage(BaseModel):
+    """WebSocket 基础消息"""
+    type: str
+    dialog_id: Optional[str] = None
+
+
+class WebSocketErrorMessage(WebSocketMessage):
+    """WebSocket 错误消息"""
+    type: str = "error"
+    error: WebSocketErrorDetail
+
+    @classmethod
+    def invalid_dialog_id(cls, message: str = "dialog_id is required") -> "WebSocketErrorMessage":
+        """创建无效对话框ID错误"""
+        return cls(
+            error=WebSocketErrorDetail(
+                code="INVALID_DIALOG_ID",
+                message=message
+            )
+        )
+
+    @classmethod
+    def dialog_not_found(cls, dialog_id: str) -> "WebSocketErrorMessage":
+        """创建对话框不存在错误"""
+        return cls(
+            dialog_id=dialog_id,
+            error=WebSocketErrorDetail(
+                code="DIALOG_NOT_FOUND",
+                message="Dialog not found"
+            )
+        )
+
+    @classmethod
+    def no_context(cls, dialog_id: str) -> "WebSocketErrorMessage":
+        """创建无上下文错误"""
+        return cls(
+            dialog_id=dialog_id,
+            error=WebSocketErrorDetail(
+                code="NO_CONTEXT",
+                message="No user context to resume"
+            )
+        )
+
+    @classmethod
+    def unknown_type(cls, msg_type: str) -> "WebSocketErrorMessage":
+        """创建未知消息类型错误"""
+        return cls(
+            error=WebSocketErrorDetail(
+                code="UNKNOWN_TYPE",
+                message=f"Unknown message type: {msg_type}"
+            )
+        )
+
+
+class WebSocketSnapshotMessage(WebSocketMessage):
+    """WebSocket 对话框快照消息"""
+    type: str = "dialog:snapshot"
+    data: DialogSession
+    timestamp: float = Field(default_factory=time.time)
+
+
+# ============================================================================
+# 导出列表
+# ============================================================================
+
+__all__ = [
+    # 枚举类型
+    "DialogStatus",
+    "Role",
+    "ContentType",
+    "MessageStatus",
+    "ToolCallStatus",
+    # 数据模型
+    "ToolCall",
+    "Message",
+    "DialogMetadata",
+    "DialogSession",
+    "DialogSummary",
+    # API 模型
+    "CreateDialogRequest",
+    "CreateDialogResponse",
+    "SendMessageRequest",
+    "SendMessageResponse",
+    "DialogListResponse",
+    "DialogDetailResponse",
+    "ErrorResponse",
+    # WebSocket 模型
+    "WebSocketErrorDetail",
+    "WebSocketMessage",
+    "WebSocketErrorMessage",
+    "WebSocketSnapshotMessage",
+]
