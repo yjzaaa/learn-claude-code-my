@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "@/lib/i18n";
 import { LEARNING_PATH, VERSION_META, LAYERS } from "@/lib/constants";
@@ -8,6 +9,11 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import versionsData from "@/data/generated/versions.json";
 import { MessageFlow } from "@/components/architecture/message-flow";
+import { MonitoringProvider } from "@/monitoring";
+import AgentHierarchy from "@/components/monitoring/AgentHierarchy";
+import StateMachineViz from "@/components/monitoring/StateMachineViz";
+import EventTimeline from "@/components/monitoring/EventTimeline";
+import MetricsPanel from "@/components/monitoring/MetricsPanel";
 
 const LAYER_DOT_COLORS: Record<string, string> = {
   tools: "bg-blue-500",
@@ -37,14 +43,31 @@ function getVersionData(id: string) {
   return versionsData.versions.find((v) => v.id === id);
 }
 
-export default function HomePage() {
+// 监控面板内容
+function MonitoringTab() {
+  return (
+    <MonitoringProvider dialogId="home-monitor">
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <StateMachineViz />
+          <MetricsPanel />
+        </div>
+        <AgentHierarchy />
+        <EventTimeline />
+      </div>
+    </MonitoringProvider>
+  );
+}
+
+// 主页内容
+function HomeTab() {
   const t = useTranslations("home");
   const locale = useLocale();
 
   return (
-    <div className="flex flex-col gap-20 pb-16">
+    <div className="flex flex-col gap-20">
       {/* Hero Section */}
-      <section className="flex flex-col items-center px-2 pt-8 text-center sm:pt-20">
+      <section className="flex flex-col items-center px-2 pt-8 text-center sm:pt-12">
         <h1 className="text-3xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
           {t("hero_title")}
         </h1>
@@ -229,6 +252,54 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+export default function HomePage() {
+  const [activeTab, setActiveTab] = useState<"home" | "monitor">("home");
+  const t = useTranslations("home");
+
+  return (
+    <div className="min-h-screen pb-16">
+      {/* Tab Navigation */}
+      <div className="sticky top-0 z-50 bg-[var(--color-bg)] border-b border-[var(--color-border)]">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="flex items-center justify-between h-14">
+            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/50 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab("home")}
+                className={cn(
+                  "px-4 py-1.5 text-sm font-medium transition-colors rounded-md",
+                  activeTab === "home"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                )}
+              >
+                首页
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("monitor")}
+                className={cn(
+                  "px-4 py-1.5 text-sm font-medium transition-colors rounded-md",
+                  activeTab === "monitor"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                    : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+                )}
+              >
+                监控
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="max-w-6xl mx-auto px-4 pt-6">
+        {activeTab === "home" ? <HomeTab /> : <MonitoringTab />}
+      </div>
     </div>
   );
 }

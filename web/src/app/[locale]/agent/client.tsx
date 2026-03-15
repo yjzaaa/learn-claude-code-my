@@ -4,6 +4,11 @@ import { useState } from "react";
 import { MessageStoreProvider, useMessageStore } from "@/hooks/useMessageStore";
 import { EmbeddedDialog } from "@/components/realtime";
 import { StudioDesignDemo } from "@/components/realtime/studio-design-demo";
+import { MonitoringProvider } from "@/monitoring";
+import AgentHierarchy from "@/components/monitoring/AgentHierarchy";
+import StateMachineViz from "@/components/monitoring/StateMachineViz";
+import EventTimeline from "@/components/monitoring/EventTimeline";
+import MetricsPanel from "@/components/monitoring/MetricsPanel";
 import { cn } from "@/lib/utils";
 
 export function AgentPageClient() {
@@ -14,9 +19,25 @@ export function AgentPageClient() {
   );
 }
 
+// 监控面板内容
+function MonitoringPanel() {
+  return (
+    <MonitoringProvider dialogId="agent-monitor">
+      <div className="h-full overflow-y-auto p-4 space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <StateMachineViz />
+          <MetricsPanel />
+        </div>
+        <AgentHierarchy />
+        <EventTimeline />
+      </div>
+    </MonitoringProvider>
+  );
+}
+
 function AgentPageClientContent() {
   const { messages } = useMessageStore();
-  const [activeView, setActiveView] = useState<"chat" | "studio">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "studio" | "monitor">("chat");
 
   return (
     <div className="h-full flex flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -28,7 +49,7 @@ function AgentPageClientContent() {
           </span>
           <span className="text-zinc-300 dark:text-zinc-700">/</span>
           <span className="text-xs text-zinc-500 dark:text-zinc-500">
-            {activeView === "chat" ? "Chat" : "Studio"}
+            {activeView === "chat" ? "Chat" : activeView === "studio" ? "Studio" : "Monitor"}
           </span>
         </div>
 
@@ -57,6 +78,18 @@ function AgentPageClientContent() {
           >
             Studio
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveView("monitor")}
+            className={cn(
+              "px-2.5 py-0.5 text-xs font-medium transition-colors rounded",
+              activeView === "monitor"
+                ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                : "text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200"
+            )}
+          >
+            Monitor
+          </button>
         </div>
       </div>
 
@@ -64,11 +97,13 @@ function AgentPageClientContent() {
       <div className="flex-1 min-h-0">
         {activeView === "chat" ? (
           <EmbeddedDialog className="h-full" />
-        ) : (
+        ) : activeView === "studio" ? (
           <StudioDesignDemo
             className="h-full overflow-y-auto"
             messages={messages.length > 0 ? messages : undefined}
           />
+        ) : (
+          <MonitoringPanel />
         )}
       </div>
     </div>
