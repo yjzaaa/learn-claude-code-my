@@ -2,22 +2,31 @@
 
 ## 新架构特点
 
-### 后端 (`agents/api/`)
-- `dialog_types.py` - 数据模型定义 (DialogSession, Message, ToolCall)
-- `state_managed_bridge.py` - 状态管理型 Bridge
-- `main_new.py` - 新的 FastAPI 主应用
+### 后端 (`agents/`)
+- `api/main_new.py` - FastAPI 主应用入口
+- `models/dialog_types.py` - 数据模型定义
+- `hooks/state_managed_agent_bridge.py` - 状态管理型 Bridge
+- `agent/s_full.py` - 主 Agent 实现 (SFullAgent)
+- `core/s05_skill_loading.py` - Skill 加载系统
 
 ### 前端 (`web/src/`)
 - `types/dialog.ts` - 类型定义
 - `hooks/useWebSocket.ts` - 纯状态接收 hook
+- `hooks/useMessageStore.ts` - 消息状态管理
 - `components/realtime/EmbeddedDialog.tsx` - 纯渲染组件
+- `app/[locale]/agent/client.tsx` - Agent 客户端页面
 
 ## 启动方式
 
 ### 后端
 ```bash
-cd agents/api
-python -m uvicorn main_new:app --host 0.0.0.0 --port 8001 --reload
+# 方式1：使用启动脚本
+cd agents
+python start_server.py
+
+# 方式2：使用 uvicorn
+cd agents
+python -m uvicorn api.main_new:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### 前端
@@ -51,16 +60,30 @@ import { EmbeddedDialog } from "@/components/realtime/EmbeddedDialog";
 }
 ```
 
-## 关键文件变更
+## 项目结构
+
+```
+agents/
+├── api/main_new.py              # FastAPI 主应用
+├── agent/s_full.py              # 主 Agent 实现
+├── core/s05_skill_loading.py    # Skill 加载系统
+├── hooks/state_managed_agent_bridge.py  # 状态管理
+├── models/dialog_types.py       # 数据模型
+├── websocket/server.py          # WebSocket 服务器
+└── start_server.py              # 启动脚本
+```
+
+## 关键文件
 
 | 文件 | 说明 |
 |------|------|
-| `agents/models/dialog_types.py` | 新增，数据模型定义 |
-| `agents/api/state_managed_bridge.py` | 新增，状态管理 Bridge |
-| `agents/api/main_new.py` | 新增，新 FastAPI 应用 |
-| `web/src/types/dialog.ts` | 新增，前端类型定义 |
-| `web/src/hooks/useWebSocket.ts` | 重写，纯状态接收 |
-| `web/src/components/realtime/EmbeddedDialog.tsx` | 重写，纯渲染组件 |
+| `agents/api/main_new.py` | FastAPI 主应用入口 |
+| `agents/agent/s_full.py` | 主 Agent 实现 (SFullAgent) |
+| `agents/core/s05_skill_loading.py` | Skill 加载系统 |
+| `agents/hooks/state_managed_agent_bridge.py` | 状态管理 Bridge |
+| `agents/models/dialog_types.py` | 数据模型定义 |
+| `web/src/hooks/useWebSocket.ts` | WebSocket Hook |
+| `web/src/components/realtime/EmbeddedDialog.tsx` | 渲染组件 |
 
 ## 注意事项
 
