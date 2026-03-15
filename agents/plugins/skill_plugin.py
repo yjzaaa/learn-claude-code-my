@@ -15,10 +15,10 @@ from . import AgentPlugin
 
 try:
     from ..base import tool
-    from ..s05_skill_loading import SkillLoader, SKILL_LOADER, WORKDIR
+    from ..core.s05_skill_loading import SkillLoader, SKILL_LOADER, WORKDIR
 except ImportError:
     from agents.base import tool
-    from agents.s05_skill_loading import SkillLoader, SKILL_LOADER, WORKDIR
+    from agents.core.s05_skill_loading import SkillLoader, SKILL_LOADER, WORKDIR
 
 
 class SkillPlugin(AgentPlugin):
