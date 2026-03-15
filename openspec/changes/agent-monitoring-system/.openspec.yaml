@@ -1,0 +1,14 @@
+artifacts:
+  design:
+    path: design.md
+    status: done
+  proposal:
+    path: proposal.md
+    status: done
+  tasks:
+    path: tasks.md
+    status: done
+description: Implement complete OOP architecture for agent monitoring system
+name: agent-monitoring-system
+schema: openspec-v1
+status: ready
