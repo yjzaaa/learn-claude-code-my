@@ -7,14 +7,22 @@ import difflib
 import os
 import time
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
 from typing import Any, Awaitable, Callable
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class SkillEditProposal:
+try:
+    from ..models.common_types import SkillEditPendingEvent, SkillEditResolvedEvent
+    from ..models.responses import SkillEditDecisionResponse
+except ImportError:
+    from agents.models.common_types import SkillEditPendingEvent, SkillEditResolvedEvent
+    from agents.models.responses import SkillEditDecisionResponse
+
+
+class SkillEditProposal(BaseModel):
+    """技能编辑提案"""
     approval_id: str
     dialog_id: str
     path: str
@@ -28,19 +36,7 @@ class SkillEditProposal:
     resolved_at: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "approval_id": self.approval_id,
-            "dialog_id": self.dialog_id,
-            "path": self.path,
-            "old_content": self.old_content,
-            "new_content": self.new_content,
-            "unified_diff": self.unified_diff,
-            "reason": self.reason,
-            "trigger_mode": self.trigger_mode,
-            "status": self.status,
-            "created_at": self.created_at,
-            "resolved_at": self.resolved_at,
-        }
+        return self.model_dump()
 
 
 class SkillEditHITLStore:
@@ -107,14 +103,12 @@ class SkillEditHITLStore:
         with self._lock:
             self._proposals[approval_id] = proposal
 
-        self._emit(
-            {
-                "type": "skill_edit:pending",
-                "dialog_id": dialog_id,
-                "approval": proposal.to_dict(),
-                "timestamp": time.time(),
-            }
+        event = SkillEditPendingEvent(
+            dialog_id=dialog_id,
+            approval=proposal.to_dict(),
+            timestamp=time.time(),
         )
+        self._emit(event.model_dump())
         return proposal
 
     def list_pending(self, dialog_id: str | None = None) -> list[dict[str, Any]]:
@@ -125,19 +119,19 @@ class SkillEditHITLStore:
             proposals.sort(key=lambda p: p.created_at, reverse=True)
             return [p.to_dict() for p in proposals]
 
-    def decide(self, approval_id: str, decision: str, edited_content: str | None = None) -> dict[str, Any]:
+    def decide(self, approval_id: str, decision: str, edited_content: str | None = None) -> SkillEditDecisionResponse:
         with self._lock:
             proposal = self._proposals.get(approval_id)
 
         if not proposal:
-            return {"success": False, "message": "approval not found"}
+            return SkillEditDecisionResponse(success=False, message="approval not found")
         if proposal.status != "pending":
-            return {"success": False, "message": f"approval already resolved: {proposal.status}"}
+            return SkillEditDecisionResponse(success=False, message=f"approval already resolved: {proposal.status}")
 
         target_path = (self.workdir / proposal.path).resolve()
         skills_root = (self.workdir / "skills").resolve()
         if not target_path.is_relative_to(skills_root):
-            return {"success": False, "message": "path is outside skills"}
+            return SkillEditDecisionResponse(success=False, message="path is outside skills")
 
         if decision == "reject":
             proposal.status = "rejected"
@@ -151,21 +145,19 @@ class SkillEditHITLStore:
             proposal.unified_diff = self._make_diff(proposal.path, proposal.old_content, proposal.new_content)
             proposal.status = "edited_accepted"
         else:
-            return {"success": False, "message": "invalid decision"}
+            return SkillEditDecisionResponse(success=False, message="invalid decision")
 
         proposal.resolved_at = time.time()
 
-        self._emit(
-            {
-                "type": "skill_edit:resolved",
-                "dialog_id": proposal.dialog_id,
-                "approval_id": proposal.approval_id,
-                "result": proposal.status,
-                "timestamp": time.time(),
-            }
+        event = SkillEditResolvedEvent(
+            dialog_id=proposal.dialog_id,
+            approval_id=proposal.approval_id,
+            result=proposal.status,
+            timestamp=time.time(),
         )
+        self._emit(event.model_dump())
 
-        return {"success": True, "data": proposal.to_dict()}
+        return SkillEditDecisionResponse(success=True, data=proposal.to_dict())
 
 
 def _is_hitl_enabled() -> bool:

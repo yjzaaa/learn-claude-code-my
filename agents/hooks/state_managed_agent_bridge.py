@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from loguru import logger
+from pydantic import BaseModel
 
 try:
     from ..models.dialog_types import (
@@ -26,10 +27,19 @@ try:
         ToolCallStatus,
         DialogSummary,
     )
+    from ..models.common_types import (
+        DialogSnapshot,
+        MessageStartEvent,
+        AgentMessageStartEvent,
+        StreamDeltaEvent,
+        ToolCallUpdateEvent,
+        StatusChangeEvent,
+    )
     from ..websocket.server import connection_manager
     from ..base.abstract.hooks import FullAgentHooks, HookName
     from ..session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
     from ..utils.workspace_cleanup import clear_workspace_dir
+    from ..utils.hook_logger import hook_logger
 except ImportError:
     from agents.models.dialog_types import (
         DialogSession,
@@ -42,10 +52,19 @@ except ImportError:
         ToolCallStatus,
         DialogSummary,
     )
+    from agents.models.common_types import (
+        DialogSnapshot,
+        MessageStartEvent,
+        AgentMessageStartEvent,
+        StreamDeltaEvent,
+        ToolCallUpdateEvent,
+        StatusChangeEvent,
+    )
     from agents.websocket.server import connection_manager
     from agents.base.abstract.hooks import FullAgentHooks, HookName
     from agents.session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
     from agents.utils.workspace_cleanup import clear_workspace_dir
+    from agents.utils.hook_logger import hook_logger
 
 
 class StateManagedAgentBridge(FullAgentHooks):
@@ -83,14 +102,13 @@ class StateManagedAgentBridge(FullAgentHooks):
         """获取当前会话状态（只读）"""
         return self.session
 
-    def to_snapshot(self) -> dict:
+    def to_snapshot(self) -> DialogSnapshot:
         """生成状态快照"""
-        return {
-            "type": "dialog:snapshot",
-            "dialog_id": self.dialog_id,
-            "data": self.session.to_dict(),
-            "timestamp": time.time(),
-        }
+        return DialogSnapshot(
+            dialog_id=self.dialog_id,
+            data=self.session.model_dump(),
+            timestamp=time.time(),
+        )
 
     def to_summary(self) -> DialogSummary:
         """生成对话框摘要"""
@@ -103,17 +121,17 @@ class StateManagedAgentBridge(FullAgentHooks):
 
     # ===== 私有广播方法 =====
 
-    async def _broadcast(self, event: dict):
+    async def _broadcast(self, event: DialogSnapshot):
         """广播事件到所有 WebSocket 客户端"""
         try:
-            await connection_manager.broadcast(event)
+            await connection_manager.broadcast(event.model_dump())
         except Exception as e:
             logger.error(f"[StateBridge] Broadcast error: {e}")
 
-    def _schedule_broadcast(self, event: dict):
+    def _schedule_broadcast(self, event: DialogSnapshot):
         """串行调度广播，确保事件顺序稳定。"""
 
-        async def _chained_broadcast(previous: Optional[asyncio.Task], payload: dict):
+        async def _chained_broadcast(previous: Optional[asyncio.Task], payload: DialogSnapshot):
             if previous:
                 try:
                     await previous
@@ -144,45 +162,42 @@ class StateManagedAgentBridge(FullAgentHooks):
         self._schedule_broadcast(snapshot)
         logger.debug(f"[StateBridge] Pushed snapshot for {self.dialog_id}, status={self.session.status.value}")
 
-    def _persist_snapshot(self, snapshot: dict) -> None:
+    def _persist_snapshot(self, snapshot: DialogSnapshot) -> None:
         """将非流式快照落盘到 history/<dialog_id>.jsonl。"""
         try:
             with self._snapshot_history_file.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(snapshot, ensure_ascii=False))
+                fh.write(json.dumps(snapshot.model_dump(), ensure_ascii=False))
                 fh.write("\n")
         except Exception as e:
             logger.error(f"[StateBridge] Persist snapshot error: {e}")
 
     def _push_delta(self, message_id: str, delta: dict):
         """推送流式增量"""
-        event = {
-            "type": "stream:delta",
-            "dialog_id": self.dialog_id,
-            "message_id": message_id,
-            "delta": delta,
-            "timestamp": time.time(),
-        }
+        event = StreamDeltaEvent(
+            dialog_id=self.dialog_id,
+            message_id=message_id,
+            delta=delta,
+            timestamp=time.time(),
+        )
         self._schedule_broadcast(event)
 
     def _push_tool_call_update(self, tool_call: ToolCall):
         """推送工具调用状态更新"""
-        event = {
-            "type": "tool_call:update",
-            "dialog_id": self.dialog_id,
-            "tool_call": tool_call.to_dict(),
-            "timestamp": time.time(),
-        }
+        event = ToolCallUpdateEvent(
+            dialog_id=self.dialog_id,
+            tool_call=tool_call.model_dump(),
+            timestamp=time.time(),
+        )
         self._schedule_broadcast(event)
 
     def _push_status_change(self, old_status: DialogStatus, new_status: DialogStatus):
         """推送状态变更"""
-        event = {
-            "type": "status:change",
-            "dialog_id": self.dialog_id,
-            "from": old_status.value,
-            "to": new_status.value,
-            "timestamp": time.time(),
-        }
+        event = StatusChangeEvent(
+            dialog_id=self.dialog_id,
+            from_status=old_status.value,
+            to_status=new_status.value,
+            timestamp=time.time(),
+        )
         self._schedule_broadcast(event)
 
     def _gen_id(self, prefix: str = "msg") -> str:
@@ -208,6 +223,21 @@ class StateManagedAgentBridge(FullAgentHooks):
         # 推送快照（包含新用户消息和状态变更）
         self._push_snapshot()
         logger.debug(f"[StateBridge] User input added, dialog status: {self.session.status.value}")
+
+        # 记录用户消息日志
+        hook_logger.log_message(
+            dialog_id=self.dialog_id,
+            message=user_msg.model_dump(),
+            action="add"
+        )
+
+        # 记录 hook 事件
+        hook_logger.log_hook_event(
+            event_type="on_user_input",
+            dialog_id=self.dialog_id,
+            hook_name="StateManagedAgentBridge",
+            data={"message_id": user_msg.id, "content_length": len(content)}
+        )
 
         return user_msg
 
@@ -268,8 +298,21 @@ class StateManagedAgentBridge(FullAgentHooks):
             self.session.streaming_message = assistant_msg
             self.session.status = DialogStatus.THINKING
             self.session.update_timestamp()
+
+            # 发送 agent:message_start 事件（与 AgentWebSocketBridge 兼容）
+            event_data = MessageStartEvent(
+                message_id=assistant_msg.id,
+                role=assistant_msg.role.value,      
+                agent_name=self.agent_name,
+            )
+            self._schedule_broadcast(AgentMessageStartEvent(
+                dialog_id=self.dialog_id,
+                data=event_data,
+                timestamp=time.time(),
+            ))
+
             self._push_snapshot()
-            logger.debug(f"[StateBridge] Stream started, message_id: {assistant_msg.id}")
+            logger.debug(f"[StateBridge] Stream started, message_id: {assistant_msg.id}, agent: {self.agent_name}")
         return self.session.streaming_message
 
     def on_stream_token(self, chunk: Any) -> None:
@@ -322,6 +365,14 @@ class StateManagedAgentBridge(FullAgentHooks):
 
         self._push_snapshot()
         logger.debug(f"[StateBridge] Tool call added: {name}, id: {actual_id}")
+
+        # 记录工具调用日志
+        hook_logger.log_tool_call(
+            dialog_id=self.dialog_id,
+            tool_name=name,
+            arguments=arguments,
+            status="started",
+        )
 
         return tool_call
 
@@ -475,11 +526,25 @@ class StateManagedAgentBridge(FullAgentHooks):
         if pending and is_resume_same_turn:
             effective_user = "Continue from your last unfinished answer. Keep the same context, do not restart, and continue seamlessly from the partial answer above."
 
-        return build_window_messages_from_rounds(
+        result = build_window_messages_from_rounds(
             history_rounds,
             current_user=effective_user,
             window_rounds=limit,
         )
+
+        # 记录历史重建日志
+        hook_logger.log_history_rebuild(
+            dialog_id=self.dialog_id,
+            history_rounds=history_rounds,
+            pending_round=pending,
+            window_rounds=limit,
+            result_messages=result,
+            is_resume_same_turn=is_resume_same_turn,
+            original_user_message=current_user,
+            effective_user_message=effective_user,
+        )
+
+        return result
 
     def _has_pending_tool_calls(self) -> bool:
         """检查是否有未完成的工具调用"""

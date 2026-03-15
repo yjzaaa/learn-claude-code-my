@@ -7,7 +7,8 @@ WebSocket桥接器
 
 from loguru import logger
 import asyncio
-from typing import Any, Optional, Dict
+from typing import Any, Optional
+from collections.abc import Callable
 import uuid
 
 from .event_manager import (
@@ -55,7 +56,7 @@ class WebSocketBridge:
 
     # ========== BaseAgentLoop钩子函数 ==========
 
-    def on_before_round(self, messages: list[Dict[str, Any]]):
+    def on_before_round(self, messages: list[dict[str, Any]]):
         """每轮开始前的回调"""
         if not self.message_bridge or not self._loop:
             return
@@ -69,7 +70,7 @@ class WebSocketBridge:
             self._loop
         )
 
-    def on_stream_token(self, token: str, block: Any, messages: list[Dict[str, Any]], response: Any):
+    def on_stream_token(self, token: str, block: Any, messages: list[dict[str, Any]], response: Any):
         """流式token回调"""
         try:
             if not self.message_bridge or not self._loop:
@@ -98,7 +99,7 @@ class WebSocketBridge:
             import traceback
             traceback.print_exc()
 
-    def on_stream_text(self, text: str, block: Any, messages: list[Dict[str, Any]], response: Any):
+    def on_stream_text(self, text: str, block: Any, messages: list[dict[str, Any]], response: Any):
         """流式文本回调"""
         if not self.message_bridge or not self._loop:
             return
@@ -124,7 +125,7 @@ class WebSocketBridge:
             except Exception as e:
                 logger.info(f"[WebSocketBridge] on_stream_text append error: {e}")
 
-    def on_tool_call(self, tool_name: str, tool_input: Dict[str, Any], messages: list[Dict[str, Any]]):
+    def on_tool_call(self, tool_name: str, tool_input: dict[str, Any], messages: list[dict[str, Any]]):
         """工具调用开始回调"""
         try:
             logger.info(f"[WebSocketBridge] on_tool_call: {tool_name}")
@@ -142,7 +143,7 @@ class WebSocketBridge:
             import traceback
             traceback.print_exc()
 
-    def on_tool_result(self, block: Any, output: str, results: list[Dict[str, Any]], messages: list[Dict[str, Any]]):
+    def on_tool_result(self, block: Any, output: str, results: list[dict[str, Any]], messages: list[dict[str, Any]]):
         """工具结果回调
 
         Args:
@@ -172,7 +173,7 @@ class WebSocketBridge:
             import traceback
             traceback.print_exc()
 
-    def on_round_end(self, messages: list[Dict[str, Any]], tool_calls: list[Dict[str, Any]], response: Any):
+    def on_round_end(self, messages: list[dict[str, Any]], tool_calls: list[dict[str, Any]], response: Any):
         """每轮结束回调"""
         try:
             logger.info(f"[WebSocketBridge] on_round_end called, current_message_id={self._current_assistant_message_id}")
@@ -208,11 +209,11 @@ class WebSocketBridge:
             import traceback
             traceback.print_exc()
 
-    def on_after_round(self, messages: list[Dict[str, Any]], response: Any):
+    def on_after_round(self, messages: list[dict[str, Any]], response: Any):
         """每轮结束后回调"""
         pass
 
-    def on_stop(self, messages: list[Dict[str, Any]], response: Any):
+    def on_stop(self, messages: list[dict[str, Any]], response: Any):
         """停止回调"""
         try:
             logger.info(f"[WebSocketBridge] on_stop called, current_message_id={self._current_assistant_message_id}")
@@ -332,7 +333,7 @@ class WebSocketToolHandler:
     def __init__(self, bridge: WebSocketBridge):
         self.bridge = bridge
 
-    async def wrap_tool_call(self, tool_name: str, tool_input: Dict[str, Any], handler: callable) -> Any:
+    async def wrap_tool_call(self, tool_name: str, tool_input: dict[str, Any], handler: Callable[[dict[str, Any]], Any]) -> Any:
         """包装工具调用"""
         # 发送工具调用开始事件
         await self.bridge.send_tool_call(tool_name, tool_input)
@@ -352,7 +353,7 @@ class WebSocketToolHandler:
             raise
 
 
-def create_websocket_hooks(dialog_id: Optional[str] = None, title: str = "Agent对话") -> tuple[WebSocketBridge, Dict[str, Any]]:
+def create_websocket_hooks(dialog_id: Optional[str] = None, title: str = "Agent对话") -> tuple[WebSocketBridge, dict[str, Any]]:
     """
     创建WebSocket钩子函数
 

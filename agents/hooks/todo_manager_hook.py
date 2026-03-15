@@ -11,9 +11,11 @@ from loguru import logger
 try:
     from ..base.abstract import FullAgentHooks
     from ..session.todo_hitl import TodoStore
+    from ..utils.hook_logger import hook_logger
 except ImportError:
     from agents.base.abstract import FullAgentHooks
     from agents.session.todo_hitl import TodoStore
+    from agents.utils.hook_logger import hook_logger
 
 
 class TodoManagerHook(FullAgentHooks):
@@ -123,9 +125,26 @@ class TodoManagerHook(FullAgentHooks):
                 logger.debug(
                     f"[TodoManagerHook] Updated {len(items)} todos for {self.dialog_id}"
                 )
+                # 记录 todo 更新日志
+                hook_logger.log_hook_event(
+                    event_type="todo_updated",
+                    dialog_id=self.dialog_id,
+                    hook_name="TodoManagerHook",
+                    data={
+                        "tool_name": name,
+                        "item_count": len(items),
+                        "items": items,
+                    }
+                )
             else:
                 logger.warning(
                     f"[TodoManagerHook] Failed to update todos: {error}"
+                )
+                hook_logger.log_hook_event(
+                    event_type="todo_update_failed",
+                    dialog_id=self.dialog_id,
+                    hook_name="TodoManagerHook",
+                    data={"tool_name": name, "error": error, "items": items}
                 )
         else:
             # 解析失败，但至少标记使用了 todo
@@ -133,6 +152,12 @@ class TodoManagerHook(FullAgentHooks):
             self._used_todo_this_round = True
             logger.debug(
                 f"[TodoManagerHook] Marked todo used (unparseable result) for {self.dialog_id}"
+            )
+            hook_logger.log_hook_event(
+                event_type="todo_used_unparseable",
+                dialog_id=self.dialog_id,
+                hook_name="TodoManagerHook",
+                data={"tool_name": name, "result": result}
             )
 
     def _parse_todo_result(self, result: str) -> list[dict[str, Any]] | None:

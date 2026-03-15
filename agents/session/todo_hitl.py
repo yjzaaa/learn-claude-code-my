@@ -5,15 +5,27 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Awaitable, Callable
 
 from loguru import logger
+from pydantic import BaseModel, Field
+
+try:
+    from ..models.common_types import (
+        TodoUpdatedEvent,
+        TodoReminderEvent,
+        TodoResponse,
+    )
+except ImportError:
+    from agents.models.common_types import (
+        TodoUpdatedEvent,
+        TodoReminderEvent,
+        TodoResponse,
+    )
 
 
-@dataclass
-class TodoItem:
+class TodoItem(BaseModel):
     """单个任务项。"""
 
     id: str
@@ -21,11 +33,7 @@ class TodoItem:
     status: str  # pending | in_progress | completed
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "text": self.text,
-            "status": self.status,
-        }
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TodoItem":
@@ -36,24 +44,17 @@ class TodoItem:
         )
 
 
-@dataclass
-class TodoState:
+class TodoState(BaseModel):
     """对话级别的 Todo 状态。"""
 
     dialog_id: str
-    items: list[TodoItem] = field(default_factory=list)
+    items: list[TodoItem] = Field(default_factory=list)
     rounds_since_todo: int = 0
     used_todo_in_round: bool = False
-    updated_at: float = field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "dialog_id": self.dialog_id,
-            "items": [item.to_dict() for item in self.items],
-            "rounds_since_todo": self.rounds_since_todo,
-            "used_todo_in_round": self.used_todo_in_round,
-            "updated_at": self.updated_at,
-        }
+        return self.model_dump()
 
 
 class TodoStore:
@@ -200,15 +201,13 @@ class TodoStore:
             state.updated_at = time.time()
 
         # 广播更新事件
-        self._emit(
-            {
-                "type": "todo:updated",
-                "dialog_id": dialog_id,
-                "todos": [item.to_dict() for item in state.items],
-                "rounds_since_todo": state.rounds_since_todo,
-                "timestamp": time.time(),
-            }
+        event = TodoUpdatedEvent(
+            dialog_id=dialog_id,
+            todos=[item.to_dict() for item in state.items],
+            rounds_since_todo=state.rounds_since_todo,
+            timestamp=time.time(),
         )
+        self._emit(event.model_dump())
 
         logger.debug(f"[TodoStore] Updated {len(items)} todos for {dialog_id}")
         if truncated:
@@ -254,26 +253,25 @@ class TodoStore:
 
     def _emit_reminder(self, dialog_id: str, rounds_since_todo: int) -> None:
         """发送 reminder 事件到前端。"""
-        self._emit(
-            {
-                "type": "todo:reminder",
-                "dialog_id": dialog_id,
-                "message": "Update your todos.",
-                "rounds_since_todo": rounds_since_todo,
-                "timestamp": time.time(),
-            }
+        event = TodoReminderEvent(
+            dialog_id=dialog_id,
+            message="Update your todos.",
+            rounds_since_todo=rounds_since_todo,
+            timestamp=time.time(),
         )
+        self._emit(event.model_dump())
         logger.debug(f"[TodoStore] Sent reminder for {dialog_id}")
 
     def get_todos(self, dialog_id: str) -> dict[str, Any]:
         """获取对话的任务列表（用于 REST API）。"""
         state = self.get_state(dialog_id)
-        return {
-            "dialog_id": dialog_id,
-            "items": [item.to_dict() for item in state.items],
-            "rounds_since_todo": state.rounds_since_todo,
-            "updated_at": state.updated_at,
-        }
+        response = TodoResponse(
+            dialog_id=dialog_id,
+            items=[item.to_dict() for item in state.items],
+            rounds_since_todo=state.rounds_since_todo,
+            updated_at=state.updated_at,
+        )
+        return response.model_dump()
 
     def clear_dialog(self, dialog_id: str) -> None:
         """清理对话的 Todo 状态（对话结束时调用）。"""
@@ -284,9 +282,3 @@ class TodoStore:
 
 # 全局单例
 todo_store = TodoStore()
-
-
-def is_todo_hook_enabled() -> bool:
-    """检查是否启用 Todo Hook。"""
-    raw = os.getenv("ENABLE_TODO_HOOK", "1")
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
