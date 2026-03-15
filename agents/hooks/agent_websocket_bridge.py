@@ -10,23 +10,56 @@ AgentWebSocketBridge - Agent 与 WebSocket 之间的桥接层
 import asyncio
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 from dataclasses import dataclass, field
 from loguru import logger
+from pydantic import BaseModel
 
 try:
     from ..models import ChatMessage, ChatEvent, ChatCompletionMessageToolCall
+    from ..models.openai_types import FunctionCall
     from ..websocket.server import connection_manager
     from ..websocket.event_manager import event_manager
     from ..base.abstract import FullAgentHooks, HookName
     from ..utils.workspace_cleanup import clear_workspace_dir
+    from ..monitoring.domain import MonitoringEvent, EventType, EventPriority
+    from ..monitoring.domain.payloads import TokenUsagePayload
+    from ..monitoring.services import event_bus as monitoring_event_bus
+    from ..models.common_types import (
+        MessageStartEvent,
+        ContentDeltaEvent,
+        ReasoningDeltaEvent,
+        ToolCallEvent,
+        ToolResultEvent,
+        MessageCompleteEvent,
+        ReasoningEvent,
+        ErrorEvent,
+        StoppedEvent,
+        RunSummaryEvent,
+    )
 except ImportError:
     from agents.models import ChatMessage, ChatEvent, ChatCompletionMessageToolCall
+    from agents.models.openai_types import FunctionCall
     from agents.websocket.server import connection_manager
     from agents.websocket.event_manager import event_manager
     from agents.base.abstract import FullAgentHooks, HookName
     from agents.utils.workspace_cleanup import clear_workspace_dir
+    from agents.monitoring.domain import MonitoringEvent, EventType, EventPriority
+    from agents.monitoring.services import event_bus as monitoring_event_bus
+    from agents.models.common_types import (
+        MessageStartEvent,
+        ContentDeltaEvent,
+        ReasoningDeltaEvent,
+        ToolCallEvent,
+        ToolResultEvent,
+        MessageCompleteEvent,
+        ReasoningEvent,
+        ErrorEvent,
+        StoppedEvent,
+        RunSummaryEvent,
+    )
 
 
 @dataclass
@@ -36,11 +69,13 @@ class StreamingBuffer:
     reasoning_content: str = ""
     tool_calls: list = field(default_factory=list)
     hook_stats: dict = field(default_factory=dict)
+    usage: dict = field(default_factory=dict)  # Token usage 统计
 
     def reset(self):
         self.content = ""
         self.reasoning_content = ""
         self.tool_calls = []
+        self.usage = {}
         self.hook_stats = {
             "stream_total": 0,
             "content_chunks": 0,
@@ -60,6 +95,7 @@ class StreamingBuffer:
             "content": self.content,
             "reasoning_content": self.reasoning_content,
             "tool_calls": self.tool_calls,
+            "usage": self.usage,
         }
 
 
@@ -98,20 +134,20 @@ class AgentWebSocketBridge(FullAgentHooks):
         self._message_id += 1
         return f"{self.dialog_id}_msg_{self._message_id}"
 
-    async def _broadcast_event(self, event_type: str, data: dict):
+    async def _broadcast_event(self, event_type: str, data: BaseModel):
         """广播事件到 WebSocket"""
         try:
             await connection_manager.broadcast({
                 "type": f"agent:{event_type}",
                 "dialog_id": self.dialog_id,
-                "data": data,
+                "data": data.model_dump(),
             })
         except Exception as e:
             logger.error(f"[AgentBridge] Failed to broadcast event: {e}")
 
-    def _safe_broadcast(self, event_type: str, data: dict):
+    def _safe_broadcast(self, event_type: str, data: BaseModel):
         """线程安全地广播事件"""
-        logger.debug(f"[AgentBridge] Broadcasting event: {event_type}, data keys: {list(data.keys())}")
+        logger.debug(f"[AgentBridge] Broadcasting event: {event_type}, data type: {type(data).__name__}")
         if self._loop and self._loop.is_running():
             # 在主事件循环中调度
             asyncio.run_coroutine_threadsafe(
@@ -171,11 +207,11 @@ class AgentWebSocketBridge(FullAgentHooks):
             if self._current_assistant_message is None:
                 self._current_assistant_message = self._create_assistant_message()
                 # 发送开始事件，包含 agent_name
-                self._safe_broadcast("message_start", {
-                    "message_id": self._current_assistant_message.id,
-                    "role": "assistant",
-                    "agent_name": self.agent_name,
-                })
+                self._safe_broadcast("message_start", MessageStartEvent(
+                    message_id=self._current_assistant_message.id,
+                    role="assistant",
+                    agent_name=self.agent_name,
+                ))
 
             # 根据 chunk 类型处理
             if hasattr(chunk, 'is_content') and chunk.is_content:
@@ -186,12 +222,12 @@ class AgentWebSocketBridge(FullAgentHooks):
                 logger.debug(f"[AgentBridge] Content chunk received: {content[:50]}...")
 
                 # 发送增量内容，包含 agent_name
-                self._safe_broadcast("content_delta", {
-                    "message_id": self._current_assistant_message.id,
-                    "delta": content,
-                    "content": self.buffer.content,
-                    "agent_name": self.agent_name,
-                })
+                self._safe_broadcast("content_delta", ContentDeltaEvent(
+                    message_id=self._current_assistant_message.id,
+                    delta=content,
+                    content=self.buffer.content,
+                    agent_name=self.agent_name,
+                ))
 
             elif hasattr(chunk, 'is_reasoning') and chunk.is_reasoning:
                 reasoning = chunk.reasoning_content if hasattr(chunk, 'reasoning_content') else str(chunk)
@@ -200,11 +236,11 @@ class AgentWebSocketBridge(FullAgentHooks):
                 self.buffer.hook_stats["reasoning_chunks"] += 1
 
                 # 发送推理内容
-                self._safe_broadcast("reasoning_delta", {
-                    "message_id": self._current_assistant_message.id,
-                    "delta": reasoning,
-                    "reasoning_content": self.buffer.reasoning_content,
-                })
+                self._safe_broadcast("reasoning_delta", ReasoningDeltaEvent(
+                    message_id=self._current_assistant_message.id,
+                    delta=reasoning,
+                    reasoning_content=self.buffer.reasoning_content,
+                ))
 
             elif hasattr(chunk, 'is_tool_call') and chunk.is_tool_call:
                 self.buffer.hook_stats["stream_total"] += 1
@@ -212,6 +248,10 @@ class AgentWebSocketBridge(FullAgentHooks):
             elif hasattr(chunk, 'is_done') and chunk.is_done:
                 self.buffer.hook_stats["stream_total"] += 1
                 self.buffer.hook_stats["done_chunks"] += 1
+                # 保存 usage 信息
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    self.buffer.usage = chunk.usage
+                    logger.debug(f"[AgentBridge] Token usage: {chunk.usage}")
             elif hasattr(chunk, 'is_error') and chunk.is_error:
                 self.buffer.hook_stats["stream_total"] += 1
                 self.buffer.hook_stats["error_chunks"] += 1
@@ -235,13 +275,13 @@ class AgentWebSocketBridge(FullAgentHooks):
             tool_call_obj = ChatCompletionMessageToolCall(
                 id=actual_tool_call_id,
                 type="function",
-                function={
-                    "name": name,
-                    "arguments": json.dumps(arguments) if isinstance(arguments, dict) else str(arguments),
-                }
+                function=FunctionCall(
+                    name=name,
+                    arguments=json.dumps(arguments) if isinstance(arguments, dict) else str(arguments),
+                )
             )
             # 同时保存 dict 格式用于广播
-            tool_call_dict = tool_call_obj.to_dict()
+            tool_call_dict = tool_call_obj.model_dump()
             self.buffer.tool_calls.append(tool_call_dict)
             self.buffer.hook_stats["tool_calls"].append({
                 "name": name,
@@ -252,17 +292,17 @@ class AgentWebSocketBridge(FullAgentHooks):
             if self._current_assistant_message is None:
                 self._current_assistant_message = self._create_assistant_message()
                 # 发送开始事件
-                self._safe_broadcast("message_start", {
-                    "message_id": self._current_assistant_message.id,
-                    "role": "assistant",
-                    "agent_name": self.agent_name,
-                })
+                self._safe_broadcast("message_start", MessageStartEvent(
+                    message_id=self._current_assistant_message.id,
+                    role="assistant",
+                    agent_name=self.agent_name,
+                ))
                 logger.debug(f"[AgentBridge] Created assistant message for tool-only response: {self._current_assistant_message.id}")
 
-            self._safe_broadcast("tool_call", {
-                "message_id": self._current_assistant_message.id,
-                "tool_call": tool_call_dict,
-            })
+            self._safe_broadcast("tool_call", ToolCallEvent(
+                message_id=self._current_assistant_message.id,
+                tool_call=tool_call_dict,
+            ))
 
             # 同时保存到对话框历史 (使用对象类型)
             if not self._current_assistant_message.tool_calls:
@@ -286,13 +326,13 @@ class AgentWebSocketBridge(FullAgentHooks):
 
             # 广播工具执行结果
             logger.debug(f"[AgentBridge] Broadcasting tool_result for {tool_call_id}")
-            self._safe_broadcast("tool_result", {
-                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
-                "tool_call_id": tool_call_id or f"call_{result_message_id}",
-                "tool_name": name,
-                "result": result,
-                "timestamp": time.time(),
-            })
+            self._safe_broadcast("tool_result", ToolResultEvent(
+                message_id=self._current_assistant_message.id if self._current_assistant_message else None,
+                tool_call_id=tool_call_id or f"call_{result_message_id}",
+                tool_name=name,
+                result=result,
+                timestamp=time.time(),
+            ))
 
             # 创建工具结果消息并保存到对话框历史
             from ..models import ChatMessage
@@ -327,12 +367,12 @@ class AgentWebSocketBridge(FullAgentHooks):
                            f"with {len(self._current_assistant_message.tool_calls or [])} tool_calls")
 
                 # 发送完成事件
-                self._safe_broadcast("message_complete", {
-                    "message_id": self._current_assistant_message.id,
-                    "content": self._current_assistant_message.content,
-                    "reasoning_content": self.buffer.reasoning_content,
-                    "tool_calls": self.buffer.tool_calls,
-                })
+                self._safe_broadcast("message_complete", MessageCompleteEvent(
+                    message_id=self._current_assistant_message.id,
+                    content=self._current_assistant_message.content,
+                    reasoning_content=self.buffer.reasoning_content,
+                    tool_calls=self.buffer.tool_calls,
+                ))
             else:
                 logger.warning(f"[AgentBridge] on_complete: _current_assistant_message is None, nothing to save")
             import pathlib
@@ -344,6 +384,30 @@ class AgentWebSocketBridge(FullAgentHooks):
             # 保存消息和 usage 到 JSONL
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.buffer.to_dict(), ensure_ascii=False, default=str) + "\n")
+
+            # 发送 TOKEN_USAGE 监控事件
+            if self.buffer.usage:
+                try:
+                    usage_payload = TokenUsagePayload(
+                        agent_name=self.agent_name,
+                        prompt_tokens=self.buffer.usage.get("prompt_tokens", 0),
+                        completion_tokens=self.buffer.usage.get("completion_tokens", 0),
+                        total_tokens=self.buffer.usage.get("total_tokens", 0),
+                        model=self.buffer.usage.get("model", "unknown")
+                    )
+                    usage_event = MonitoringEvent(
+                        type=EventType.TOKEN_USAGE,
+                        dialog_id=self.dialog_id,
+                        source=self.agent_name,
+                        context_id=uuid.uuid4(),
+                        priority=EventPriority.NORMAL,
+                        payload=usage_payload.model_dump()
+                    )
+                    # 异步发送，不阻塞
+                    asyncio.create_task(monitoring_event_bus.emit(usage_event))
+                    logger.debug(f"[AgentBridge] Sent TOKEN_USAGE event: {self.buffer.usage}")
+                except Exception as e:
+                    logger.error(f"[AgentBridge] Error sending TOKEN_USAGE event: {e}")
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_complete: {e}")
@@ -357,10 +421,10 @@ class AgentWebSocketBridge(FullAgentHooks):
         try:
             self.buffer.reasoning_content += reasoning_content
 
-            self._safe_broadcast("reasoning", {
-                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
-                "reasoning_content": reasoning_content,
-            })
+            self._safe_broadcast("reasoning", ReasoningEvent(
+                message_id=self._current_assistant_message.id if self._current_assistant_message else None,
+                reasoning_content=reasoning_content,
+            ))
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_reasoning: {e}")
@@ -376,10 +440,10 @@ class AgentWebSocketBridge(FullAgentHooks):
             logger.error(f"[AgentBridge] Agent error: {error_msg}")
             self.buffer.hook_stats["errors"].append(error_msg)
 
-            self._safe_broadcast("error", {
-                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
-                "error": error_msg,
-            })
+            self._safe_broadcast("error", ErrorEvent(
+                message_id=self._current_assistant_message.id if self._current_assistant_message else None,
+                error=error_msg,
+            ))
 
             # 发送系统错误消息
             system_msg = ChatMessage.system(f"Agent error: {error_msg}")
@@ -395,9 +459,9 @@ class AgentWebSocketBridge(FullAgentHooks):
         BaseAgentLoop 在被请求停止时调用此钩子
         """
         try:
-            self._safe_broadcast("stopped", {
-                "message_id": self._current_assistant_message.id if self._current_assistant_message else None,
-            })
+            self._safe_broadcast("stopped", StoppedEvent(
+                message_id=self._current_assistant_message.id if self._current_assistant_message else None,
+            ))
 
         except Exception as e:
             logger.error(f"[AgentBridge] Error in on_stop: {e}")
@@ -405,11 +469,11 @@ class AgentWebSocketBridge(FullAgentHooks):
     def on_after_run(self, messages: list[dict[str, Any]], rounds: int) -> None:
         self.buffer.hook_stats["after_run_rounds"] = rounds
 
-        run_report = {
-            "result": str(self.buffer.hook_stats.get("complete_payload", "")),
-            "hook_stats": self.buffer.hook_stats,
-            "messages": self._serialize_messages(messages),
-        }
+        run_report = RunSummaryEvent(
+            result=str(self.buffer.hook_stats.get("complete_payload", "")),
+            hook_stats=self.buffer.hook_stats,
+            messages=self._serialize_messages(messages),
+        )
 
         self._safe_broadcast("run_summary", run_report)
 

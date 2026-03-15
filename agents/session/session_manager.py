@@ -9,25 +9,27 @@ Session 管理模块
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import datetime
 from threading import RLock
 from typing import Any, Optional
 
+from pydantic import BaseModel, Field
+
 try:
     from .history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+    from ..models.common_types import SessionStatus
 except ImportError:
     from agents.session.history_utils import append_history_round, build_window_messages as build_window_messages_from_rounds
+    from agents.models.common_types import SessionStatus
 
 
-@dataclass
-class SessionIdentity:
+class SessionIdentity(BaseModel):
     """会话身份信息。当前仅以 dialog_id 作为唯一标识。"""
 
     dialog_id: str
     user_id: Optional[str] = None
     tenant_id: Optional[str] = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def key(self) -> str:
@@ -35,8 +37,7 @@ class SessionIdentity:
         return self.dialog_id
 
 
-@dataclass
-class AgentRuntimeState:
+class AgentRuntimeState(BaseModel):
     """单会话下 Agent 运行时状态。"""
 
     is_running: bool = False
@@ -48,15 +49,14 @@ class AgentRuntimeState:
     last_error: Optional[str] = None
 
 
-@dataclass
-class SessionContext:
+class SessionContext(BaseModel):
     """按会话维度维护的数据。"""
 
     identity: SessionIdentity
-    runtime: AgentRuntimeState = field(default_factory=AgentRuntimeState)
-    pending_messages: list[str] = field(default_factory=list)
-    history_rounds: list[dict[str, str]] = field(default_factory=list)
-    extra: dict[str, Any] = field(default_factory=dict)
+    runtime: AgentRuntimeState = Field(default_factory=AgentRuntimeState)
+    pending_messages: list[str] = Field(default_factory=list)
+    history_rounds: list[dict[str, str]] = Field(default_factory=list)
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class SessionManager:
@@ -199,10 +199,11 @@ class SessionManager:
             if self._active_dialog_id and self._active_dialog_id in self._sessions:
                 active_history_rounds = len(self._sessions[self._active_dialog_id].history_rounds)
 
-            return {
-                "is_running": self._active_dialog_id is not None,
-                "current_dialog_id": self._active_dialog_id,
-                "model": self.model,
-                "window_rounds": self.window_rounds,
-                "active_history_rounds": active_history_rounds,
-            }
+            status_obj = SessionStatus(
+                is_running=self._active_dialog_id is not None,
+                current_dialog_id=self._active_dialog_id,
+                model=self.model,
+                window_rounds=self.window_rounds,
+                active_history_rounds=active_history_rounds,
+            )
+            return status_obj.model_dump()

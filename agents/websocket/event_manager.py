@@ -1,4 +1,4 @@
-"""
+﻿"""
 事件管理器 - 简化版，直接使用 OpenAI 格式
 
 数据流:
@@ -6,14 +6,43 @@
 """
 
 from loguru import logger
-from typing import Callable, Dict, List, Any, Optional
+from typing import Callable, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 import asyncio
 import json
 
+from pydantic import BaseModel
+
 # OpenAI 风格类型
 from ..models.openai_types import ChatMessage, ChatEvent
+
+
+class PushTypeMap(BaseModel):
+    """推送类型映射"""
+    message: bool = True
+    system: bool = True
+    stream_token: bool = True
+    tool_call: bool = True
+    tool_result: bool = True
+    thinking: bool = True
+
+
+class DialogSessionData(BaseModel):
+    """对话框会话数据模型"""
+    id: str
+    title: str
+    messages: list[dict[str, Any]]
+    created_at: str
+    updated_at: str
+
+
+class ChatEventMessageData(BaseModel):
+    """聊天事件消息数据"""
+    type: str
+    dialog_id: str
+    message: dict[str, Any]
+    timestamp: float
 
 
 @dataclass
@@ -21,7 +50,7 @@ class DialogSession:
     """对话框会话 - 简化版"""
     id: str
     title: str
-    messages: List[ChatMessage] = field(default_factory=list)
+    messages: list[ChatMessage] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -29,14 +58,14 @@ class DialogSession:
         self.messages.append(message)
         self.updated_at = datetime.now().isoformat()
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "title": self.title,
-            "messages": [m.to_dict() for m in self.messages],
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
+    def to_dict(self) -> dict[str, Any]:
+        return DialogSessionData(
+            id=self.id,
+            title=self.title,
+            messages=[m.model_dump() for m in self.messages],
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        ).model_dump()
 
 
 class EventManager:
@@ -53,9 +82,9 @@ class EventManager:
     def __init__(self):
         if self._initialized:
             return
-        self._subscribers: Dict[str, List[Callable]] = {}
-        self._dialogs: Dict[str, DialogSession] = {}
-        self._websocket_clients: List[Any] = []
+        self._subscribers: dict[str, list[Callable]] = {}
+        self._dialogs: dict[str, DialogSession] = {}
+        self._websocket_clients: list[Any] = []
         self._initialized = True
 
     # ========== 订阅/发布 ==========
@@ -95,7 +124,7 @@ class EventManager:
         if client in self._websocket_clients:
             self._websocket_clients.remove(client)
 
-    async def broadcast_to_clients(self, message: Dict[str, Any]):
+    async def broadcast_to_clients(self, message: dict[str, Any]):
         """广播消息到所有 WebSocket 客户端"""
         if not self._websocket_clients:
             return
@@ -120,12 +149,12 @@ class EventManager:
 
         这是主要的消息发送接口，直接使用 OpenAI 格式。
         """
-        message_data = {
-            "type": event.type,
-            "dialog_id": event.dialog_id,
-            "message": event.message.to_dict(),
-            "timestamp": event.timestamp,
-        }
+        message_data = ChatEventMessageData(
+            type=event.type,
+            dialog_id=event.dialog_id,
+            message=event.message.model_dump(),
+            timestamp=event.timestamp,
+        ).model_dump()
 
         # 添加到对话框历史
         dialog = self._dialogs.get(event.dialog_id)
@@ -153,42 +182,35 @@ class EventManager:
         """获取对话框"""
         return self._dialogs.get(dialog_id)
 
-    def get_all_dialogs(self) -> List[DialogSession]:
+    def get_all_dialogs(self) -> list[DialogSession]:
         """获取所有对话框"""
         return list(self._dialogs.values())
 
-    def to_client_dialog_dict(self, dialog: DialogSession) -> Dict[str, Any]:
+    def to_client_dialog_dict(self, dialog: DialogSession) -> dict[str, Any]:
         """将对话框转换为客户端格式"""
         if not dialog:
             return {}
         return {
             "id": dialog.id,
             "title": dialog.title,
-            "messages": [m.to_dict() for m in dialog.messages],
+            "messages": [m.model_dump() for m in dialog.messages],
             "created_at": dialog.created_at,
             "updated_at": dialog.updated_at,
         }
 
     # ========== 推送类型控制 (兼容性) ==========
 
-    def get_push_type_map(self) -> Dict[str, bool]:
+    def get_push_type_map(self) -> PushTypeMap:
         """获取推送类型映射 (兼容性方法)"""
         # 默认所有类型都推送
-        return {
-            "message": True,
-            "system": True,
-            "stream_token": True,
-            "tool_call": True,
-            "tool_result": True,
-            "thinking": True,
-        }
+        return PushTypeMap()
 
-    def update_push_type_map(self, updates: Dict[str, bool]) -> Dict[str, bool]:
+    def update_push_type_map(self, updates: dict[str, bool]) -> PushTypeMap:
         """更新推送类型映射 (兼容性方法)"""
         current = self.get_push_type_map()
         for key, value in updates.items():
-            if key in current:
-                current[key] = bool(value)
+            if hasattr(current, key):
+                setattr(current, key, bool(value))
         return current
 
 

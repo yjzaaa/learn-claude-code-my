@@ -5,13 +5,15 @@ FastAPI WebSocket服务器
 """
 
 from loguru import logger
-from typing import Dict, List, Optional, Any
+from typing import Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import asyncio
 import uuid
 from datetime import datetime
+
+from pydantic import BaseModel
 
 from .event_manager import (
     event_manager,
@@ -20,12 +22,91 @@ from .event_manager import (
 from ..models import ChatMessage, ChatEvent
 
 
+# ========== WebSocket 消息模型 ==========
+
+class ErrorResponse(BaseModel):
+    """错误响应"""
+    type: str = "error"
+    message: str
+
+
+class DialogSubscribedResponse(BaseModel):
+    """对话框订阅响应"""
+    type: str = "dialog_subscribed"
+    dialog_id: str
+    dialog: dict[str, Any]
+
+
+class DialogUnsubscribedResponse(BaseModel):
+    """对话框取消订阅响应"""
+    type: str = "dialog_unsubscribed"
+    dialog_id: str
+
+
+class PongResponse(BaseModel):
+    """Ping 响应"""
+    type: str = "pong"
+
+
+class UserInputEvent(BaseModel):
+    """用户输入事件"""
+    dialog_id: str
+    client_id: str
+    content: str
+    message_id: str
+
+
+class DialogCreatedBroadcast(BaseModel):
+    """对话框创建广播"""
+    type: str = "dialog_created"
+    dialog: dict[str, Any]
+
+
+class DialogDeletedBroadcast(BaseModel):
+    """对话框删除广播"""
+    type: str = "dialog_deleted"
+    dialog_id: str
+
+
+class ChatEventBroadcast(BaseModel):
+    """聊天事件广播"""
+    type: str = "chat:event"
+    event: dict[str, Any]
+
+
+class StreamTokenBroadcast(BaseModel):
+    """流式 Token 广播"""
+    type: str = "stream_token"
+    dialog_id: str
+    message_id: str
+    token: str
+    current_content: str
+
+
+class ToolCallFunction(BaseModel):
+    """工具调用函数"""
+    name: str
+    arguments: str
+
+
+class ToolCallData(BaseModel):
+    """工具调用数据"""
+    id: str
+    type: str = "function"
+    function: ToolCallFunction
+
+
+class GetDialogsResponse(BaseModel):
+    """获取对话框列表响应"""
+    dialogs: list[dict[str, Any]]
+
+
 class ConnectionManager:
     """WebSocket连接管理器"""
 
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.dialog_subscriptions: Dict[str, List[str]] = {}
+        self.active_connections: dict[str, WebSocket] = {}
+        self.dialog_subscriptions: dict[str, list[str]] = {}
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -54,12 +135,12 @@ class ConnectionManager:
 
         return ClientWrapper(self, client_id)
 
-    async def send_personal_message(self, message: Dict[str, Any], client_id: str):
+    async def send_personal_message(self, message: dict[str, Any], client_id: str):
         """发送个人消息"""
         if client_id in self.active_connections:
             await self.active_connections[client_id].send_text(json.dumps(message, ensure_ascii=False))
 
-    async def broadcast(self, message: Dict[str, Any]):
+    async def broadcast(self, message: dict[str, Any]):
         """广播消息到所有客户端"""
         logger.info(f"[ConnectionManager] Broadcasting to all: type={message.get('type')}, active_connections={len(self.active_connections)}")
         disconnected = []
@@ -76,10 +157,18 @@ class ConnectionManager:
         for client_id in disconnected:
             self.disconnect(client_id)
 
-    async def broadcast_to_dialog(self, dialog_id: str, message: Dict[str, Any]):
-        """广播消息到订阅特定对话框的客户端"""
-        clients = self.dialog_subscriptions.get(dialog_id, [])
-        logger.info(f"[ConnectionManager] broadcast_to_dialog: dialog_id={dialog_id}, clients={clients}, active_connections={list(self.active_connections.keys())}")
+    async def broadcast_to_dialog(self, dialog_id: str, message: dict[str, Any]):
+        """广播消息到订阅特定对话框的客户端，包括通配符订阅者"""
+        # 获取特定对话的订阅者和通配符订阅者
+        clients = self.dialog_subscriptions.get(dialog_id, []).copy()
+        wildcard_clients = self.dialog_subscriptions.get("*", [])
+
+        # 合并订阅者列表（去重）
+        for client_id in wildcard_clients:
+            if client_id not in clients:
+                clients.append(client_id)
+
+        logger.info(f"[ConnectionManager] broadcast_to_dialog: dialog_id={dialog_id}, clients={clients}, wildcard_clients={wildcard_clients}, active_connections={list(self.active_connections.keys())}")
         disconnected = []
 
         if not clients:
@@ -129,7 +218,7 @@ class MessageHandler:
     """消息处理器 - 处理WebSocket消息"""
 
     @staticmethod
-    async def handle_message(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    async def handle_message(websocket: WebSocket, client_id: str, message: dict[str, Any]):
         """处理收到的消息"""
         msg_type = message.get("type")
 
@@ -144,37 +233,34 @@ class MessageHandler:
         if handler:
             await handler(websocket, client_id, message)
         else:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "message": f"Unknown message type: {msg_type}"
-            }))
+            await websocket.send_text(json.dumps(ErrorResponse(
+                message=f"Unknown message type: {msg_type}"
+            ).model_dump()))
 
     @staticmethod
-    async def _handle_subscribe_dialog(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    async def _handle_subscribe_dialog(websocket: WebSocket, client_id: str, message: dict[str, Any]):
         """处理订阅对话框请求"""
         dialog_id = message.get("dialog_id")
         if dialog_id:
             connection_manager.subscribe_to_dialog(client_id, dialog_id)
             dialog = event_manager.get_dialog(dialog_id)
-            await websocket.send_text(json.dumps({
-                "type": "dialog_subscribed",
-                "dialog_id": dialog_id,
-                "dialog": event_manager.to_client_dialog_dict(dialog),
-            }))
+            await websocket.send_text(json.dumps(DialogSubscribedResponse(
+                dialog_id=dialog_id,
+                dialog=event_manager.to_client_dialog_dict(dialog),
+            ).model_dump()))
 
     @staticmethod
-    async def _handle_unsubscribe_dialog(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    async def _handle_unsubscribe_dialog(websocket: WebSocket, client_id: str, message: dict[str, Any]):
         """处理取消订阅对话框请求"""
         dialog_id = message.get("dialog_id")
         if dialog_id:
             connection_manager.unsubscribe_from_dialog(client_id, dialog_id)
-            await websocket.send_text(json.dumps({
-                "type": "dialog_unsubscribed",
-                "dialog_id": dialog_id,
-            }))
+            await websocket.send_text(json.dumps(DialogUnsubscribedResponse(
+                dialog_id=dialog_id,
+            ).model_dump()))
 
     @staticmethod
-    async def _handle_user_input(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    async def _handle_user_input(websocket: WebSocket, client_id: str, message: dict[str, Any]):
         """处理用户输入"""
         dialog_id = message.get("dialog_id")
         content = message.get("content")
@@ -185,17 +271,17 @@ class MessageHandler:
             event_manager.add_chat_message(dialog_id, user_message)
 
             # 触发用户输入事件
-            event_manager.emit("user_input", {
-                "dialog_id": dialog_id,
-                "client_id": client_id,
-                "content": content,
-                "message_id": user_message.id,
-            })
+            event_manager.emit("user_input", UserInputEvent(
+                dialog_id=dialog_id,
+                client_id=client_id,
+                content=content,
+                message_id=user_message.id,
+            ).model_dump())
 
     @staticmethod
-    async def _handle_ping(websocket: WebSocket, client_id: str, message: Dict[str, Any]):
+    async def _handle_ping(websocket: WebSocket, client_id: str, message: dict[str, Any]):
         """处理ping请求"""
-        await websocket.send_text(json.dumps({"type": "pong"}))
+        await websocket.send_text(json.dumps(PongResponse().model_dump()))
 
 
 def create_websocket_app() -> FastAPI:
@@ -221,10 +307,9 @@ def create_websocket_app() -> FastAPI:
                     message = json.loads(data)
                     await MessageHandler.handle_message(websocket, client_id, message)
                 except json.JSONDecodeError:
-                    await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": "Invalid JSON"
-                    }))
+                    await websocket.send_text(json.dumps(ErrorResponse(
+                        message="Invalid JSON"
+                    ).model_dump()))
         except WebSocketDisconnect:
             connection_manager.disconnect(client_id)
 
@@ -232,9 +317,9 @@ def create_websocket_app() -> FastAPI:
     async def get_dialogs():
         """获取所有对话框"""
         dialogs = event_manager.get_all_dialogs()
-        return {
-            "dialogs": [d.to_dict() for d in dialogs]
-        }
+        return GetDialogsResponse(
+            dialogs=[d.to_dict() for d in dialogs]
+        ).model_dump()
 
     @app.post("/api/dialogs")
     async def create_dialog(title: str = "New Dialog"):
@@ -243,10 +328,9 @@ def create_websocket_app() -> FastAPI:
         dialog = event_manager.create_dialog(dialog_id, title)
 
         # 广播新对话框创建
-        await connection_manager.broadcast({
-            "type": "dialog_created",
-            "dialog": dialog.to_dict()
-        })
+        await connection_manager.broadcast(DialogCreatedBroadcast(
+            dialog=dialog.to_dict()
+        ).model_dump())
 
         return dialog.to_dict()
 
@@ -262,10 +346,9 @@ def create_websocket_app() -> FastAPI:
     async def delete_dialog(dialog_id: str):
         """删除对话框"""
         # 这里可以实现删除逻辑
-        await connection_manager.broadcast({
-            "type": "dialog_deleted",
-            "dialog_id": dialog_id
-        })
+        await connection_manager.broadcast(DialogDeletedBroadcast(
+            dialog_id=dialog_id
+        ).model_dump())
         return {"status": "deleted"}
 
     return app
@@ -308,10 +391,9 @@ class AgentMessageBridge:
             dialog_id=self.dialog_id,
             message=message,
         )
-        await event_manager.broadcast_to_clients({
-            "type": "chat:event",
-            "event": event.to_dict(),
-        })
+        await event_manager.broadcast_to_clients(ChatEventBroadcast(
+            event=event.to_dict(),
+        ).model_dump())
         return message
 
     async def start_assistant_response(self) -> ChatMessage:
@@ -331,27 +413,24 @@ class AgentMessageBridge:
             # 广播流式更新
             await connection_manager.broadcast_to_dialog(
                 self.dialog_id,
-                {
-                    "type": "stream_token",
-                    "dialog_id": self.dialog_id,
-                    "message_id": self.current_message.id,
-                    "token": token,
-                    "current_content": self.current_message.content,
-                },
+                StreamTokenBroadcast(
+                    dialog_id=self.dialog_id,
+                    message_id=self.current_message.id,
+                    token=token,
+                    current_content=self.current_message.content,
+                ).model_dump(),
             )
 
-    async def send_tool_call(self, tool_name: str, tool_input: Dict[str, Any]) -> ChatMessage:
+    async def send_tool_call(self, tool_name: str, tool_input: dict[str, Any]) -> ChatMessage:
         """发送工具调用"""
-        import json
-        tool_call = {
-            "id": str(uuid.uuid4()),
-            "type": "function",
-            "function": {
-                "name": tool_name,
-                "arguments": json.dumps(tool_input),
-            }
-        }
-        message = ChatMessage.assistant("", tool_calls=[tool_call])
+        tool_call = ToolCallData(
+            id=str(uuid.uuid4()),
+            function=ToolCallFunction(
+                name=tool_name,
+                arguments=json.dumps(tool_input),
+            )
+        )
+        message = ChatMessage.assistant("", tool_calls=[tool_call.model_dump()])
         event_manager.add_chat_message(self.dialog_id, message)
 
         # 广播事件
@@ -360,10 +439,9 @@ class AgentMessageBridge:
             dialog_id=self.dialog_id,
             message=message,
         )
-        await event_manager.broadcast_to_clients({
-            "type": "chat:event",
-            "event": event.to_dict(),
-        })
+        await event_manager.broadcast_to_clients(ChatEventBroadcast(
+            event=event.to_dict(),
+        ).model_dump())
         return message
 
     async def send_tool_result(self, tool_call_id: str, result: str):
@@ -377,10 +455,9 @@ class AgentMessageBridge:
             dialog_id=self.dialog_id,
             message=message,
         )
-        await event_manager.broadcast_to_clients({
-            "type": "chat:event",
-            "event": event.to_dict(),
-        })
+        await event_manager.broadcast_to_clients(ChatEventBroadcast(
+            event=event.to_dict(),
+        ).model_dump())
         return message
 
     async def complete_assistant_response(self, final_content: Optional[str] = None):
@@ -394,13 +471,12 @@ class AgentMessageBridge:
                 dialog_id=self.dialog_id,
                 message=self.current_message,
             )
-            await event_manager.broadcast_to_clients({
-                "type": "chat:event",
-                "event": event.to_dict(),
-            })
+            await event_manager.broadcast_to_clients(ChatEventBroadcast(
+                event=event.to_dict(),
+            ).model_dump())
         self.current_message = None
 
-    async def send_system_event(self, content: str, metadata: Optional[Dict] = None):
+    async def send_system_event(self, content: str, metadata: Optional[dict] = None):
         """发送系统事件"""
         message = ChatMessage.system(content)
         event_manager.add_chat_message(self.dialog_id, message)
@@ -411,9 +487,8 @@ class AgentMessageBridge:
             dialog_id=self.dialog_id,
             message=message,
         )
-        await event_manager.broadcast_to_clients({
-            "type": "chat:event",
-            "event": event.to_dict(),
-        })
+        await event_manager.broadcast_to_clients(ChatEventBroadcast(
+            event=event.to_dict(),
+        ).model_dump())
         return message
 
