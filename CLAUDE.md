@@ -4,65 +4,84 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a "nano Claude Code-like agent" built from 0 to 1 as a learning project. It implements an AI coding agent with progressive sessions (s01-s12), each adding one mechanism on top of a minimal loop without changing the core.
+A "nano Claude Code-like agent" built as a learning project. 12 progressive sessions (s01–s12) each add one mechanism on top of a minimal agent loop. The repo also ships a full-stack reference implementation (`main.py` + `core/` + `web/`) as the final integrated form.
 
-**Architecture:**
-- **Backend:** Python FastAPI with WebSocket support, Pydantic models, LiteLLM provider
+**Stack:**
+- **Backend:** Python FastAPI + uvicorn, Pydantic v2, LiteLLM provider
 - **Frontend:** Next.js 16 + React 19 + TypeScript + Tailwind CSS v4
-- **State Management:** Backend is the single source of truth; frontend is pure rendering
+- **State:** Backend is single source of truth; frontend is pure rendering layer
 
 ## Development Commands
 
-### Backend (Python)
+### Backend
 
 ```bash
 # Activate virtual environment (Windows)
 .venv/Scripts/activate
 
-# Run the API server (main entry point)
-python -m agents.api.main_new
-
-# Or use the start script
-python agents/start_server.py
-
-# Check Python syntax
-python -m py_compile agents/api/main_new.py
+# Run the server (entry point)
+python main.py
+# or
+uvicorn main:app --reload --port 8001
 
 # Run a single test file
 python tests/test_subagent_event.py
 ```
 
-### Frontend (Next.js)
+### Frontend
 
 ```bash
 cd web
 
 # Install dependencies
-pnpm install
+npm install   # or pnpm install
 
-# Run development server (includes content extraction)
-pnpm dev
+# Dev server (auto-runs content extraction first)
+npm run dev
 
-# Build for production
-pnpm build
+# Production build (auto-runs content extraction first)
+npm run build
 
-# Extract content (runs automatically before dev/build)
-pnpm extract
+# Content extraction only
+npm run extract
 ```
 
 ### Environment Setup
 
 Copy `.env.example` to `.env` and configure:
-- `ANTHROPIC_API_KEY` - Required for LLM access
-- `MODEL_ID` - Default: `claude-sonnet-4-6`
-- `ANTHROPIC_BASE_URL` - Optional, for Anthropic-compatible providers (Kimi, DeepSeek, etc.)
-- Database settings for finance SQL skill
+- `ANTHROPIC_API_KEY` — required
+- `MODEL_ID` — default: `claude-sonnet-4-6`
+- `ANTHROPIC_BASE_URL` — optional, for compatible providers (Kimi, DeepSeek, etc.)
+- `PORT` — default: `8001`
+- `HOST` — default: `0.0.0.0`
 
-## High-Level Architecture
+## Architecture
 
-### Core Agent Loop (`agents/base/base_agent_loop.py`)
+### Entry Point (`main.py`)
 
-The minimal agent pattern that everything builds upon:
+FastAPI app with REST + WebSocket. Instantiates `AgentEngine`, manages per-dialog state (`_status`, `_streaming_msg`), broadcasts events to all connected WebSocket clients. Key routes:
+- `POST /api/dialogs` — create dialog
+- `POST /api/dialogs/{id}/messages` — send message (spawns background agent task)
+- `WebSocket /ws/{client_id}` — real-time event stream
+
+### Core Engine (`core/engine.py`)
+
+`AgentEngine` is a Facade delegating to six managers:
+
+| Manager | File | Responsibility |
+|---------|------|---------------|
+| DialogManager | `core/managers/dialog_manager.py` | CRUD for Dialog/Message |
+| ToolManager | `core/managers/tool_manager.py` | Tool registry & execution |
+| StateManager | `core/managers/state_manager.py` | Dialog status tracking |
+| ProviderManager | `core/managers/provider_manager.py` | LLM provider abstraction |
+| MemoryManager | `core/managers/memory_manager.py` | Context/memory |
+| SkillManager | `core/managers/skill_manager.py` | Dynamic skill loading |
+
+All managers communicate via `runtime/event_bus.py`.
+
+### Agent Loop (`core/agent/`)
+
+Minimal loop pattern every session builds upon:
 
 ```python
 while True:
@@ -72,102 +91,51 @@ while True:
     messages.append_results(results)
 ```
 
-### Key Architectural Decisions
+### Pydantic Models (`core/models/`)
 
-1. **Backend-State-First:** Dialog state lives in `DialogStore` (singleton). WebSocket broadcasts snapshots to frontend.
+All data uses Pydantic — no raw dicts. Key files:
+- `dialog.py` — Dialog, Message
+- `domain.py` — Skill, domain entities
+- `events.py` — SystemStarted, SystemStopped, ErrorOccurred
+- `dto.py` — DecisionResult, TodoStateDTO
+- `config.py` — EngineConfig
 
-2. **Pydantic Standardization:** All data structures use Pydantic models. No raw dicts passed around. Key models in `agents/models/`:
-   - `dialog_types.py` - DialogSession, Message, ToolCall
-   - `common_types.py` - WebSocket events, Todo models
-   - `openai_types.py` - ChatMessage, ChatEvent (OpenAI-compatible)
+### HITL & Plugins (`core/hitl/`, `core/plugins/`)
 
-3. **Hook System:** Hooks wrap the agent loop for cross-cutting concerns:
-   - `state_managed_agent_bridge.py` - State management + WebSocket broadcasting
-   - `todo_manager_hook.py` - Todo list management
-   - `context_compact_hook.py` - Context window compression
+- `hitl/todo.py` — todo list management hook
+- `hitl/skill_edit.py` — skill editing HITL flow
+- `plugins/compact_plugin.py` — context window compression
 
-4. **Skill Loading:** Skills are dynamically loaded from `skills/` directory. Each skill has:
-   - `SKILL.md` - Prompt/instructions
-   - `scripts/` - Tools (Python functions decorated with `@tool`)
+### Skills (`skills/`)
 
-5. **Monitoring System:** Event-driven monitoring in `agents/monitoring/`:
-   - Event bus for decoupled communication
-   - Subagent lifecycle tracking
-   - Token usage tracking
+Each skill directory contains:
+- `SKILL.md` — injected as context via `tool_result` (not system prompt)
+- `scripts/` — Python functions decorated with `@tool`
 
-### Directory Structure
+Skills are loaded dynamically by `SkillManager`.
 
-```
-agents/
-  api/main_new.py          # FastAPI entry point
-  agent/s_full.py          # Full-capability agent implementation
-  base/                    # Base agent loop, tools, plugin system
-  hooks/                   # Hook implementations (state, todo, etc.)
-  models/                  # Pydantic models (dialog_types, common_types, openai_types)
-  monitoring/              # Monitoring/event system
-  plugins/                 # Plugin infrastructure
-  providers/               # LLM provider abstractions (LiteLLM)
-  session/                 # Session management (todo_hitl, skill_edit_hitl)
-  utils/                   # Utilities (hook_logger, helpers)
-  websocket/               # WebSocket server (server.py, event_manager.py)
+### Frontend (`web/src/`)
 
-web/
-  src/app/                 # Next.js app router pages
-  src/components/          # React components
-  src/hooks/               # React hooks (useWebSocket, useMessageStore)
+- `app/[locale]/chat/` — main chat route
+- `components/chat/` — ChatShell, ChatArea, MessageItem, InputArea, SessionSidebar
+- `stores/dialog.ts` — dialog state (Zustand)
+- `stores/websocket.ts` — WebSocket connection state
+- `stores/ui.ts` — theme, UI preferences
+- `styles/globals.css` + `styles/themes/` — Hana Design System CSS
 
-skills/
-  finance/                 # Finance SQL skill
-  agent-builder/           # Agent building skill
-  code-review/             # Code review skill
-```
+### WebSocket Event Flow
 
-### WebSocket Message Flow
+1. User sends message → `POST /api/dialogs/{id}/messages`
+2. Background task runs `AgentEngine.send_message()` → streams chunks
+3. `main.py` broadcasts typed events to all WebSocket clients:
+   - `dialog:snapshot` — full dialog state
+   - `stream:delta` — streaming content chunk
+   - `status:change` — `idle → thinking → completed/error`
+   - `error` — error details
+4. Frontend receives events → updates Zustand stores → re-renders
 
-1. User sends message → `main_new.py` → `StateManagedAgentBridge.on_user_input()`
-2. Agent runs → hooks broadcast events via `connection_manager.broadcast()`
-3. Frontend receives typed events → updates local state → re-renders
+### Code Size Limits
 
-Key event types (from `agents/models/common_types.py`):
-- `DialogSnapshot` - Full dialog state broadcast
-- `StreamDeltaEvent` - Streaming content chunks
-- `ToolCallUpdateEvent` - Tool call status updates
-- `StatusChangeEvent` - Dialog status transitions
-
-### Adding New Hooks
-
-Hooks inherit from `FullAgentHooks` (`agents/base/abstract/hooks.py`):
-
-```python
-class MyHook(FullAgentHooks):
-    def on_before_run(self, messages): pass
-    def on_stream_token(self, chunk): pass
-    def on_tool_call(self, name, arguments, tool_call_id): pass
-    def on_tool_result(self, name, result, assistant_message, tool_call_id): pass
-    def on_complete(self, content): pass
-    def on_error(self, error): pass
-    def on_stop(self): pass
-```
-
-Register in `s_full.py` via `CompositeHooks`.
-
-### Testing
-
-Currently minimal test coverage. The test file `tests/test_subagent_event.py` demonstrates testing patterns for subagent events.
-
-### Important Notes
-
-- **No raw dicts:** All JSON data must use Pydantic models with `.model_dump()` for serialization
-- **Type safety:** Use Python 3.9+ type annotations (`list[str]` not `List[str]`)
-- **Import patterns:** The codebase uses try/except ImportError patterns for relative imports
-- **Session window:** History is managed via `window_rounds` env var (default: 10)
-
-### Code Length Limits
-
-Keep code modular and focused. When files or functions grow beyond these limits, split them:
-
-- **Python files:** Max 300 lines per file
-- **Functions:** Max 50 lines per function (excluding docstrings)
-- **Classes:** Max 200 lines per class (excluding docstrings and nested classes)
-
-If a file exceeds 300 lines, consider extracting related functionality into a new module. If a function exceeds 50 lines, break it into smaller helper functions. If a class exceeds 200 lines, consider splitting responsibilities or extracting internal logic into separate classes.
+- Python files: max 300 lines
+- Functions: max 50 lines
+- Classes: max 200 lines

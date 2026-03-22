@@ -1,0 +1,43 @@
+/*
+ * Theme: Ocean (深海)
+ * 深海蓝色调，沉静深邃
+ */
+
+[data-theme="ocean"] {
+  --bg: #1E3A4C;
+  --bg-card: #264A5E;
+  --bg-glass: rgba(30, 58, 76, 0.92);
+
+  --accent: #6BA3B8;
+  --accent-hover: #7BB3C8;
+  --accent-light: rgba(107, 163, 184, 0.12);
+  --accent-rgb: 107, 163, 184;
+
+  --text: #D8E8F0;
+  --text-light: #8AB0C0;
+  --text-muted: #5E8898;
+
+  --border: rgba(107, 163, 184, 0.15);
+  --shadow: rgba(0, 0, 0, 0.4);
+
+  --green: #7EC9A8;
+  --green-rgb: 126, 201, 168;
+  --coral: #E8B8A8;
+  --coral-rgb: 232, 184, 168;
+
+  --sidebar-bg: #163040;
+
+  --overlay-subtle: rgba(255, 255, 255, 0.03);
+  --overlay-light: rgba(255, 255, 255, 0.05);
+  --overlay-medium: rgba(255, 255, 255, 0.08);
+  --overlay-strong: rgba(255, 255, 255, 0.15);
+
+  --user-bg: rgba(107, 163, 184, 0.10);
+  --tool-bg: rgba(94, 136, 152, 0.20);
+  --tool-text: #8AB0C0;
+  --mood-bg: rgba(232, 184, 168, 0.08);
+  --mood-text: #E8B8A8;
+  --mood-border: rgba(232, 184, 168, 0.20);
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235E8898' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}

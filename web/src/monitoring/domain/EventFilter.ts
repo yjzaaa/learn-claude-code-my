@@ -6,9 +6,9 @@
 
 import { MonitoringEvent, EventType, EventPriority } from './Event';
 
-type FilterPredicate = (event: MonitoringEvent) => boolean;
+export type FilterPredicate = (event: MonitoringEvent) => boolean;
 
-type FilterOperator = 'AND' | 'OR';
+export type FilterOperator = 'AND' | 'OR';
 
 interface FilterCondition {
   operator: FilterOperator;

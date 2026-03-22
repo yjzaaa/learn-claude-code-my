@@ -1,0 +1,43 @@
+/*
+ * Theme: Sakura (樱粉)
+ * 樱花粉色，温柔甜美
+ */
+
+[data-theme="sakura"] {
+  --bg: #4A3A40;
+  --bg-card: #58464C;
+  --bg-glass: rgba(74, 58, 64, 0.92);
+
+  --accent: #E8A8B8;
+  --accent-hover: #F0B8C8;
+  --accent-light: rgba(232, 168, 184, 0.12);
+  --accent-rgb: 232, 168, 184;
+
+  --text: #F5E8EC;
+  --text-light: #C8B0B8;
+  --text-muted: #988088;
+
+  --border: rgba(232, 168, 184, 0.15);
+  --shadow: rgba(0, 0, 0, 0.36);
+
+  --green: #98C8A8;
+  --green-rgb: 152, 200, 168;
+  --coral: #F5C0B0;
+  --coral-rgb: 245, 192, 176;
+
+  --sidebar-bg: #3E3036;
+
+  --overlay-subtle: rgba(255, 255, 255, 0.03);
+  --overlay-light: rgba(255, 255, 255, 0.05);
+  --overlay-medium: rgba(255, 255, 255, 0.08);
+  --overlay-strong: rgba(255, 255, 255, 0.15);
+
+  --user-bg: rgba(232, 168, 184, 0.10);
+  --tool-bg: rgba(152, 128, 136, 0.20);
+  --tool-text: #C8B0B8;
+  --mood-bg: rgba(245, 192, 176, 0.08);
+  --mood-text: #F5C0B0;
+  --mood-border: rgba(245, 192, 176, 0.20);
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23988088' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}

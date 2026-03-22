@@ -268,7 +268,7 @@ export class MonitoringStore {
     }
 
     if (subagent) {
-      subagent.setError(payload.error || 'Unknown error');
+      subagent.fail(payload.error || 'Unknown error');
       console.log('[MonitoringStore] Subagent failed:', subagentId, payload.error);
     } else {
       console.warn('[MonitoringStore] Subagent not found for failure:', subagentId);

@@ -1,0 +1,43 @@
+/*
+ * Theme: Lavender (薰衣草)
+ * 淡紫色调，浪漫优雅
+ */
+
+[data-theme="lavender"] {
+  --bg: #3D3856;
+  --bg-card: #484363;
+  --bg-glass: rgba(61, 56, 86, 0.92);
+
+  --accent: #B8A9C9;
+  --accent-hover: #C8B9D9;
+  --accent-light: rgba(184, 169, 201, 0.12);
+  --accent-rgb: 184, 169, 201;
+
+  --text: #E6E2F0;
+  --text-light: #A8A0B8;
+  --text-muted: #786E88;
+
+  --border: rgba(184, 169, 201, 0.15);
+  --shadow: rgba(0, 0, 0, 0.36);
+
+  --green: #8BC9A3;
+  --green-rgb: 139, 201, 163;
+  --coral: #E8B4B4;
+  --coral-rgb: 232, 180, 180;
+
+  --sidebar-bg: #322E4A;
+
+  --overlay-subtle: rgba(255, 255, 255, 0.03);
+  --overlay-light: rgba(255, 255, 255, 0.05);
+  --overlay-medium: rgba(255, 255, 255, 0.08);
+  --overlay-strong: rgba(255, 255, 255, 0.15);
+
+  --user-bg: rgba(184, 169, 201, 0.10);
+  --tool-bg: rgba(120, 110, 136, 0.20);
+  --tool-text: #A8A0B8;
+  --mood-bg: rgba(232, 180, 180, 0.08);
+  --mood-text: #E8B4B4;
+  --mood-border: rgba(232, 180, 180, 0.20);
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23786E88' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}

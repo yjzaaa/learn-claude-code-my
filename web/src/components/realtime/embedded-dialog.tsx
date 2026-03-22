@@ -39,10 +39,12 @@ import { CodeDiff } from "@/components/diff/code-diff";
 
 interface EmbeddedDialogProps {
   className?: string;
+  externalDialogId?: string;
+  hideHistoryPanel?: boolean;
 }
 
-export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
-  const [dialogId, setDialogId] = useState<string>("");
+export function EmbeddedDialog({ className, externalDialogId, hideHistoryPanel }: EmbeddedDialogProps) {
+  const [dialogId, setDialogId] = useState<string>(externalDialogId ?? "");
   const [inputValue, setInputValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -268,6 +270,13 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
     },
     [],
   );
+
+  // Sync external dialog id when provided by parent (e.g. ChatShell sidebar)
+  useEffect(() => {
+    if (externalDialogId && externalDialogId !== dialogId) {
+      setDialogId(externalDialogId);
+    }
+  }, [externalDialogId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (dialogId) {
@@ -577,16 +586,18 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowHistory((v) => !v)}
-            className={cn(
-              "h-7 w-7 flex items-center justify-center rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50",
-              showHistory && "bg-zinc-200/50 dark:bg-zinc-700/50",
-            )}
-            title="历史"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-          </button>
+          {!hideHistoryPanel && (
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className={cn(
+                "h-7 w-7 flex items-center justify-center rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50",
+                showHistory && "bg-zinc-200/50 dark:bg-zinc-700/50",
+              )}
+              title="历史"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+            </button>
+          )}
 
           <button
             onClick={() =>
@@ -821,7 +832,7 @@ export function EmbeddedDialog({ className }: EmbeddedDialogProps) {
       <div className="relative flex flex-1 min-h-0">
         {/* History Sidebar */}
         <AnimatePresence initial={false}>
-          {showHistory && (
+          {!hideHistoryPanel && showHistory && (
             <motion.div
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 180, opacity: 1 }}

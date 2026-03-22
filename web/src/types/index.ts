@@ -1,56 +1,60 @@
 /**
- * 统一类型导出 - OpenAI 原生风格
- *
- * 删除所有自定义类型，直接使用 OpenAI 标准格式
+ * TypeScript 类型定义
  */
 
-export type {
-  ChatRole,
-  ChatMessage,
-  ChatCompletionMessageToolCall,
-  ChatCompletionTool,
-  ChatCompletionChunk,
-  ChatSession,
-  ChatEvent,
-  ChatEventType,
-} from "./openai";
+// 重新导出 store 中的类型
+export type { Message, Dialog } from '../stores/dialog';
+export type { Theme, FontMode, LayoutMode } from '../stores/ui';
+export type { WSMessage } from '../stores/websocket';
 
-export {
-  createUserMessage,
-  createAssistantMessage,
-  createSystemMessage,
-  createToolMessage,
-  createToolCallMessage,
-  generateId,
-  parseToolCallArguments,
-  isChatMessage,
-  isChatEvent,
-} from "./openai";
+// HITL 相关类型
+export interface SkillEditProposal {
+  approval_id: string;
+  dialog_id: string;
+  path: string;
+  old_content: string;
+  new_content: string;
+  unified_diff: string;
+  reason: string;
+  status: 'pending' | 'accepted' | 'rejected' | 'edited_accepted';
+  created_at: string;
+}
 
-// Agent 流式事件类型
-export type {
-  AgentEventType,
-  StreamingMessage,
-  AgentEvent,
-  AgentMessageStartEvent,
-  AgentContentDeltaEvent,
-  AgentReasoningDeltaEvent,
-  AgentToolCallEvent,
-  AgentMessageCompleteEvent,
-  AgentErrorEvent,
-  AgentStoppedEvent,
-  AgentStreamState,
-  TodoItem,
-  TodoUpdateEvent,
-  TodoReminderEvent,
-} from "./agent-event";
+export interface TodoItem {
+  id: string;
+  dialog_id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'done';
+  priority: 'low' | 'medium' | 'high';
+  created_at: string;
+  updated_at: string;
+}
 
-export { isAgentEvent, createInitialStreamState } from "./agent-event";
+// 工具相关类型
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
 
-// Dialog 类型
-export type {
-  TodoItem as DialogTodoItem,
-  TodoState,
-  TodoUpdatedEvent as DialogTodoUpdatedEvent,
-  TodoReminderEvent as DialogTodoReminderEvent,
-} from "./dialog";
+export interface ToolResult {
+  tool_call_id: string;
+  name: string;
+  output: unknown;
+  error?: string;
+}
+
+// Agent 配置
+export interface AgentConfig {
+  model: string;
+  temperature?: number;
+  max_tokens?: number;
+  thinking_level?: 'none' | 'brief' | 'full';
+}
+
+// 系统事件
+export interface SystemEvent {
+  type: string;
+  timestamp: string;
+  payload: unknown;
+}

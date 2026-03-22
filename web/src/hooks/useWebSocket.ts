@@ -129,6 +129,8 @@ export function useWebSocket(): UseWebSocketReturn {
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Each connection gets a unique ID; onmessage only processes events from the active connection.
+  const activeConnIdRef = useRef<number>(0);
   // 跟踪流式消息的累积内容
   const streamingContentRef = useRef<
     Map<string, { content: string; reasoning: string }>
@@ -222,6 +224,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
     try {
       console.log("[WebSocket] Connecting to:", WS_URL);
+      const connId = ++activeConnIdRef.current;
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
@@ -231,6 +234,8 @@ export function useWebSocket(): UseWebSocketReturn {
       };
 
       ws.onmessage = (event) => {
+        // Drop events from stale connections (e.g. from React StrictMode double-mount).
+        if (connId !== activeConnIdRef.current) return;
         try {
           const msg: ServerPushEvent = JSON.parse(event.data);
           console.log("[WebSocket] Received:", msg.type, msg);
@@ -263,14 +268,9 @@ export function useWebSocket(): UseWebSocketReturn {
               });
 
               // 发射 dialog:subscribed 事件给 useMessageStore
-              // 包含 streaming_message（如果存在）
+              // 只包含已完成消息，streaming_message 由 agent:message_start 单独创建以保持 isStreaming 状态
               const allMessages: ChatMessage[] =
                 msg.data.messages.map(convertToChatMessage);
-              if (msg.data.streaming_message) {
-                allMessages.push(
-                  convertToChatMessage(msg.data.streaming_message),
-                );
-              }
               globalEventEmitter.emit("dialog:subscribed", {
                 dialog_id: msg.data.id,
                 dialog: {
@@ -508,7 +508,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
             default: {
               // 处理监控事件 (monitor: 前缀)
-              if (msg.type?.startsWith("monitor:")) {
+              if ((msg as ServerPushEvent).type?.startsWith("monitor:")) {
                 // 转发监控事件到监控系统
                 globalEventEmitter.emit("monitor:event", msg);
               }
@@ -523,13 +523,16 @@ export function useWebSocket(): UseWebSocketReturn {
       ws.onclose = () => {
         console.log("[WebSocket] Disconnected");
         setIsConnected(false);
-        wsRef.current = null;
-
-        // 自动重连
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log("[WebSocket] Reconnecting...");
-          connectRef.current();
-        }, 3000);
+        // Only clear ref and schedule reconnect if this is still the active connection.
+        // StrictMode double-mount can leave a stale WS closing after a new one is created.
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+          // 自动重连
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log("[WebSocket] Reconnecting...");
+            connectRef.current();
+          }, 3000);
+        }
       };
 
       ws.onerror = (error) => {

@@ -109,14 +109,11 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
 3. **执行查询**:
    执行 SQL，返回查询结果给用户。
 
-## 执行防错规则（强制）
+## 执行规则（强制）
 
+- **必须** 调用 `run_sql_query` 工具来执行 SQL，禁止输出 SQL 后停止。
+- 收到工具返回结果后，基于结果给出完整的分析结论，不要只返回原始数据。
 - PostgreSQL表名为 `cost_database`，SQL Server表名为 `dbo.SSME_FI_InsightBot_CostDataBase`
-- 禁止在工具中使用 `python -c`（容易触发安全限制和转义错误）。
-- 禁止使用 `powershell -File ...run_query.py` 直接运行 `.py` 文件。
-- 统一执行方式：
-  - `python skills/finance/scripts/run_query.py --sql "SELECT ..."`
-  - 或 `python skills/finance/scripts/sql_query.py --sql "SELECT ..."`
 - PostgreSQL字段应使用：`year`、`scenario`、`function`、`year_total`、`amount`
 - SQL Server字段应使用：`[Year]`、`[Scenario]`、`[Function]`、`[Year Total]`、`[Amount]`
 

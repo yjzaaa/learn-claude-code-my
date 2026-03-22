@@ -23,7 +23,7 @@ interface MessageStoreState {
   streamState: AgentStreamState;
 }
 
-interface ChatSession {
+export interface ChatSession {
   id: string;
   title?: string;
   messages: ChatMessage[];
@@ -215,25 +215,53 @@ function useMessageStoreInstance() {
 
           // 合并消息：保留现有消息，同时添加服务器上的新消息
           let mergedMessages: ChatMessage[] = [];
+          // Streaming updates (agent:message_start / content_delta) only update currentDialog,
+          // not the dialogs[] array. Use currentDialog if it is the same dialog to avoid
+          // merging against a stale snapshot that is missing the in-flight streaming placeholder.
+          const liveDialog =
+            prev.currentDialog?.id === normalizedDialog.id
+              ? prev.currentDialog
+              : existingDialog;
+          // 防御性检查：确保消息数组存在
+          const existingMessages = liveDialog?.messages || [];
+          const serverMessages = normalizedDialog.messages || [];
+
           if (existingDialog) {
             // 以本地消息顺序为基础，按 id 用服务端消息覆盖，避免占位消息长期为空。
             const serverById = new Map(
-              normalizedDialog.messages.map((m) => [m.id, m] as const),
+              serverMessages
+                .filter((m): m is ChatMessage & { id: string } => !!m.id)
+                .map((m) => [m.id, m] as const),
             );
-            mergedMessages = existingDialog.messages.map(
-              (localMsg) => serverById.get(localMsg.id) || localMsg,
+            mergedMessages = existingMessages.map(
+              (localMsg) =>
+                (localMsg.id ? serverById.get(localMsg.id) : undefined) ||
+                localMsg,
             );
 
             // 补齐本地不存在但服务端存在的消息。
-            normalizedDialog.messages.forEach((serverMsg) => {
+            serverMessages.forEach((serverMsg) => {
               const exists = mergedMessages.some((m) => m.id === serverMsg.id);
               if (!exists) {
                 mergedMessages.push(serverMsg);
               }
             });
           } else {
-            mergedMessages = normalizedDialog.messages;
+            mergedMessages = serverMessages;
           }
+
+          // 最终去重：按 id 保留最后一次出现（服务端版本优先）。
+          const seenIds = new Set<string>();
+          mergedMessages = mergedMessages
+            .slice()
+            .reverse()
+            .filter((m) => {
+              if (!m.id) return true;
+              if (seenIds.has(m.id)) return false;
+              seenIds.add(m.id);
+              return true;
+            })
+            .reverse();
 
           const dialogToUse: ChatSession = {
             ...normalizedDialog,
@@ -581,7 +609,10 @@ function useMessageStoreInstance() {
               const hasToolCalls =
                 Array.isArray(nextToolCalls) && nextToolCalls.length > 0;
 
-              if (hasContent || hasToolCalls) {
+              // 再次检查（可能在同一 batch 内被其他更新添加了），避免重复。
+              const alreadyExists = messages.some((m) => m.id === message_id);
+
+              if (!alreadyExists && (hasContent || hasToolCalls)) {
                 messages.push({
                   id: message_id,
                   role: "assistant",
@@ -717,9 +748,12 @@ function useMessageStoreInstance() {
       const existingDialog = prev.dialogs.find((d) => d.id === dialog.id);
 
       // 如果已存在，合并消息；否则使用新对话框
+      // 防御性检查：确保消息数组存在
+      const existingMessages = existingDialog?.messages || [];
+      const dialogMessages = (dialog as ChatSession).messages || [];
       const dialogToSet = existingDialog
-        ? { ...dialog, messages: existingDialog.messages }
-        : dialog;
+        ? { ...dialog, messages: existingMessages }
+        : { ...dialog, messages: dialogMessages };
 
       // 如果对话框不在列表中，添加它
       const updatedDialogs = prev.dialogs.some((d) => d.id === dialog.id)

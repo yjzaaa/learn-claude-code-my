@@ -26,5 +26,12 @@
   // 代码检查
   "python.linting.enabled": true,
   "python.linting.pylintEnabled": false,
-  "python.linting.ruffEnabled": true
+  "python.linting.ruffEnabled": true,
+  "python-envs.pythonProjects": [
+    {
+      "path": "agents/core/s05_skill_loading.py",
+      "envManager": "ms-python.python:venv",
+      "packageManager": "ms-python.python:pip"
+    }
+  ]
 }

@@ -1,0 +1,43 @@
+/*
+ * Theme: Warm Paper (暖纸)
+ * 温暖的纸张质感，适合长时间阅读
+ */
+
+[data-theme="warm-paper"] {
+  --bg: #F5F0E8;
+  --bg-card: #FAF7F2;
+  --bg-glass: rgba(245, 240, 232, 0.95);
+
+  --accent: #B85C4F;
+  --accent-hover: #C96E61;
+  --accent-light: rgba(184, 92, 79, 0.12);
+  --accent-rgb: 184, 92, 79;
+
+  --text: #3D3833;
+  --text-light: #6B6560;
+  --text-muted: #9A948F;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --shadow: rgba(0, 0, 0, 0.1);
+
+  --green: #5A8F6E;
+  --green-rgb: 90, 143, 110;
+  --coral: #D97B6C;
+  --coral-rgb: 217, 123, 108;
+
+  --sidebar-bg: #EDE8E0;
+
+  --overlay-subtle: rgba(0, 0, 0, 0.02);
+  --overlay-light: rgba(0, 0, 0, 0.04);
+  --overlay-medium: rgba(0, 0, 0, 0.08);
+  --overlay-strong: rgba(0, 0, 0, 0.12);
+
+  --user-bg: rgba(184, 92, 79, 0.08);
+  --tool-bg: rgba(0, 0, 0, 0.04);
+  --tool-text: #6B6560;
+  --mood-bg: rgba(217, 123, 108, 0.08);
+  --mood-text: #B85C4F;
+  --mood-border: rgba(217, 123, 108, 0.20);
+
+  --select-arrow: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239A948F' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+}

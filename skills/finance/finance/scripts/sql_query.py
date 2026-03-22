@@ -6,6 +6,14 @@ import os
 import re
 from pathlib import Path
 
+try:
+    from core.tools.toolkit import tool as _tool_decorator
+    _has_tool = True
+except ImportError:
+    _has_tool = False
+    def _tool_decorator(f=None, **kw):  # type: ignore[misc]
+        return f if f is not None else (lambda fn: fn)
+
 _ENV_LOADED = False
 
 
@@ -56,7 +64,7 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
     return normalized
 
 
-def _find_project_env_file() -> Path | None:
+def _find_project_env_file():
     """Find the nearest .env by walking up from this script path."""
     for parent in Path(__file__).resolve().parents:
         candidate = parent / ".env"
@@ -91,6 +99,10 @@ def _load_project_env_once() -> None:
     _ENV_LOADED = True
 
 
+@_tool_decorator(
+    name="run_sql_query",
+    description="Execute a SQL query against the finance database and return the results as JSON. Use this to query cost allocation, budget, actual, and headcount data.",
+)
 def run_sql_query(sql: str, limit: int = 200) -> str:
     """Execute SQL against configured SQL Server or PostgreSQL."""
     _load_project_env_once()
