@@ -110,6 +110,10 @@ class ToolCallStarted(BaseEvent):
     priority: EventPriority = EventPriority.HIGH
 
 
+# 别名，用于兼容 simple_runtime.py
+ToolStartData = ToolCallStarted
+
+
 @dataclass_json
 @dataclass(kw_only=True)
 class ToolCallCompleted(BaseEvent):
@@ -171,3 +175,25 @@ class AgentRoundsLimitReached(BaseEvent):
     dialog_id: str = ""
     rounds: int = 0
     priority: EventPriority = EventPriority.HIGH
+
+
+# ═══════════════════════════════════════════════════════════
+# Skill Events
+# ═══════════════════════════════════════════════════════════
+
+@dataclass_json
+@dataclass(kw_only=True)
+class SkillLoaded(BaseEvent):
+    """技能加载事件"""
+    skill_id: str
+    name: str
+    tool_count: int = 0
+    priority: EventPriority = EventPriority.NORMAL
+
+
+@dataclass_json
+@dataclass(kw_only=True)
+class SkillUnloaded(BaseEvent):
+    """技能卸载事件"""
+    skill_id: str
+    priority: EventPriority = EventPriority.NORMAL

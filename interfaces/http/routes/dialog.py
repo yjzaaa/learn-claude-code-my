@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from core.models.dto import SSEEvent
+from core.models.api import SSEEvent
 
 router = APIRouter(tags=["dialog"])
 

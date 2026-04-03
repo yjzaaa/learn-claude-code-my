@@ -7,7 +7,7 @@ Skill Manager - 技能管理器
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Dict, List, Callable, Any
+from typing import TYPE_CHECKING, Callable, Any, Optional
 from pathlib import Path
 import importlib.util
 import json
@@ -15,9 +15,9 @@ import logging
 import sys
 
 from runtime.event_bus import EventBus
-from core.models.domain import Skill, SkillDefinition
+from core.models.entities import Skill, SkillDefinition
 from core.models.config import SkillManagerConfig
-from core.models.dto import SkillStats
+from core.models.api import SkillStats
 from core.models.tool import ActiveToolInfo
 from core.tools import ToolRegistry
 
@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from core.managers.tool_manager import ToolManager
 
 logger = logging.getLogger(__name__)
-
 
 class SkillManager:
     """
@@ -43,29 +42,29 @@ class SkillManager:
     
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        tool_manager: Optional['ToolManager'] = None,
-        config: Optional[SkillManagerConfig] = None
+        event_bus: EventBus | None = None,
+        tool_manager: 'ToolManager' | None = None,
+        config: SkillManagerConfig | None = None
     ):
         self._event_bus = event_bus
         self._tool_mgr = tool_manager
         self._config = config or SkillManagerConfig()
 
         # 已加载的技能
-        self._skills: Dict[str, Skill] = {}
+        self._skills: dict[str, Skill] = {}
 
         # 技能目录
         self._skills_dir = Path(self._config.skills_dir or 'skills')
         
         # 技能工具注册表
-        self._skill_tools: Dict[str, List[str]] = {}  # skill_id -> [tool_names]
+        self._skill_tools: dict[str, list[str]] = {}  # skill_id -> [tool_names]
     
     def register_skill(
         self,
         skill_id: str,
         definition: SkillDefinition,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        handler: Optional[Callable] = None
+        tools: list[dict[str, Any]] | None = None,
+        handler: Callable | None = None
     ) -> Skill:
         """
         注册技能
@@ -108,7 +107,7 @@ class SkillManager:
         logger.info(f"[SkillManager] Registered skill: {skill_id}")
         return skill
     
-    def load_skill_from_directory(self, skill_path: str) -> Optional[Skill]:
+    def load_skill_from_directory(self, skill_path: str) -> Skill | None:
         """
         从目录加载技能。支持 SKILL.md 格式（含 YAML front-matter）和旧版 skill.json。
 
@@ -125,7 +124,7 @@ class SkillManager:
             return None
 
         # 查找 SKILL.md：先找当前目录，再找一级子目录（兼容 finance/finance/ 结构）
-        skill_md_path: Optional[Path] = None
+        skill_md_path: Path | None = None
         actual_path: Path = path
         if (path / "SKILL.md").exists():
             skill_md_path = path / "SKILL.md"
@@ -191,7 +190,7 @@ class SkillManager:
             return {}, content
         front_matter_str = content[3:end].strip()
         body = content[end + 3:].strip()
-        metadata: Dict[str, Any] = {}
+        metadata: dict[str, Any] = {}
         for line in front_matter_str.splitlines():
             if ':' in line:
                 k, v = line.split(':', 1)
@@ -223,7 +222,7 @@ class SkillManager:
         logger.info(f"[SkillManager] Unloaded skill: {skill_id}")
         return True
     
-    def get_skill(self, skill_id: str) -> Optional[Skill]:
+    def get_skill(self, skill_id: str) -> Skill | None:
         """
         获取技能
         
@@ -235,7 +234,7 @@ class SkillManager:
         """
         return self._skills.get(skill_id)
     
-    def list_skills(self) -> List[Skill]:
+    def list_skills(self) -> list[Skill]:
         """
         列出所有技能
         
@@ -255,47 +254,12 @@ class SkillManager:
                 self.load_skill_from_directory(str(skill_dir))
     
     def _load_scripts(self, skill: "Skill") -> None:
-        """懒加载：导入 scripts/ 下的 .py 文件，注册 @tool 函数。"""
-        from core.tools.toolkit import scan_tools
+        """懒加载技能脚本"""
+        from .skill_loader import SkillScriptLoader
+        loader = SkillScriptLoader(self._tool_mgr)
+        loader.load_scripts(skill)
 
-        if not skill.path:
-            skill.scripts_loaded = True
-            return
-
-        scripts_dir = Path(skill.path) / "scripts"
-        if not scripts_dir.exists():
-            skill.scripts_loaded = True
-            return
-
-        tool_count = 0
-        for py_file in sorted(scripts_dir.glob("*.py")):
-            if py_file.name.startswith("_"):
-                continue
-            module_name = f"skills.{skill.id}.{py_file.stem}"
-            try:
-                spec = importlib.util.spec_from_file_location(module_name, py_file)
-                if spec is None or spec.loader is None:
-                    continue
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)  # type: ignore[union-attr]
-
-                for tool_item in scan_tools(module):
-                    if self._tool_mgr:
-                        self._tool_mgr.register(
-                            name=tool_item["name"],
-                            handler=tool_item["handler"],
-                            description=tool_item["description"],
-                            parameters=tool_item["parameters"],
-                        )
-                        tool_count += 1
-            except Exception:
-                logger.exception("[SkillManager] Failed to load script %s", py_file)
-
-        skill.scripts_loaded = True
-        logger.info("[SkillManager] Lazy-loaded %d tools for skill '%s'", tool_count, skill.id)
-
-    def get_skill_prompt(self, skill_id: str) -> Optional[str]:
+    def get_skill_prompt(self, skill_id: str) -> str | None:
         """
         获取技能的系统提示词，首次调用时触发脚本懒加载。
 
@@ -328,7 +292,7 @@ class SkillManager:
 
         return None
     
-    def get_active_tools(self) -> List[ActiveToolInfo]:
+    def get_active_tools(self) -> list[ActiveToolInfo]:
         """
         获取所有激活的工具
 

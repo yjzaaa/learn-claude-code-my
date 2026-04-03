@@ -1,0 +1,193 @@
+---
+name: finance
+description: Finance analytics skill for SQL generation, budgeting/actual comparisons, and allocation rules on SmartMES_Demo.
+---
+
+# Finance Skill
+
+## 描述
+
+`finance` 技能支持根据用户提问，动态生成 SQL 查询语句并最终执行该查询。技能包含以下核心模块：
+
+### 意图分析模块
+
+- 解析用户问题的核心意图，判断是否与数据查询相关。
+- 提取关键字（如“成本分摊”、“预算分析”等）、映射表和匹配适配。
+
+### SQL 构造模块
+
+- 动态组装 SQL 查询模板。
+- 根据意图分析的结果，填充函数参数 (如表名、字段名、查询条件)。
+
+### 执行模块
+
+- 将生成的 SQL 查询语句提交至数据库。
+- 返回查询结果用于进一步分析和展示。
+
+## 数据库信息
+
+### 表名列表
+- cost_database (PostgreSQL版本)
+- SSME_FI_InsightBot_Rate
+- SSME_FI_InsightBot_CCMapping
+
+- **数据库名称**: cost_allocation
+- **数据库地址**: localhost
+- **驱动类型**: PostgreSQL
+- **端口号**: 5432
+- **用户名**: postgres
+- **密码**: 123456
+
+## 术语对照
+
+- WCW: White Collar Worker，白领
+- headcount: 人头，人数
+- Win Acc: window 账号，电脑账号
+- Key: 分摊标准
+- Procurement: 采购部门
+- IM: indirect material，间接物料
+- actual: 实际
+- budget1: 预算，计划
+- Rolling Forecast2: FC2，预算，计划
+- SW: 软件
+
+## 术语标准化（SQL 生成前的强约束）
+
+在生成 SQL 前，必须先把用户自然语言做“术语归一化”，再映射到字段和值；禁止直接把口语词写进 SQL 条件。
+
+### 1) 同义词归一化
+
+- 白领、白领数、White Collar Worker、WCW -> `WCW`
+- 人头、人数、head count、Headcount -> `headcount`
+- 电脑账号、Windows 账号、Win Acc -> `Win Acc`
+- 间接物料、IM、indirect material -> `IM`
+- 实际、actual、ACT -> `Actual`
+- 预算、计划、budget1、BGT、BGT1 -> `Budget1`
+- FC2、Rolling Forecast2 -> `Rolling Forecast2`
+- 软件、SW -> `SW`
+- 采购、采购部门、Procurement -> `Procurement`
+
+### 2) 字段落位规则（必须遵守）
+
+- “分摊标准/按什么分摊/依据什么分摊/Key” -> 字段 `[Key]`
+- “服务/服务项/合同内容/服务名称” -> 字段 `[Cost text]`
+- “版本（预算/实际/FC2）” -> 字段 `[Scenario]`
+- “职能/部门类型（IT/HR/Procurement）” -> 字段 `[Function]`
+
+### 3) SQL 生成约束（术语相关）
+
+- 术语归一化后，仅使用标准字段值；例如白领分摊必须落到 `WHERE [Key] = 'WCW'`。
+- 遇到模糊词（如“预算”）时，优先映射为标准值（如 `Budget1`），不要同时混用多个近义值。
+- 若术语无法唯一映射，先使用字典中最保守的标准值，并在结果说明中提示映射假设。
+
+### 4) 正反例
+
+- 正例：
+  - 用户问“哪些服务是按白领数分摊的”
+  - 归一化：白领数 -> `WCW`
+  - SQL 条件：`WHERE [Key] = 'WCW'`
+
+- 反例（禁止）：
+  - `WHERE [Key] = '白领数'`
+  - `WHERE [Scenario] = '预算'`
+
+### 5) 默认策略
+
+- 未指定 Year/Month 时，不强加时间过滤。
+- 未指定 Function 时，不强加 Function 过滤。
+- 用户明确提到 IT/HR/Procurement 时，才增加 `[Function]` 条件。
+
+## 工作流逻辑
+
+1. **解析意图**:
+   包括关键字提取和表映射，分析问题是否与财务相关。
+   示例：对于提问“白领数分摊服务有哪些？”，技能会判断“分摊”和“服务”关键词，找到相关数据库表及字段。
+
+2. **生成 SQL**:
+   调用模板生成 SQL 查询。例如，针对表 `SSME_FI_InsightBot_CostDataBase` 构造分摊场景的 SQL 查询。
+
+3. **执行查询**:
+   执行 SQL，返回查询结果给用户。
+
+## 执行规则（强制）
+
+- **必须** 调用 `run_sql_query` 工具来执行 SQL，禁止输出 SQL 后停止。
+- 收到工具返回结果后，基于结果给出完整的分析结论，不要只返回原始数据。
+- PostgreSQL表名为 `cost_database`，SQL Server表名为 `dbo.SSME_FI_InsightBot_CostDataBase`
+- PostgreSQL字段应使用：`year`、`scenario`、`function`、`year_total`、`amount`
+- SQL Server字段应使用：`[Year]`、`[Scenario]`、`[Function]`、`[Year Total]`、`[Amount]`
+
+说明：`sql_query.py` 已内置旧字段/旧表名兼容转换，但这仅用于兜底，生成 SQL 时仍必须优先输出标准写法。
+
+## 业务基线规则（Excel 20260104）
+
+以下规则仅用于 finance 技能内部口径，不影响通用后端工作流。
+
+### 1) 分摊题识别与映射（强制）
+
+- 当问题包含 `allocated` / `allocation` / `分摊给` / `allocation to` 时，按“分摊题”处理，不得退化为普通 Function 汇总。
+- 分摊题必须使用 Allocation Function + Key 固定映射：
+  - `IT Allocation` -> `480056 Cycle`
+  - `HR Allocation` -> `480055 Cycle`
+- 目标维度按用户问题选择：
+  - 提到 `CT` / 业务线 -> 使用 `Rate.BL`
+  - 提到具体成本中心（如 `413001`）-> 使用 `Rate.CC`
+
+### 2) 分摊金额计算口径（强制）
+
+- 必须按月计算后汇总全年：
+  - `Allocated Amount = Monthly Amount * normalized RateNo`
+- `RateNo` 归一化规则：
+  - 若为百分数字符串（如 `12.5%`）先去 `%` 再 `/100`
+  - 若为小数（如 `0.125`）直接使用
+- 禁止用 `SUM(Amount)` 直接代替分摊金额。
+- 分摊金额符号保持原始业务符号，禁止无依据地使用 `ABS()` 改变正负。
+
+### 3) 汇总题与对比题输出口径
+
+- “What was ... cost ...”类金额问法默认返回单值汇总，不返回明细行列表。
+- 对比/变化类问题（如 FY25 Actual vs FY26 BGT）必须同时给出：
+  - 绝对变化值（Delta）
+  - 变化率（Change %）
+- 变化率统一口径：`(新值 - 旧值) / 旧值`，旧值为 0 时返回 0 并说明。
+
+### 4) 额外硬约束（必须）
+
+- Scenario 归一化：
+  - 用户出现 `BGT` / `Budget` / `预算` / `计划` 时，SQL 必须使用 `Scenario = 'Budget1'`
+  - 禁止出现 `Scenario = 'BGT'`
+- 分摊题 Function 归一化：
+  - `allocated` / `allocation` / `分摊给` 问法下，IT 必须用 `Function = 'IT Allocation'`
+  - `allocated` / `allocation` / `分摊给` 问法下，HR 必须用 `Function = 'HR Allocation'`
+  - 禁止把分摊题写成 `Function = 'IT'` 或 `Function = 'HR'`
+- 费用金额问法（如“FY26 Budget 的 HR 费用”）默认输出单值汇总 SQL（SUM/COALESCE），禁止输出明细行。
+
+## 示例场景
+
+用户问题示例：
+
+- “白领数分摊服务有哪些？”
+- “今年 HR 部门成本预算与去年实际的趋势对比如何？”
+
+技能会基于问题动态生成 SQL 并返回结果。
+
+## 模块结构与关系
+
+为保证逻辑清晰与高内聚，finance 技能按以下模块划分：
+
+- 规则与约束：见 references/ 目录
+  - 核心规则：references/react_rules.md
+  - 约束与字典：references/react_constraints.md
+  - 示例库：references/react_examples.md
+  - 工作流说明：references/workflow.md
+  - 模块关系图：references/module_map.md
+
+- 核心生成器：scripts/allocation_utils.py
+  - 统一维护 ALLOC_TEMPLATE 与 generate_alloc_sql
+  - scripts/generate_alloc_sql.py 仅作为兼容层转发
+
+- 示例脚本：scripts/example_overview.py
+  - 统一依赖 allocation_utils.generate_alloc_sql，作为单一示例入口
+
+- 动态意图与 SQL 示例：scripts/dynamic_skill_sql.py
+  - 展示关键词意图分析 → SQL 构造 → 执行流程

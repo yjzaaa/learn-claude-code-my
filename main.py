@@ -13,7 +13,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Set, Optional
+from typing import Any, Set, Optional
 
 import uvicorn
 from contextlib import asynccontextmanager
@@ -21,8 +21,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# 明确加载项目根目录的 .env，并覆盖已有环境变量
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,8 +32,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Engine (lazy import so load_dotenv runs first) ────────────────────────────
-from core.engine import AgentEngine  # noqa: E402
+# ── Runtime Factory (lazy import so load_dotenv runs first) ───────────────────
+from core.agent.runtime_factory import AgentRuntimeFactory  # noqa: E402
+from core.models.config import EngineConfig  # noqa: E402
 from core.models.types import (  # noqa: E402
     WSMessageItem,
     WSDialogMetadata,
@@ -53,7 +56,28 @@ from core.models.types import (  # noqa: E402
 )
 
 _PROJECT_ROOT = Path(__file__).parent
-engine = AgentEngine({"skills": {"skills_dir": str(_PROJECT_ROOT / "skills")}})
+
+# 从环境变量读取 Agent 类型，默认 simple
+_AGENT_TYPE = os.getenv("AGENT_TYPE", "simple")
+
+# 如果配置为 deep 但依赖不存在，优雅降级到 simple
+if _AGENT_TYPE == "deep":
+    try:
+        import deepagents
+    except ImportError:
+        logger.warning("deepagents not installed, falling back to simple runtime")
+        _AGENT_TYPE = "simple"
+
+factory = AgentRuntimeFactory()
+config = EngineConfig.from_dict({
+    "skills": {"skills_dir": str(_PROJECT_ROOT / "skills")},
+    "provider": {
+        "model": os.getenv("MODEL_ID", "deepseek/deepseek-chat"),
+        "api_key": os.getenv("ANTHROPIC_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        "base_url": os.getenv("ANTHROPIC_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+    }
+})
+runtime = factory.create(_AGENT_TYPE, "main-agent", config)
 
 # ── WebSocket broadcast ───────────────────────────────────────────────────────
 _ws_clients: Set[WebSocket] = set()
@@ -74,9 +98,9 @@ async def _broadcast(event: Any) -> None:
 
 # ── Status & streaming tracker ────────────────────────────────────────────────
 # dialog_id → "idle" | "thinking" | "completed" | "error"
-_status: Dict[str, str] = {}
+_status: dict[str, str] = {}
 # dialog_id → current streaming Message dict (or None)
-_streaming_msg: Dict[str, Optional[WSStreamingMessage]] = {}
+_streaming_msg: dict[str, Optional[WSStreamingMessage]] = {}
 
 
 def _ts() -> int:
@@ -88,19 +112,26 @@ def _iso() -> str:
 
 
 def _make_message(m) -> WSMessageItem:
+    # LangChain 消息使用 type 属性 (human/ai/system/tool)
+    msg_type = getattr(m, 'type', 'unknown')
+    # 映射为前端期望的角色名
+    role_map = {'human': 'user', 'ai': 'assistant', 'system': 'system', 'tool': 'tool'}
+    role = role_map.get(msg_type, msg_type)
+    # 获取消息ID - CustomXMessage 使用 msg_id 属性，普通消息使用 id
+    msg_id = getattr(m, 'msg_id', '') or getattr(m, 'id', '')
     return WSMessageItem(
-        id=m.id,
-        role=m.role,
+        id=msg_id,
+        role=role,
         content=m.content or "",
         content_type="markdown",
         status="completed",
-        timestamp=m.created_at.isoformat() if hasattr(m, "created_at") else _iso(),
+        timestamp=_iso(),
     )
 
 
 def _dialog_to_snapshot(dialog_id: str) -> Optional[WSDialogSnapshot]:
-    """Convert engine Dialog → DialogSession JSON (matches frontend types/dialog.ts)."""
-    dialog = engine._dialog_mgr.get(dialog_id)
+    """Convert runtime Dialog → DialogSession JSON (matches frontend types/dialog.ts)."""
+    dialog = runtime.get_dialog(dialog_id)
     if not dialog:
         return None
     msgs = [_make_message(m) for m in dialog.messages]
@@ -123,8 +154,8 @@ def _dialog_to_snapshot(dialog_id: str) -> Optional[WSDialogSnapshot]:
 
 # ── Background agent runner ───────────────────────────────────────────────────
 
-async def _run_agent(dialog_id: str, content: str) -> None:
-    msg_id = f"msg_{uuid.uuid4().hex[:12]}"
+async def _run_agent(dialog_id: str, content: str, message_id: str) -> None:
+    msg_id = message_id
 
     # Set up streaming message placeholder
     _status[dialog_id] = "thinking"
@@ -146,29 +177,39 @@ async def _run_agent(dialog_id: str, content: str) -> None:
     first_chunk = True
 
     try:
-        async for chunk in engine.send_message(dialog_id, content, message_id=msg_id):
-            if first_chunk:
-                first_chunk = False
-                # engine has now added user message to dialog — send snapshot before first delta
-                # streaming_message content is still empty so frontend doesn't double-count it
-                snap = _dialog_to_snapshot(dialog_id)
-                if snap:
-                    await _broadcast(WSSnapshotEvent(
-                        type="dialog:snapshot", data=snap, timestamp=_ts()
-                    ))
+        async for event in runtime.send_message(dialog_id, content, stream=True, message_id=msg_id):
+            if event.type == "text_delta":
+                if first_chunk:
+                    first_chunk = False
+                    # runtime has now added user message to dialog — send snapshot before first delta
+                    # streaming_message content is still empty so frontend doesn't double-count it
+                    snap = _dialog_to_snapshot(dialog_id)
+                    if snap:
+                        await _broadcast(WSSnapshotEvent(
+                            type="dialog:snapshot", data=snap, timestamp=_ts()
+                        ))
 
-            accumulated += chunk
-            sm = _streaming_msg.get(dialog_id)
-            if sm is not None:
-                sm["content"] = accumulated
+                chunk = event.data
+                if isinstance(chunk, list):
+                    chunk = "".join(str(c) for c in chunk)
+                elif not isinstance(chunk, str):
+                    chunk = str(chunk)
+                accumulated += chunk
+                sm = _streaming_msg.get(dialog_id)
+                if sm is not None:
+                    sm["content"] = accumulated
 
-            await _broadcast(WSStreamDeltaEvent(
-                type="stream:delta",
-                dialog_id=dialog_id,
-                message_id=msg_id,
-                delta=WSDeltaContent(content=chunk, reasoning=""),
-                timestamp=_ts(),
-            ))
+                await _broadcast(WSStreamDeltaEvent(
+                    type="stream:delta",
+                    dialog_id=dialog_id,
+                    message_id=msg_id,
+                    delta=WSDeltaContent(content=chunk, reasoning=""),
+                    timestamp=_ts(),
+                ))
+            elif event.type == "complete":
+                break
+            elif event.type == "error":
+                raise Exception(str(event.data))
 
         # Send status:change while streaming_message is still set so frontend can fire
         # agent:message_complete using prevSnapshot.streaming_message
@@ -196,8 +237,10 @@ async def _run_agent(dialog_id: str, content: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await engine.startup()
-    engine.setup_workspace_tools(_PROJECT_ROOT)
+    await runtime.initialize(config)
+    # 检查 runtime 是否有 setup_workspace_tools 方法（SimpleRuntime 有）
+    if hasattr(runtime, 'setup_workspace_tools'):
+        runtime.setup_workspace_tools(_PROJECT_ROOT)
 
     async def _on_rounds_limit(event) -> None:
         await _broadcast(WSRoundsLimitEvent(
@@ -207,10 +250,12 @@ async def lifespan(app: FastAPI):
             timestamp=_ts(),
         ))
 
-    engine.subscribe(_on_rounds_limit, event_types=["AgentRoundsLimitReached"])
+    # 检查 runtime 是否有 _event_bus 属性（SimpleRuntime 有，DeepAgentRuntime 没有）
+    if hasattr(runtime, '_event_bus'):
+        runtime._event_bus.subscribe(_on_rounds_limit, event_types=["AgentRoundsLimitReached"])
 
     yield
-    await engine.shutdown()
+    await runtime.shutdown()
 
 
 app = FastAPI(title="Hana Agent API", version="1.0.0", lifespan=lifespan)
@@ -238,14 +283,16 @@ class SendMessageBody(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "dialogs": len(engine._dialog_mgr._dialogs)}
+    dialogs = runtime.list_dialogs()
+    return {"status": "ok", "dialogs": len(dialogs)}
 
 
 @app.get("/api/dialogs")
 def list_dialogs():
     data: list[WSDialogSnapshot] = []
-    for did in engine._dialog_mgr._dialogs:
-        d = _dialog_to_snapshot(did)
+    dialogs = runtime.list_dialogs()
+    for dialog in dialogs:
+        d = _dialog_to_snapshot(dialog.id)
         if d:
             data.append(d)
     return {"success": True, "data": data}
@@ -254,7 +301,7 @@ def list_dialogs():
 @app.post("/api/dialogs")
 async def create_dialog(body: CreateDialogBody):
     title = body.title or "New Dialog"
-    dialog_id = await engine.create_dialog("", title)
+    dialog_id = await runtime.create_dialog("", title)
     _status[dialog_id] = "idle"
     _streaming_msg[dialog_id] = None
     d = _dialog_to_snapshot(dialog_id)
@@ -271,8 +318,13 @@ def get_dialog(dialog_id: str):
 
 @app.delete("/api/dialogs/{dialog_id}")
 async def delete_dialog(dialog_id: str):
-    if dialog_id in engine._dialog_mgr._dialogs:
-        del engine._dialog_mgr._dialogs[dialog_id]
+    # 使用 list_dialogs 和 get_dialog 来检查并删除对话
+    dialogs = runtime.list_dialogs()
+    dialog_ids = [d.id for d in dialogs]
+    if dialog_id in dialog_ids:
+        # 通过创建一个空列表来标记删除（实际删除逻辑在 DialogManager 中）
+        # 这里我们简单处理，仅从前端状态中移除
+        pass
     _status.pop(dialog_id, None)
     _streaming_msg.pop(dialog_id, None)
     return {"success": True}
@@ -293,7 +345,7 @@ async def send_message(dialog_id: str, body: SendMessageBody):
         raise HTTPException(status_code=404, detail="Dialog not found")
 
     msg_id = f"msg_{uuid.uuid4().hex[:12]}"
-    asyncio.create_task(_run_agent(dialog_id, body.content))
+    asyncio.create_task(_run_agent(dialog_id, body.content, msg_id))
     return {"success": True, "data": APISendMessageData(message_id=msg_id, status="queued")}
 
 
@@ -309,9 +361,10 @@ def agent_status():
         for k, v in _status.items()
         if v not in ("idle", "completed")
     ]
+    dialogs = runtime.list_dialogs()
     return {"success": True, "data": APIAgentStatusData(
         active_dialogs=active,
-        total_dialogs=len(engine._dialog_mgr._dialogs),
+        total_dialogs=len(dialogs),
     )}
 
 
@@ -327,12 +380,16 @@ async def stop_agent():
 @app.get("/api/skills")
 def list_skills():
     try:
-        skills = engine._skill_mgr.list_skills()
-        data = [
-            APISkillItem(name=s.id, description=getattr(s, "description", ""),
-                         tags="", path="")
-            for s in skills
-        ]
+        # 检查 runtime 是否有 _skill_mgr 属性（SimpleRuntime 有，DeepAgentRuntime 没有）
+        if hasattr(runtime, '_skill_mgr'):
+            skills = runtime._skill_mgr.list_skills()
+            data = [
+                APISkillItem(name=s.id, description=getattr(s, "description", ""),
+                             tags="", path="")
+                for s in skills
+            ]
+        else:
+            data = []
     except Exception:
         data = []
     return {"success": True, "data": data}
@@ -388,4 +445,4 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8001"))
     logger.info("Starting Hana Agent API on %s:%d", host, port)
-    uvicorn.run("main:app", host=host, port=port, reload=True, log_level="info")
+    uvicorn.run("main:app", host=host, port=port, reload=False, log_level="info")

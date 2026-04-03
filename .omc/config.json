@@ -1,0 +1,7 @@
+{
+  "features": {
+    "team": true,
+    "hud": true,
+    "learner": true
+  }
+}

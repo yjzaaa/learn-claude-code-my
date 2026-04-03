@@ -6,7 +6,7 @@ SDK Adapter Base - SDK 适配器基类
 """
 
 from abc import abstractmethod
-from typing import Optional, Any, AsyncIterator
+from typing import Any, AsyncIterator, Optional
 from ..interface import AgentInterface, AgentLifecycleHooks
 from ...types import AgentStatus, AgentMessage, AgentEvent, HookName
 
@@ -35,7 +35,7 @@ class SDKAdapterBase(AgentInterface):
         self._tools: dict[str, Any] = {}
         self._config: dict = {}
         self._status = AgentStatus.IDLE
-        self._hook_delegate: Optional[AgentLifecycleHooks] = None
+        self._hook_delegate: AgentLifecycleHooks | None = None
 
     @property
     def agent_id(self) -> str:
@@ -63,8 +63,8 @@ class SDKAdapterBase(AgentInterface):
     async def run(
         self,
         user_input: str,
-        context: Optional[list[AgentMessage]] = None,
-        system_prompt: Optional[str] = None
+        context: list[AgentMessage] | None = None,
+        system_prompt: str | None = None
     ) -> AsyncIterator[AgentEvent]:
         """
         运行 Agent
@@ -85,7 +85,7 @@ class SDKAdapterBase(AgentInterface):
         name: str,
         handler: Any,
         description: str,
-        schema: Optional[dict] = None
+        schema: dict | None = None
     ) -> None:
         """
         注册工具
@@ -121,7 +121,7 @@ class SDKAdapterBase(AgentInterface):
         pass
 
     @abstractmethod
-    def _convert_event(self, sdk_event: Any) -> Optional[AgentEvent]:
+    def _convert_event(self, sdk_event: Any) -> AgentEvent | None:
         """
         将 SDK 事件转换为我们的 AgentEvent 格式
 

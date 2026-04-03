@@ -46,7 +46,7 @@ async def execute_tool(request: Request, body: ExecuteToolRequest):
     engine = request.app.state.engine
     
     # 创建 ToolCall 并执行
-    from core.models.dialog import ToolCall
+    from core.models.entities import ToolCall
     
     tool_call = ToolCall.create(
         name=body.name,

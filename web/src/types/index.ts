@@ -3,9 +3,9 @@
  */
 
 // 重新导出 store 中的类型
-export type { Message, Dialog } from '../stores/dialog';
+export type { Dialog } from '../stores/dialog-store';
+export type { Message } from '../stores/message-store';
 export type { Theme, FontMode, LayoutMode } from '../stores/ui';
-export type { WSMessage } from '../stores/websocket';
 
 // HITL 相关类型
 export interface SkillEditProposal {

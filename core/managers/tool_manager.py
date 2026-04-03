@@ -5,12 +5,12 @@ Tool Manager - 工具管理器
 与 core.tools.ToolRegistry 集成。
 """
 
-from typing import Optional, List, Callable
+from typing import Callable
 import asyncio
 import logging
 
 from core.tools import ToolRegistry, WorkspaceOps
-from core.models.dialog import ToolCall
+from core.models.entities import ToolCall
 from core.models.events import ToolCallStarted, ToolCallCompleted, ToolCallFailed
 from core.models.config import ToolManagerConfig
 from core.models.tool import ToolInfo
@@ -37,8 +37,8 @@ class ToolManager:
     def __init__(
         self,
         event_bus: EventBus,
-        workspace_ops: Optional[WorkspaceOps] = None,
-        config: Optional[ToolManagerConfig] = None
+        workspace_ops: WorkspaceOps | None = None,
+        config: ToolManagerConfig | None = None
     ):
         self._event_bus = event_bus
         self._config = config or ToolManagerConfig()
@@ -67,7 +67,7 @@ class ToolManager:
         name: str,
         handler: Callable,
         description: str,
-        parameters: Optional[JSONSchema] = None
+        parameters: JSONSchema | None = None
     ):
         """
         注册工具
@@ -93,7 +93,7 @@ class ToolManager:
         """
         return self._registry.unregister(name)
     
-    def get_tool(self, name: str) -> Optional[ToolSpec]:
+    def get_tool(self, name: str) -> ToolSpec | None:
         """
         获取工具信息
         
@@ -105,7 +105,7 @@ class ToolManager:
         """
         return self._registry.get(name)
     
-    def list_available(self) -> List[ToolInfo]:
+    def list_available(self) -> list[ToolInfo]:
         """
         列出可用工具
 
@@ -121,7 +121,7 @@ class ToolManager:
             for info in self._registry._tools.values()
         ]
     
-    def get_schemas(self) -> List[OpenAIToolSchema]:
+    def get_schemas(self) -> list[OpenAIToolSchema]:
         """
         获取 OpenAI 格式的工具 schemas
         

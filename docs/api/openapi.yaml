@@ -1,0 +1,1226 @@
+openapi: 3.0.3
+info:
+  title: Hana Agent API
+  description: |
+    Nano Claude Code-like Agent API
+    - REST API for dialog management and agent control
+    - WebSocket for real-time streaming events
+  version: 1.0.0
+  contact:
+    name: Hana Agent Team
+
+servers:
+  - url: http://localhost:8001
+    description: Local development server
+
+# ═════════════════════════════════════════════════════════════════════════════
+# REST API 路径
+# ═════════════════════════════════════════════════════════════════════════════
+paths:
+  # ───────────────────────────────────────────────────────────────────────────
+  # 健康检查
+  # ───────────────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      summary: Health check
+      description: Check API health status and get basic stats
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        "200":
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 对话管理
+  # ───────────────────────────────────────────────────────────────────────────
+  /api/dialogs:
+    get:
+      summary: List all dialogs
+      description: Get a list of all dialog sessions
+      operationId: listDialogs
+      tags:
+        - Dialogs
+      responses:
+        "200":
+          description: List of dialogs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListDialogsResponse"
+
+    post:
+      summary: Create a new dialog
+      description: Create a new dialog session
+      operationId: createDialog
+      tags:
+        - Dialogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDialogRequest"
+      responses:
+        "200":
+          description: Dialog created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateDialogResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/dialogs/{dialogId}:
+    parameters:
+      - name: dialogId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Dialog ID
+
+    get:
+      summary: Get dialog details
+      description: Get a specific dialog session with all messages
+      operationId: getDialog
+      tags:
+        - Dialogs
+      responses:
+        "200":
+          description: Dialog details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetDialogResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      summary: Delete a dialog
+      description: Delete a dialog session and all its messages
+      operationId: deleteDialog
+      tags:
+        - Dialogs
+      responses:
+        "200":
+          description: Dialog deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteDialogResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/dialogs/{dialogId}/messages:
+    parameters:
+      - name: dialogId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Dialog ID
+
+    get:
+      summary: Get dialog messages
+      description: Get all messages for a specific dialog
+      operationId: getMessages
+      tags:
+        - Dialogs
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetMessagesResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      summary: Send a message
+      description: |
+        Send a message to the dialog. This will trigger the agent to process
+        the message and generate a response. The response is streamed via WebSocket.
+      operationId: sendMessage
+      tags:
+        - Dialogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "200":
+          description: Message queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendMessageResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/dialogs/{dialogId}/resume:
+    parameters:
+      - name: dialogId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Dialog ID
+
+    post:
+      summary: Resume a dialog
+      description: Resume a previously paused dialog session
+      operationId: resumeDialog
+      tags:
+        - Dialogs
+      responses:
+        "200":
+          description: Dialog resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResumeDialogResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Agent 控制
+  # ───────────────────────────────────────────────────────────────────────────
+  /api/agent/status:
+    get:
+      summary: Get agent status
+      description: Get the current status of all agent instances
+      operationId: getAgentStatus
+      tags:
+        - Agent
+      responses:
+        "200":
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatusResponse"
+
+  /api/agent/stop:
+    post:
+      summary: Stop all agents
+      description: Stop all running agent instances
+      operationId: stopAgents
+      tags:
+        - Agent
+      responses:
+        "200":
+          description: Agents stopped successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopAgentResponse"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Skills
+  # ───────────────────────────────────────────────────────────────────────────
+  /api/skills:
+    get:
+      summary: List available skills
+      description: Get a list of all available skills and their tools
+      operationId: listSkills
+      tags:
+        - Skills
+      responses:
+        "200":
+          description: List of skills
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillListResponse"
+
+  /api/skill-edits/pending:
+    get:
+      summary: Get pending skill edits
+      description: Get all pending skill edit proposals awaiting approval
+      operationId: getPendingSkillEdits
+      tags:
+        - Skills
+      responses:
+        "200":
+          description: List of pending skill edits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingSkillEditsResponse"
+
+  # ═════════════════════════════════════════════════════════════════════════════
+  # WebSocket 端点
+  # ═════════════════════════════════════════════════════════════════════════════
+  /ws/{clientId}:
+    get:
+      summary: WebSocket connection
+      description: |
+        Establish a WebSocket connection for real-time event streaming.
+
+        ## Client → Server Messages
+
+        | Type | Description |
+        |------|-------------|
+        | `subscribe` | Subscribe to a dialog's events |
+        | `unsubscribe` | Unsubscribe from a dialog |
+        | `ping` | Heartbeat ping |
+
+        ## Server → Client Events
+
+        | Type | Description |
+        |------|-------------|
+        | `dialog:snapshot` | Full dialog state snapshot |
+        | `stream:delta` | Streaming content chunk |
+        | `stream:start` | Stream started |
+        | `stream:end` | Stream completed |
+        | `stream:truncated` | Stream was interrupted |
+        | `status:change` | Dialog status changed |
+        | `tool_call:update` | Tool call status updated |
+        | `todo:updated` | Todo list updated |
+        | `todo:reminder` | Todo reminder triggered |
+        | `error` | Error occurred |
+        | `pong` | Heartbeat response |
+
+      operationId: websocketConnection
+      tags:
+        - WebSocket
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique client identifier
+      responses:
+        "101":
+          description: WebSocket connection established
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 组件定义
+# ═════════════════════════════════════════════════════════════════════════════
+components:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Schema 定义
+  # ───────────────────────────────────────────────────────────────────────────
+  schemas:
+    # ─────────────────────────────────────────────────────────────────────────
+    # 基础类型
+    # ─────────────────────────────────────────────────────────────────────────
+    DialogStatus:
+      type: string
+      enum:
+        - idle
+        - thinking
+        - tool_calling
+        - completed
+        - error
+      description: Dialog processing status
+
+    MessageRole:
+      type: string
+      enum:
+        - user
+        - assistant
+        - tool
+        - system
+      description: Message role
+
+    MessageStatus:
+      type: string
+      enum:
+        - pending
+        - streaming
+        - completed
+        - error
+      description: Message processing status
+
+    ContentType:
+      type: string
+      enum:
+        - text
+        - markdown
+        - json
+      description: Content type
+
+    ToolCallStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - error
+      description: Tool call execution status
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 实体模型
+    # ─────────────────────────────────────────────────────────────────────────
+    ToolCall:
+      type: object
+      required:
+        - id
+        - name
+        - arguments
+        - status
+      properties:
+        id:
+          type: string
+          description: Tool call ID
+        name:
+          type: string
+          description: Tool name
+        arguments:
+          type: object
+          description: Tool arguments
+        status:
+          $ref: "#/components/schemas/ToolCallStatus"
+        result:
+          type: string
+          description: Tool execution result
+        started_at:
+          type: string
+          format: date-time
+          description: When the tool call started
+        completed_at:
+          type: string
+          format: date-time
+          description: When the tool call completed
+
+    Message:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - content_type
+        - status
+        - timestamp
+      properties:
+        id:
+          type: string
+          description: Message ID
+        role:
+          $ref: "#/components/schemas/MessageRole"
+        content:
+          type: string
+          description: Message content
+        content_type:
+          $ref: "#/components/schemas/ContentType"
+        status:
+          $ref: "#/components/schemas/MessageStatus"
+        timestamp:
+          type: string
+          format: date-time
+          description: Message timestamp
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+          description: Tool calls (assistant only)
+        reasoning_content:
+          type: string
+          description: Reasoning content (assistant only)
+        agent_name:
+          type: string
+          description: Agent name (assistant only)
+        tool_call_id:
+          type: string
+          description: Associated tool call ID (tool only)
+        tool_name:
+          type: string
+          description: Tool name (tool only)
+
+    DialogMetadata:
+      type: object
+      required:
+        - model
+        - agent_name
+        - tool_calls_count
+        - total_tokens
+      properties:
+        model:
+          type: string
+          description: Model identifier
+        agent_name:
+          type: string
+          description: Agent name
+        tool_calls_count:
+          type: integer
+          description: Number of tool calls in this dialog
+        total_tokens:
+          type: integer
+          description: Total token count
+
+    StreamingMessage:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - content_type
+        - status
+        - timestamp
+        - agent_name
+      properties:
+        id:
+          type: string
+          description: Message ID
+        role:
+          $ref: "#/components/schemas/MessageRole"
+        content:
+          type: string
+          description: Current accumulated content
+        content_type:
+          $ref: "#/components/schemas/ContentType"
+        status:
+          type: string
+          enum: [streaming]
+          description: Always "streaming"
+        timestamp:
+          type: string
+          format: date-time
+          description: Message timestamp
+        agent_name:
+          type: string
+          description: Agent name
+        reasoning_content:
+          type: string
+          description: Reasoning content
+        tool_calls:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolCall"
+
+    DialogSession:
+      type: object
+      required:
+        - id
+        - title
+        - status
+        - messages
+        - metadata
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Dialog ID
+        title:
+          type: string
+          description: Dialog title
+        status:
+          $ref: "#/components/schemas/DialogStatus"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+          description: All messages in the dialog
+        streaming_message:
+          $ref: "#/components/schemas/StreamingMessage"
+          description: Current streaming message (if any)
+        metadata:
+          $ref: "#/components/schemas/DialogMetadata"
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 请求模型
+    # ─────────────────────────────────────────────────────────────────────────
+    CreateDialogRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: Dialog title
+          default: "New Dialog"
+
+    SendMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          description: Message content to send
+          minLength: 1
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 响应模型
+    # ─────────────────────────────────────────────────────────────────────────
+    BaseResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Operation success status
+        message:
+          type: string
+          description: Response message
+
+    HealthResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - status
+            - dialogs
+          properties:
+            status:
+              type: string
+              enum: [ok]
+            dialogs:
+              type: integer
+              description: Total number of dialogs
+
+    ListDialogsResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              type: array
+              items:
+                $ref: "#/components/schemas/DialogSession"
+
+    CreateDialogResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/DialogSession"
+
+    GetDialogResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/DialogSession"
+
+    DeleteDialogResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+
+    GetMessagesResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              type: object
+              required:
+                - items
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Message"
+
+    SendMessageData:
+      type: object
+      required:
+        - message_id
+        - status
+      properties:
+        message_id:
+          type: string
+          description: Generated message ID
+        status:
+          type: string
+          enum: [queued]
+          description: Message queue status
+
+    SendMessageResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/SendMessageData"
+
+    ResumeData:
+      type: object
+      required:
+        - dialog_id
+        - status
+      properties:
+        dialog_id:
+          type: string
+          description: Dialog ID
+        status:
+          type: string
+          enum: [idle]
+          description: Dialog status after resume
+
+    ResumeDialogResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/ResumeData"
+
+    AgentStatusItem:
+      type: object
+      required:
+        - dialog_id
+        - status
+      properties:
+        dialog_id:
+          type: string
+          description: Dialog ID
+        status:
+          type: string
+          description: Current agent status
+
+    AgentStatusData:
+      type: object
+      required:
+        - active_dialogs
+        - total_dialogs
+      properties:
+        active_dialogs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentStatusItem"
+          description: List of active agent sessions
+        total_dialogs:
+          type: integer
+          description: Total number of dialogs
+
+    AgentStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/AgentStatusData"
+
+    StopAgentData:
+      type: object
+      required:
+        - stopped_dialogs
+        - count
+      properties:
+        stopped_dialogs:
+          type: array
+          items:
+            type: string
+          description: List of stopped dialog IDs
+        count:
+          type: integer
+          description: Number of stopped dialogs
+
+    StopAgentResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              $ref: "#/components/schemas/StopAgentData"
+
+    SkillItem:
+      type: object
+      required:
+        - name
+        - description
+        - tags
+        - path
+      properties:
+        name:
+          type: string
+          description: Skill name
+        description:
+          type: string
+          description: Skill description
+        tags:
+          type: string
+          description: Skill tags
+        path:
+          type: string
+          description: Skill path
+
+    SkillListResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              type: array
+              items:
+                $ref: "#/components/schemas/SkillItem"
+
+    PendingSkillEditsResponse:
+      allOf:
+        - $ref: "#/components/schemas/BaseResponse"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              type: object
+              required:
+                - proposals
+              properties:
+                proposals:
+                  type: array
+                  items:
+                    type: object
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # WebSocket 事件模型
+    # ─────────────────────────────────────────────────────────────────────────
+    WSSubscribeMessage:
+      type: object
+      required:
+        - type
+        - dialog_id
+      properties:
+        type:
+          type: string
+          enum: [subscribe]
+        dialog_id:
+          type: string
+          description: Dialog ID to subscribe to
+
+    WSUnsubscribeMessage:
+      type: object
+      required:
+        - type
+        - dialog_id
+      properties:
+        type:
+          type: string
+          enum: [unsubscribe]
+        dialog_id:
+          type: string
+          description: Dialog ID to unsubscribe from
+
+    WSPingMessage:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [ping]
+        timestamp:
+          type: number
+          description: Client timestamp
+
+    WSDialogSnapshotEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - data
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [dialog:snapshot]
+        dialog_id:
+          type: string
+        data:
+          $ref: "#/components/schemas/DialogSession"
+        timestamp:
+          type: integer
+          description: Unix timestamp in milliseconds
+
+    WSStreamDeltaEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - message_id
+        - delta
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [stream:delta]
+        dialog_id:
+          type: string
+        message_id:
+          type: string
+        delta:
+          type: object
+          required:
+            - content
+          properties:
+            content:
+              type: string
+              description: Content delta
+            reasoning:
+              type: string
+              description: Reasoning content delta
+        timestamp:
+          type: integer
+          description: Unix timestamp in milliseconds
+
+    WSStreamStartEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - message_id
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [stream:start]
+        dialog_id:
+          type: string
+        message_id:
+          type: string
+        message:
+          type: object
+          description: Initial message data
+        timestamp:
+          type: integer
+
+    WSStreamEndEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - message_id
+        - final_content
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [stream:end]
+        dialog_id:
+          type: string
+        message_id:
+          type: string
+        message:
+          type: object
+          description: Final message data
+        final_content:
+          type: string
+        timestamp:
+          type: integer
+
+    WSStreamTruncatedEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - message_id
+        - reason
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [stream:truncated]
+        dialog_id:
+          type: string
+        message_id:
+          type: string
+        reason:
+          type: string
+          enum:
+            - interrupted
+            - timeout
+            - error
+            - not_supported
+        last_chunk_index:
+          type: integer
+        timestamp:
+          type: integer
+
+    WSStatusChangeEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - from
+        - to
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [status:change]
+        dialog_id:
+          type: string
+        from:
+          $ref: "#/components/schemas/DialogStatus"
+        to:
+          $ref: "#/components/schemas/DialogStatus"
+        timestamp:
+          type: integer
+
+    WSToolCallUpdateEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - tool_call
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [tool_call:update]
+        dialog_id:
+          type: string
+        tool_call:
+          $ref: "#/components/schemas/ToolCall"
+        timestamp:
+          type: integer
+
+    WSTodoItem:
+      type: object
+      required:
+        - id
+        - text
+        - status
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - in_progress
+            - completed
+
+    WSTodoUpdatedEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - todos
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [todo:updated]
+        dialog_id:
+          type: string
+        todos:
+          type: array
+          items:
+            $ref: "#/components/schemas/WSTodoItem"
+        rounds_since_todo:
+          type: integer
+        timestamp:
+          type: integer
+
+    WSTodoReminderEvent:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - message
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [todo:reminder]
+        dialog_id:
+          type: string
+        message:
+          type: string
+        rounds_since_todo:
+          type: integer
+        timestamp:
+          type: integer
+
+    WSErrorDetail:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+
+    WSErrorEvent:
+      type: object
+      required:
+        - type
+        - error
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [error]
+        dialog_id:
+          type: string
+        error:
+          $ref: "#/components/schemas/WSErrorDetail"
+        timestamp:
+          type: integer
+
+    WSPongMessage:
+      type: object
+      required:
+        - type
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [pong]
+        timestamp:
+          type: integer
+
+    WSAckMessage:
+      type: object
+      required:
+        - type
+        - dialog_id
+        - client_id
+        - timestamp
+      properties:
+        type:
+          type: string
+          enum: [ack]
+        dialog_id:
+          type: string
+        client_id:
+          type: string
+        server_id:
+          type: string
+        message:
+          type: object
+        timestamp:
+          type: integer
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 响应定义
+  # ───────────────────────────────────────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/BaseResponse"
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Invalid request parameters"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/BaseResponse"
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Dialog not found"
+
+    Conflict:
+      description: Resource conflict (e.g., dialog already processing)
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/BaseResponse"
+              - type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Dialog is already processing a message"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 错误码定义
+# ═════════════════════════════════════════════════════════════════════════════
+# 错误码格式: CATEGORY_CODE
+# CATEGORY:
+#   - VALIDATION (400): 请求验证错误
+#   - AUTH (401/403): 认证/授权错误
+#   - NOT_FOUND (404): 资源不存在
+#   - CONFLICT (409): 资源冲突
+#   - RATE_LIMIT (429): 限流
+#   - INTERNAL (500): 内部服务器错误
+#   - AGENT (600): Agent 特定错误
+#
+# CODE:
+#   - 001-099: 通用错误
+#   - 100-199: Dialog 相关
+#   - 200-299: Message 相关
+#   - 300-399: Agent 相关
+#   - 400-499: Tool 相关
+#   - 500-599: Skill 相关
+# ═════════════════════════════════════════════════════════════════════════════
+
+# 错误码速查表:
+# ┌─────────────────┬─────────────────────────────────────────────────────────┐
+# │ 错误码          │ 说明                                                    │
+# ├─────────────────┼─────────────────────────────────────────────────────────┤
+# │ VALIDATION_001  │ 请求参数无效                                            │
+# │ VALIDATION_002  │ 缺少必需参数                                            │
+# │ NOT_FOUND_100   │ 对话不存在                                              │
+# │ NOT_FOUND_101   │ 消息不存在                                              │
+# │ CONFLICT_100    │ 对话正在处理中                                          │
+# │ INTERNAL_001    │ 内部服务器错误                                          │
+# │ AGENT_300       │ Agent 执行错误                                          │
+# │ AGENT_301       │ Agent 超时                                              │
+# │ AGENT_302       │ Agent 轮次限制达到                                      │
+# │ TOOL_400        │ 工具执行错误                                            │
+# │ TOOL_401        │ 工具未找到                                              │
+# │ TOOL_402        │ 工具参数无效                                            │
+# │ SKILL_500       │ Skill 加载错误                                          │
+# │ SKILL_501       │ Skill 未找到                                            │
+# └─────────────────┴─────────────────────────────────────────────────────────┘

@@ -4,7 +4,7 @@ Provider Manager - Provider 管理器
 管理 LLM Provider 的创建、配置和切换。
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Optional, Dict
 import logging
 
 from core.providers import BaseProvider, LiteLLMProvider
@@ -23,10 +23,10 @@ class ProviderManager:
     - 提供默认 Provider
     """
     
-    def __init__(self, config: Optional[ProviderConfig] = None):
+    def __init__(self, config: ProviderConfig | None = None):
         self._config = config or ProviderConfig()
-        self._providers: Dict[str, BaseProvider] = {}
-        self._default_provider: Optional[BaseProvider] = None
+        self._providers: dict[str, BaseProvider] = {}
+        self._default_provider: BaseProvider | None = None
 
         # 初始化默认 Provider
         self._init_default_provider()
@@ -74,7 +74,7 @@ class ProviderManager:
         self._providers[name] = provider
         logger.info(f"[ProviderManager] Registered provider: {name}")
     
-    def get(self, name: Optional[str] = None) -> Optional[BaseProvider]:
+    def get(self, name: str | None = None) -> BaseProvider | None:
         """
         获取 Provider
         
@@ -89,7 +89,7 @@ class ProviderManager:
         return self._providers.get(name)
     
     @property
-    def default(self) -> Optional[BaseProvider]:
+    def default(self) -> BaseProvider | None:
         """默认 Provider"""
         return self._default_provider
     
@@ -106,7 +106,7 @@ class ProviderManager:
         else:
             raise ValueError(f"Provider not found: {name}")
     
-    def list_providers(self) -> Dict[str, str]:
+    def list_providers(self) -> dict[str, str]:
         """
         列出所有 Provider
         

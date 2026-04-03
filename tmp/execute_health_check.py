@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+"""
+执行 Finance Skill 体温测试脚本
+"""
+
+import sys
+import os
+
+# 添加项目路径
+sys.path.insert(0, '/skills/finance/scripts')
+sys.path.insert(0, '/')
+
+# 执行测试
+exec(open('/skills/finance/scripts/health_check.py').read())
+
+# 运行测试
+result = run_health_check(stream_output=True)
+print("\n" + "="*60)
+print("JSON 结果输出:")
+print("="*60)
+import json
+print(json.dumps(result, ensure_ascii=False, indent=2))

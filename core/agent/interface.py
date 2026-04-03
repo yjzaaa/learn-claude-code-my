@@ -10,7 +10,7 @@ Agent Abstract Interface - Agent 抽象接口
 """
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Callable, Optional, Any
+from typing import AsyncIterator, Callable, Any, Optional
 from ..types import AgentStatus, AgentMessage, AgentEvent, HookName
 
 
@@ -49,8 +49,8 @@ class AgentInterface(ABC):
     async def run(
         self,
         user_input: str,
-        context: Optional[list[AgentMessage]] = None,
-        system_prompt: Optional[str] = None
+        context: list[AgentMessage] | None = None,
+        system_prompt: str | None = None
     ) -> AsyncIterator[AgentEvent]:
         """
         运行 Agent - 核心方法（流式）
@@ -91,7 +91,7 @@ class AgentInterface(ABC):
         name: str, 
         handler: Callable,
         description: str,
-        schema: Optional[dict] = None
+        schema: dict | None = None
     ) -> None:
         """
         注册工具

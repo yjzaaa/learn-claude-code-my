@@ -6,7 +6,7 @@ Agent Factory - Agent 工厂
 
 from typing import Optional
 from .interface import AgentInterface
-from .simple.agent import SimpleAgent
+# from .simple.agent import SimpleAgent  # 已删除
 
 # 可选：延迟导入适配器（未来启用）
 # try:
@@ -26,7 +26,7 @@ class AgentFactory:
     """
 
     _registry: dict[str, type] = {
-        "simple": SimpleAgent,
+        # "simple": SimpleAgent,  # 已删除
         # "langgraph": LangGraphAgent,  # 未来启用
         # "crewai": CrewAIAgent,        # 未来启用
         # "autogen": AutoGenAgent,      # 未来启用

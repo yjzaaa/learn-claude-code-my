@@ -6,6 +6,7 @@ Types - 统一类型定义
 
 from typing import Any, Callable, TypedDict
 from typing_extensions import NotRequired
+from pydantic import BaseModel, Field
 
 # ═══════════════════════════════════════════════════════════
 # Tool Types
@@ -83,6 +84,23 @@ class MessageDict(TypedDict):
     tool_calls: NotRequired[list[ToolCallDict]]
     tool_call_id: NotRequired[str]
     name: NotRequired[str]
+
+
+# ═══════════════════════════════════════════════════════════
+# Pydantic Models (for runtime use)
+# ═══════════════════════════════════════════════════════════
+
+class OpenAIFunction(BaseModel):
+    """OpenAI Function Pydantic model"""
+    name: str
+    arguments: str
+
+
+class OpenAIToolCall(BaseModel):
+    """OpenAI Tool Call Pydantic model"""
+    id: str
+    type: str = "function"
+    function: OpenAIFunction
 
 
 # ═══════════════════════════════════════════════════════════

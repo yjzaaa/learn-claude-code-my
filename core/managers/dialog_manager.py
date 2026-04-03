@@ -7,11 +7,11 @@ Dialog Manager - 对话管理器
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Dict, AsyncIterator, List, Any
+from typing import TYPE_CHECKING, AsyncIterator, Any, Optional
 from datetime import datetime
 import logging
 
-from core.models.dialog import Dialog, Message
+from core.models.entities import Dialog, Message
 from core.models.events import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, DialogClosed
@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from core.managers.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
-
 
 class DialogManager:
     """
@@ -51,7 +50,7 @@ class DialogManager:
         self._config = config or DialogConfig()
 
         # 内存中的活动对话
-        self._dialogs: Dict[str, Dialog] = {}
+        self._dialogs: dict[str, Dialog] = {}
 
         # 配置
         self._max_history = self._config.max_history
@@ -98,7 +97,7 @@ class DialogManager:
         """
         return self._dialogs.get(dialog_id)
     
-    def list_dialogs(self) -> List[Dialog]:
+    def list_dialogs(self) -> list[Dialog]:
         """
         列出所有对话
         
@@ -139,7 +138,7 @@ class DialogManager:
         self,
         dialog_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         message_id: Optional[str] = None,
     ) -> Message:
         """
@@ -226,7 +225,7 @@ class DialogManager:
             ))
             logger.info(f"[DialogManager] Closed dialog {dialog_id}, reason={reason}")
     
-    def get_messages_for_llm(self, dialog_id: str) -> List[MessageDict]:
+    def get_messages_for_llm(self, dialog_id: str) -> list[MessageDict]:
         """
         获取 LLM 格式的消息列表
         

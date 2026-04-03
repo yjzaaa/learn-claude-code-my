@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from core.models.dto import TodoResult
+from core.models.api import TodoResult
 
 router = APIRouter(tags=["hitl"])
 

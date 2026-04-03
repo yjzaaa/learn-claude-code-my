@@ -11,19 +11,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Literal, overload
 
-
-class DefaultCommandGuard:
-    """默认命令安全策略。"""
-
-    def __init__(self, blocked_tokens: list[str] | None = None):
-        self.blocked_tokens = blocked_tokens or ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-
-    def is_allowed(self, command: str) -> tuple[bool, str | None]:
-        """返回命令是否允许执行及拒绝原因。"""
-        for token in self.blocked_tokens:
-            if token in command:
-                return False, f"Dangerous command blocked: {token}"
-        return True, None
+from .security.guard import DefaultCommandGuard
+from .file.operations import read_text_safe
 
 
 class WorkspaceOps:

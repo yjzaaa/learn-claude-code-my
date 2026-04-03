@@ -5,14 +5,14 @@ Memory Manager - 记忆管理器
 追加写入 memory.md，供后续对话注入 system prompt。
 """
 
-from typing import Optional, List, Any
+from typing import Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 import logging
 
 from runtime.event_bus import EventBus
 from core.models.config import MemoryConfig
-from core.models.dto import MemoryStats
+from core.models.api import MemoryStats
 from core.models.types import MessageDict
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,8 @@ class MemoryManager:
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        config: Optional[MemoryConfig] = None,
+        event_bus: EventBus | None = None,
+        config: MemoryConfig | None = None,
         memory_file: str = "memory.md",
     ):
         self._config = config or MemoryConfig()
@@ -56,9 +56,9 @@ class MemoryManager:
     async def summarize_and_store(
         self,
         dialog_id: str,
-        messages: List[MessageDict],
+        messages: list[MessageDict],
         provider: Any = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         总结一次对话并追加到 memory.md。
 
@@ -108,7 +108,7 @@ class MemoryManager:
     # 内部实现
     # ─────────────────────────────────────────────
 
-    async def _llm_summarize(self, turns: List[MessageDict], provider: Any) -> str:
+    async def _llm_summarize(self, turns: list[MessageDict], provider: Any) -> str:
         """调用 LLM 总结对话。"""
         history_lines = []
         for m in turns[-20:]:  # 最多取最近 20 条
@@ -118,7 +118,7 @@ class MemoryManager:
 
         prompt = _SUMMARIZE_PROMPT.format(history="\n".join(history_lines))
 
-        result: List[str] = []
+        result: list[str] = []
         async for chunk in provider.chat_stream(
             messages=[{"role": "user", "content": prompt}],
             tools=None,
@@ -128,7 +128,7 @@ class MemoryManager:
 
         return "".join(result).strip()
 
-    def _simple_summarize(self, turns: List[MessageDict]) -> str:
+    def _simple_summarize(self, turns: list[MessageDict]) -> str:
         """无 LLM 时的简单摘取：取最后一条用户消息。"""
         for m in reversed(turns):
             if m.get("role") == "user" and m.get("content"):

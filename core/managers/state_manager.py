@@ -4,8 +4,7 @@ State Manager - 状态管理器
 管理全局状态、配置和持久化。
 """
 
-import dataclasses
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 import json
 import logging
 from pathlib import Path
@@ -18,24 +17,37 @@ logger = logging.getLogger(__name__)
 class StateManager:
     """
     状态管理器
-    
+
     职责:
     - 管理全局状态
     - 配置管理
     - 持久化 (可选)
     """
-    
+
     def __init__(
         self,
-        config: Optional[StateConfig] = None,
-        state_dir: Optional[Path] = None
+        config: StateConfig | None = None,
+        state_dir: Path | None = None
     ):
-        self._config: Dict[str, Any] = dataclasses.asdict(config) if config else {}
-        self._state: Dict[str, Any] = {}
+        # 支持 Pydantic BaseModel 和 dataclass
+        if config is None:
+            self._config: dict[str, Any] = {}
+        elif hasattr(config, 'model_dump'):
+            # Pydantic v2
+            self._config = config.model_dump()
+        elif hasattr(config, 'dict'):
+            # Pydantic v1
+            self._config = config.dict()
+        else:
+            # dataclass
+            import dataclasses
+            self._config = dataclasses.asdict(config)
+
+        self._state: dict[str, Any] = {}
         self._state_dir = state_dir
-        
+
         # 当前 Provider 名称
-        self._current_provider: Optional[str] = None
+        self._current_provider: str | None = None
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -77,7 +89,7 @@ class StateManager:
         """设置当前 Provider"""
         self._current_provider = provider_name
     
-    def get_current_provider(self) -> Optional[str]:
+    def get_current_provider(self) -> str | None:
         """获取当前 Provider"""
         return self._current_provider
     

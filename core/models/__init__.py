@@ -6,12 +6,9 @@ Core Models - 领域模型
 
 # ═══════════════════════════════════════════════════════════
 # Type Definitions (基础 TypedDict 类型)
-# 注意: ToolSpec 在 types.py 是 TypedDict 版（供 toolkit 内部用）
-#       在 tool.py 是 dataclass 版（供序列化/API 用）
-#       从 __init__ 导出的是 dataclass 版；TypedDict 版请从 core.models.types 直接导入
 # ═══════════════════════════════════════════════════════════
 from .types import (
-    # Tool Types (TypedDict — internal use by toolkit)
+    # Tool Types
     OpenAIFunctionSchema,
     OpenAIToolSchema,
     MergedToolItem,
@@ -38,22 +35,41 @@ from .types import (
     WSStreamDeltaMessage,
     WSDialogCreatedMessage,
     WSEventMessage,
+    # Utility functions
+    make_status_change,
 )
 
 # ═══════════════════════════════════════════════════════════
-# Domain Models (原有)
+# Base Models (基类定义)
 # ═══════════════════════════════════════════════════════════
-from .dialog import (
+from .base import (
+    EventPriority,
+    generate_id,
+    Entity,
+    Event,
+    BaseEvent,
+    Response,
+    Config,
+)
+
+# ═══════════════════════════════════════════════════════════
+# Entity Models (业务实体 - Pydantic)
+# ═══════════════════════════════════════════════════════════
+from .entities import (
+    # 产物和技能
+    Artifact,
+    Skill,
+    SkillDefinition,
+    # 对话相关
     Dialog,
     Message,
     ToolCall,
-    ToolCallFunction,
+    DialogOutput,
+    ToolCallOutput,
 )
-from .domain import Artifact, Skill, SkillDefinition
-from .events import BaseEvent, EventPriority
 
 # ═══════════════════════════════════════════════════════════
-# Config Models (新增)
+# Config Models (配置)
 # ═══════════════════════════════════════════════════════════
 from .config import (
     EngineConfig,
@@ -67,7 +83,7 @@ from .config import (
 )
 
 # ═══════════════════════════════════════════════════════════
-# Tool Models (新增)
+# Tool Models (工具)
 # ═══════════════════════════════════════════════════════════
 from .tool import (
     ToolFunction,
@@ -81,39 +97,153 @@ from .tool import (
 )
 
 # ═══════════════════════════════════════════════════════════
-# DTO Models (新增)
+# Message Models (LangChain 扩展)
 # ═══════════════════════════════════════════════════════════
-from .dto import (
-    # Message DTOs
+from .messages import (
+    CustomHumanMessage,
+    CustomAIMessage,
+    CustomSystemMessage,
+    CustomToolMessage,
+    create_human,
+    create_ai,
+    create_system,
+    create_tool,
+)
+
+# ═══════════════════════════════════════════════════════════
+# API Models (API 请求/响应)
+# ═══════════════════════════════════════════════════════════
+from .api import (
+    # 统计模型
+    MemoryStats,
+    SkillStats,
+    EventBusStats,
+    # 数据容器
+    ResultData,
+    ProposalData,
+    TodoListData,
+    Metadata,
+    ItemData,
+    ToolItem,
+    # 消息 DTOs
     ToolCallFunctionDTO,
     ToolCallDTO,
     MessageDTO,
-    ConversationState,
-    # Event DTOs
+    # API 响应模型
+    ResultModel,
+    SendMessageData,
+    SendMessageResponse,
+    ResumeData,
+    ResumeDialogResponse,
+    AgentStatusItem,
+    AgentStatusData,
+    AgentStatusResponse,
+    StopAgentData,
+    StopAgentResponse,
+    SkillItem,
+    SkillListResponse,
+    PendingSkillEditsResponse,
+    DecideSkillEditResponse,
+    HealthResponse,
+    GetMessagesResponse,
+    # 对话响应
+    ListDialogsResponse,
+    CreateDialogResponse,
+    GetDialogResponse,
+    DeleteDialogResponse,
+    # SSE 事件
     EventMetadata,
     BaseSSEEvent,
     SkillEditPendingEvent,
     SkillEditResolvedEvent,
+    TodoItemDTO,
     TodoUpdatedEvent,
     TodoReminderEvent,
     SSEEvent,
-    # Stats DTOs
-    MemoryStats,
-    SkillStats,
-    EventBusStats,
-    ProviderSummary,
-    # Result Types
-    BaseResult,
-    DecisionResult,
-    HITLResult,
-    TodoResult,
-    # API Response Models
-    SkillDetailResponse,
+    # Todo 响应
     TodoStateDTO,
-    TodoItemDTO,
+    TodoListResponse,
+    # Skill 响应
+    SkillDetailResponse,
     SkillEditProposalDTO,
     PendingProposalsResponse,
-    TodoListResponse,
+    ProviderSummary,
+    # 向后兼容别名
+    APISendMessageData,
+    APISendMessageResponse,
+    APIResumeData,
+    APIResumeDialogResponse,
+    APIAgentStatusItem,
+    APIAgentStatusData,
+    APIAgentStatusResponse,
+    APIStopAgentData,
+    APIStopAgentResponse,
+    APIHealthResponse,
+    APISkillListResponse,
+    APIPendingSkillEditsResponse,
+    APIDecideSkillEditResponse,
+    APIListDialogsResponse,
+    APICreateDialogResponse,
+    APIGetDialogResponse,
+    APIDeleteDialogResponse,
+    APIGetMessagesResponse,
+    SkillItemModel,
+    HITLResultModel,
+    TodoResult,
+    DecisionResult,
+    HITLResult,
+    BaseResult,
+    SkillEditPendingEventDTO,
+    SkillEditResolvedEventDTO,
+    TodoUpdatedEventDTO,
+    TodoReminderEventDTO,
+)
+
+# ═══════════════════════════════════════════════════════════
+# WebSocket Models
+# ═══════════════════════════════════════════════════════════
+from .websocket_models import (
+    WSDialogMetadata,
+    WSStreamingMessage,
+    WSDialogSnapshot,
+    WSSnapshotEvent,
+    WSDeltaContent,
+    WSStreamDeltaEvent,
+    WSErrorDetail,
+    WSErrorEvent,
+    WSHitlRequestEvent,
+    WSStatusChangeEvent,
+    WSToolCall,
+    WSToolCallUpdateEvent,
+    WSTodoItem,
+    WSTodoUpdatedEvent,
+    WSTodoReminderEvent,
+    WSStreamStartEvent,
+    WSStreamEndEvent,
+    WSStreamTruncatedEvent,
+    WSAckEvent,
+    WSMessageAddedEvent,
+)
+
+# ═══════════════════════════════════════════════════════════
+# Event Models (事件总线事件)
+# ═══════════════════════════════════════════════════════════
+from .events import (
+    DialogCreated,
+    MessageReceived,
+    StreamDelta,
+    MessageCompleted,
+    DialogClosed,
+    ToolCallStarted,
+    ToolStartData,
+    ToolCallCompleted,
+    ToolCallFailed,
+    SystemStarted,
+    SystemStopped,
+    ErrorOccurred,
+    AgentRoundsLimitReached,
+    SkillLoaded,
+    SkillUnloaded,
 )
 
 __all__ = [
@@ -138,19 +268,23 @@ __all__ = [
     "WSStreamDeltaMessage",
     "WSDialogCreatedMessage",
     "WSEventMessage",
-    # Dialog
+    # Base
+    "EventPriority",
+    "generate_id",
+    "Entity",
+    "Event",
+    "BaseEvent",
+    "Response",
+    "Config",
+    # Entities
+    "Artifact",
+    "Skill",
+    "SkillDefinition",
     "Dialog",
     "Message",
     "ToolCall",
-    "ToolCallFunction",
-    # Skill
-    "Skill",
-    "SkillDefinition",
-    # Artifact
-    "Artifact",
-    # Events
-    "BaseEvent",
-    "EventPriority",
+    "DialogOutput",
+    "ToolCallOutput",
     # Config
     "EngineConfig",
     "AgentConfig",
@@ -160,7 +294,7 @@ __all__ = [
     "MemoryConfig",
     "SkillManagerConfig",
     "ProviderConfig",
-    # Tool (dataclass)
+    # Tool
     "ToolFunction",
     "ToolSchema",
     "ToolSpec",
@@ -169,31 +303,135 @@ __all__ = [
     "ToolExecutionResult",
     "ActiveToolInfo",
     "ToolCallBuffer",
-    # DTO
+    # Messages
+    "CustomHumanMessage",
+    "CustomAIMessage",
+    "CustomSystemMessage",
+    "CustomToolMessage",
+    "create_human",
+    "create_ai",
+    "create_system",
+    "create_tool",
+    # API - Stats
+    "MemoryStats",
+    "SkillStats",
+    "EventBusStats",
+    # API - Data containers
+    "ResultData",
+    "ProposalData",
+    "TodoListData",
+    "Metadata",
+    "ItemData",
+    "ToolItem",
+    # API - Message DTOs
     "ToolCallFunctionDTO",
     "ToolCallDTO",
     "MessageDTO",
-    "ConversationState",
+    # API - Response models
+    "ResultModel",
+    "SendMessageData",
+    "SendMessageResponse",
+    "ResumeData",
+    "ResumeDialogResponse",
+    "AgentStatusItem",
+    "AgentStatusData",
+    "AgentStatusResponse",
+    "StopAgentData",
+    "StopAgentResponse",
+    "SkillItem",
+    "SkillListResponse",
+    "PendingSkillEditsResponse",
+    "DecideSkillEditResponse",
+    "HealthResponse",
+    "GetMessagesResponse",
+    # API - Dialog responses
+    "ListDialogsResponse",
+    "CreateDialogResponse",
+    "GetDialogResponse",
+    "DeleteDialogResponse",
+    # API - SSE Events
     "EventMetadata",
     "BaseSSEEvent",
     "SkillEditPendingEvent",
     "SkillEditResolvedEvent",
+    "TodoItemDTO",
     "TodoUpdatedEvent",
     "TodoReminderEvent",
     "SSEEvent",
-    "MemoryStats",
-    "SkillStats",
-    "EventBusStats",
-    "ProviderSummary",
-    # Result / Response
-    "BaseResult",
-    "DecisionResult",
-    "HITLResult",
-    "TodoResult",
-    "SkillDetailResponse",
+    # API - Todo
     "TodoStateDTO",
-    "TodoItemDTO",
+    "TodoListResponse",
+    # API - Skill
+    "SkillDetailResponse",
     "SkillEditProposalDTO",
     "PendingProposalsResponse",
-    "TodoListResponse",
+    "ProviderSummary",
+    # API - Backwards compatibility
+    "APISendMessageData",
+    "APISendMessageResponse",
+    "APIResumeData",
+    "APIResumeDialogResponse",
+    "APIAgentStatusItem",
+    "APIAgentStatusData",
+    "APIAgentStatusResponse",
+    "APIStopAgentData",
+    "APIStopAgentResponse",
+    "APIHealthResponse",
+    "APISkillListResponse",
+    "APIPendingSkillEditsResponse",
+    "APIDecideSkillEditResponse",
+    "APIListDialogsResponse",
+    "APICreateDialogResponse",
+    "APIGetDialogResponse",
+    "APIDeleteDialogResponse",
+    "APIGetMessagesResponse",
+    "SkillItemModel",
+    "HITLResultModel",
+    "TodoResult",
+    "DecisionResult",
+    "HITLResult",
+    "BaseResult",
+    "SkillEditPendingEventDTO",
+    "SkillEditResolvedEventDTO",
+    "TodoUpdatedEventDTO",
+    "TodoReminderEventDTO",
+    # WebSocket
+    "WSDialogMetadata",
+    "WSStreamingMessage",
+    "WSDialogSnapshot",
+    "WSSnapshotEvent",
+    "WSDeltaContent",
+    "WSStreamDeltaEvent",
+    "WSErrorDetail",
+    "WSErrorEvent",
+    "WSHitlRequestEvent",
+    "WSStatusChangeEvent",
+    "WSToolCall",
+    "WSToolCallUpdateEvent",
+    "WSTodoItem",
+    "WSTodoUpdatedEvent",
+    "WSTodoReminderEvent",
+    "WSStreamStartEvent",
+    "WSStreamEndEvent",
+    "WSStreamTruncatedEvent",
+    "WSAckEvent",
+    "WSMessageAddedEvent",
+    # Events
+    "DialogCreated",
+    "MessageReceived",
+    "StreamDelta",
+    "MessageCompleted",
+    "DialogClosed",
+    "ToolCallStarted",
+    "ToolStartData",
+    "ToolCallCompleted",
+    "ToolCallFailed",
+    "SystemStarted",
+    "SystemStopped",
+    "ErrorOccurred",
+    "AgentRoundsLimitReached",
+    "SkillLoaded",
+    "SkillUnloaded",
+    # Utility
+    "make_status_change",
 ]
