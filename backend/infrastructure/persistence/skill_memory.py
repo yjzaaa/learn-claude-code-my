@@ -4,8 +4,8 @@ In-Memory Skill Repository - 内存技能仓库实现
 
 from typing import Optional
 
-from backend.domain.repositories.skill_repository import ISkillRepository
-from backend.domain.models import Skill
+from backend.domain.repositories.skill import ISkillRepository
+from backend.domain.models.agent.skill import Skill
 
 
 class InMemorySkillRepository(ISkillRepository):

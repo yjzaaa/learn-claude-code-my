@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 from enum import Enum
 
-from backend.domain.models.types import StreamToolCallDict
+from backend.domain.models.shared.types import StreamToolCallDict
 
 
 class AgentStatus(Enum):

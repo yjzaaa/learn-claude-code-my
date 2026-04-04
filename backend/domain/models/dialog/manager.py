@@ -34,7 +34,7 @@ from pathlib import Path
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_core.messages import message_to_dict, messages_from_dict
 
-from .models import (
+from .session import (
     DialogSession,
     SessionStatus,
     SessionMetadata,

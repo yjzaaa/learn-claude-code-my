@@ -13,9 +13,8 @@ import uuid
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from backend.infrastructure.runtime.runtime import AgentRuntime
-from backend.domain.models import Dialog
-from backend.domain.models.agent_events import AgentEvent
+from backend.domain.models.dialog.dialog import Dialog
+from backend.domain.models.events.agent import AgentEvent
 
 
 ConfigT = TypeVar("ConfigT", bound=BaseModel)

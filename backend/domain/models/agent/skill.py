@@ -5,7 +5,7 @@ Skill - 技能实体
 """
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
-from backend.domain.models.base import Entity
+from backend.domain.models.shared.base import Entity
 
 
 class SkillDefinition(BaseModel):

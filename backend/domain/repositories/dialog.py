@@ -5,7 +5,7 @@ Dialog Repository Interface - 对话仓库接口
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from backend.domain.models import Dialog
+from backend.domain.models.dialog.dialog import Dialog
 
 
 class IDialogRepository(ABC):
