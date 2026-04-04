@@ -1,15 +1,25 @@
-"""Runtime Layer - 运行时层
+"""
+Runtime - 运行时层
 
-提供 Agent 执行运行时：
-- IAgentRuntime: 运行时统一接口
-- IAgentRuntimeFactory: 运行时工厂
-- AgentEvent: 运行时事件模型
+提供事件总线、流处理和生命周期管理。
+解耦 Core 层和 Interface 层。
 """
 
-from .interfaces import IAgentRuntime, IAgentRuntimeFactory, AgentEvent
+from .event_bus import EventBus, EventFilter
+from .events import *
 
 __all__ = [
-    "IAgentRuntime",
-    "IAgentRuntimeFactory",
-    "AgentEvent",
+    "EventBus",
+    "EventFilter",
+    # Events
+    "DialogCreated",
+    "MessageReceived", 
+    "StreamDelta",
+    "MessageCompleted",
+    "ToolCallStarted",
+    "ToolCallCompleted",
+    "ToolCallFailed",
+    "SystemStarted",
+    "SystemStopped",
+    "ErrorOccurred",
 ]

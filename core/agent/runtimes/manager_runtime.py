@@ -116,54 +116,8 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         logger.debug(f"[{self.__class__.__name__}] Managers configured")
 
     # ═══════════════════════════════════════════════════════════
-    # 对话管理 - 集成 DialogManager 的版本
+    # 对话管理 - 基类已统一通过 DialogSessionManager 实现
     # ═══════════════════════════════════════════════════════════
-
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
-        """
-        创建新对话（使用 DialogManager）
-
-        Args:
-            user_input: 用户初始输入
-            title: 对话标题（可选）
-
-        Returns:
-            新创建的对话 ID
-        """
-        dialog_id = await self._dialog_mgr.create(user_input, title)
-
-        # 同时缓存到本地（用于兼容）
-        dialog = self._dialog_mgr.get(dialog_id)
-        if dialog:
-            self._dialogs[dialog_id] = dialog
-
-        return dialog_id
-
-    def get_dialog(self, dialog_id: str) -> Optional[Dialog]:
-        """
-        获取对话（优先从 DialogManager）
-
-        Args:
-            dialog_id: 对话 ID
-
-        Returns:
-            Dialog 对象或 None
-        """
-        # 优先从 DialogManager 获取
-        dialog = self._dialog_mgr.get(dialog_id)
-        if dialog:
-            return dialog
-        # 回退到本地缓存
-        return self._dialogs.get(dialog_id)
-
-    def list_dialogs(self) -> list[Dialog]:
-        """
-        列出所有对话（使用 DialogManager）
-
-        Returns:
-            Dialog 列表
-        """
-        return self._dialog_mgr.list_dialogs()
 
     async def close_dialog(self, dialog_id: str, reason: str = "completed") -> None:
         """
@@ -178,11 +132,8 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         provider = self._provider_mgr.default
         await self._memory_mgr.summarize_and_store(dialog_id, messages, provider)
 
-        # 关闭对话
+        # 关闭 DialogManager 中的对话（遗留兼容）
         await self._dialog_mgr.close(dialog_id, reason)
-
-        # 从本地缓存移除
-        self._dialogs.pop(dialog_id, None)
 
     # ═══════════════════════════════════════════════════════════
     # 工具管理 - 集成 ToolManager 的版本

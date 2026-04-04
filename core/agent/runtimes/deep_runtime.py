@@ -577,25 +577,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                     #     "content": tool_content
                     # })
 
-                # 检查是否是完整的 AIMessage (流结束)
-                # 最后一个 chunk 的标记：chunk_position == 'last' 或 response_metadata 中有 stop_reason
-                # is_last_chunk = (
-                #     getattr(message_chunk, 'chunk_position', None) == 'last' or
-                #     (hasattr(message_chunk, 'response_metadata') and
-                #      message_chunk.response_metadata and
-                #      message_chunk.response_metadata.get('stop_reason') is not None)
-                # )
-
-                # if is_last_chunk:
-                #     # 消息结束，保存完整消息到对话历史
-                #     # 注意：如果有工具调用，LangGraph 会自动继续执行工具并再次调用 LLM
-                #     # 所以我们需要继续流式输出，直到整个 Agent 循环结束
-                #     if accumulated_content:
-                #         dialog = self._dialogs.get(dialog_id)
-                #         if dialog:
-                #             dialog.add_ai_message(accumulated_content, msg_id=message_id)
-                #         self._update_logger.info("AIMessage complete, saved to dialog history: content_len={}", len(accumulated_content))
-
             # 流结束，保存完整 AI 响应到 SessionManager
             if session_mgr is not None:
                 final_content = accumulated_content
@@ -628,41 +609,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             self._value_logger.error("Error: {}", str(e))
             yield AgentEvent(type="error", data=str(e))
 
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
-        """创建新对话"""
-        import uuid
-
-        dialog_id = str(uuid.uuid4())
-        dialog_title = title or (user_input[:50] if len(user_input) > 50 else user_input)
-
-        from datetime import datetime
-        from core.models.entities import Dialog
-        dialog = Dialog(
-            id=dialog_id,
-            title=dialog_title,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        if user_input:
-            dialog.add_human_message(user_input)
-        self._dialogs[dialog_id] = dialog
-
-        # 使用 SessionManager 创建会话
-        session_mgr = self.session_manager
-        if session_mgr is not None:
-            await session_mgr.create_session(dialog_id, title=dialog_title)
-            if user_input:
-                await session_mgr.add_user_message(dialog_id, user_input)
-
-        # 记录创建日志
-        self._msg_logger.debug("Dialog created: dialog_id={}, title={}", dialog_id, dialog_title)
-        self._update_logger.debug("Dialog created: dialog_id={}", dialog_id)
-        self._value_logger.debug("Dialog created: dialog_id={}, initial_message_count=1", dialog_id)
-
-        logger.info(f"[DeepAgentRuntime] Created dialog: {dialog_id}")
-
-        return dialog_id
-
     def register_tool(
         self,
         name: str,
@@ -690,14 +636,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         if name in self._tools:
             del self._tools[name]
             logger.debug(f"[DeepAgentRuntime] Unregistered tool: {name}")
-
-    def get_dialog(self, dialog_id: str) -> Optional[Dialog]:
-        """获取对话"""
-        return self._dialogs.get(dialog_id)
-
-    def list_dialogs(self) -> list[Dialog]:
-        """列出所有对话"""
-        return list(self._dialogs.values())
 
     async def stop(self, dialog_id: Optional[str] = None) -> None:
         """停止 Agent"""

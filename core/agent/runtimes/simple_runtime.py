@@ -27,8 +27,6 @@ class SimpleRuntime(ManagerAwareRuntime):
     def __init__(self, agent_id: str):
         super().__init__(agent_id)
         self._plugin_mgr = PluginManager(self._event_bus)
-        # SimpleAgent 已删除，现在使用 ProviderManager 进行 LLM 调用
-        self._agent = None
         logger.debug(f"[{self.__class__.__name__}] Created: {agent_id}")
 
     @property
@@ -65,31 +63,6 @@ class SimpleRuntime(ManagerAwareRuntime):
                 description=spec.get("description", ""),
                 parameters=spec.get("parameters", {})
             )
-
-        from core.models.config import AgentConfig
-        # 安全地从 config 获取值（处理 EngineConfig 和 dict 两种情况）
-        config_dict = config.model_dump() if hasattr(config, 'model_dump') else config
-
-        # 使用 dict.get 安全访问（config_dict 是 dict 类型）
-        provider_config = config_dict.get('provider', {}) if isinstance(config_dict, dict) else {}
-        model = provider_config.get('model') if isinstance(provider_config, dict) else None
-
-        name = config_dict.get('name', "Agent") if isinstance(config_dict, dict) else "Agent"
-        system = config_dict.get('system', "You are a helpful AI assistant.") if isinstance(config_dict, dict) else "You are a helpful AI assistant."
-        max_rounds = config_dict.get('max_rounds', 10) if isinstance(config_dict, dict) else 10
-
-        # 构建兼容的 AgentConfig 数据
-        agent_config_data = {
-            "name": name,
-            "model": model or "claude-sonnet-4-6",
-            "system": system,
-            "max_iterations": max_rounds,
-            "max_rounds": max_rounds,
-            "max_tokens": 8000,
-            "tools": [],  # AgentConfig.tools 期望 List[ToolConfig]，但 SimpleAgent 不需要
-        }
-        # SimpleAgent 已删除，不需要初始化
-        # await self._agent.initialize(AgentConfig.model_validate(agent_config_data))
 
         await self._load_state()
         self._skill_mgr.load_builtin_skills()
@@ -311,10 +284,6 @@ class SimpleRuntime(ManagerAwareRuntime):
             parameters=json_schema
         )
 
-        # SimpleAgent 已删除，不再注册到 Agent
-        # if self._agent:
-        #     self._agent.register_tool(...)
-
         self._tools[name] = ToolCache(
             handler=handler,
             description=description,
@@ -326,17 +295,11 @@ class SimpleRuntime(ManagerAwareRuntime):
     def unregister_tool(self, name: str) -> None:
         """注销工具"""
         self._tool_mgr.unregister(name)
-        # SimpleAgent 已删除，不需要注销
-        # if self._agent:
-        #     self._agent.unregister_tool(name)
         self._tools.pop(name, None)
         logger.debug(f"[{self.__class__.__name__}] Unregistered tool: {name}")
 
     async def stop(self, dialog_id: Optional[str] = None) -> None:
         """停止 Agent"""
-        # SimpleAgent 已删除，不需要停止
-        # if self._agent:
-        #     await self._agent.stop()
         logger.info(f"[{self.__class__.__name__}] Stopped: {self._agent_id}")
 
     def get_skill_edit_proposals(self, dialog_id: Optional[str] = None) -> list[dict]:

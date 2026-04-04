@@ -21,6 +21,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 from core.agent.runtime_factory import AgentRuntimeFactory
 from core.models.config import EngineConfig
 from core.runtime.interfaces import IAgentRuntime, AgentEvent
+from core.session import DialogSessionManager
 
 
 def _has_deepagents() -> bool:
@@ -107,6 +108,7 @@ class TestSimpleRuntime:
 
         rt = factory.create("simple", "test-simple-runtime", config)
         await rt.initialize(config)
+        rt.set_session_manager(DialogSessionManager())
         yield rt
         await rt.shutdown()
 
@@ -136,6 +138,7 @@ class TestSimpleRuntime:
 
         runtime = factory.create("simple", "dialog-test", config)
         await runtime.initialize(config)
+        runtime.set_session_manager(DialogSessionManager())
 
         try:
             dialog_id = await runtime.create_dialog("Hello", "Test Dialog")
@@ -160,6 +163,7 @@ class TestSimpleRuntime:
 
         runtime = factory.create("simple", "list-test", config)
         await runtime.initialize(config)
+        runtime.set_session_manager(DialogSessionManager())
 
         try:
             # 初始为空
@@ -270,6 +274,7 @@ class TestDeepAgentRuntime:
 
         runtime = factory.create("deep", "dialog-test", config)
         await runtime.initialize(config)
+        runtime.set_session_manager(DialogSessionManager())
 
         try:
             dialog_id = await runtime.create_dialog("Hello", "Test Dialog")
@@ -299,6 +304,7 @@ class TestDeepAgentRuntime:
 
         runtime = factory.create("deep", "send-message-test", config)
         await runtime.initialize(config)
+        runtime.set_session_manager(DialogSessionManager())
 
         try:
             dialog_id = await runtime.create_dialog("你好，请用一句话介绍自己", "Model Output Test")
@@ -439,6 +445,7 @@ class TestRuntimeIntegration:
         try:
             # 1. 初始化
             await runtime.initialize(config)
+            runtime.set_session_manager(DialogSessionManager())
 
             # 2. 创建对话
             dialog_id = await runtime.create_dialog("Hello", "Test Dialog")

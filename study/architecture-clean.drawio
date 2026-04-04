@@ -1,0 +1,337 @@
+<mxfile host="app.diagrams.net" modified="2026-04-04T11:30:00.000Z" agent="CLI-Anything" etag="architecture-clean" version="21.0.0" type="device">
+  <diagram name="Clean Architecture" id="clean-arch">
+    <mxGraphModel dx="2400" dy="2000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2000" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="&lt;b&gt;Pararel-Claw-Code-Haha&lt;/b&gt;&lt;br&gt;System Architecture&quot; style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="700" y="20" width="600" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend-box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#ddd;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="80" width="200" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="&lt;b&gt;Layer Legend&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="30" y="90" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-1" value="&lt;div style='width:15px;height:15px;background:#e3f2fd;border:1px solid #1976d2;display:inline-block;'&gt;&lt;/div&gt; Entry Points" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="115" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-2" value="&lt;div style='width:15px;height:15px;background:#f3e5f5;border:1px solid #7b1fa2;display:inline-block;'&gt;&lt;/div&gt; CLI Commands" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="135" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-3" value="&lt;div style='width:15px;height:15px;background:#e8f5e9;border:1px solid #388e3c;display:inline-block;'&gt;&lt;/div&gt; UI Components" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="155" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-4" value="&lt;div style='width:15px;height:15px;background:#fff3e0;border:1px solid #f57c00;display:inline-block;'&gt;&lt;/div&gt; Core Logic" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="175" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-5" value="&lt;div style='width:15px;height:15px;background:#fce4ec;border:1px solid #c2185b;display:inline-block;'&gt;&lt;/div&gt; Services" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="195" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-6" value="&lt;div style='width:15px;height:15px;background:#fff8e1;border:1px solid #f9a825;display:inline-block;'&gt;&lt;/div&gt; Tools" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="215" width="170" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-7" value="&lt;div style='width:15px;height:15px;background:#f5f5f5;border:1px solid #616161;display:inline-block;'&gt;&lt;/div&gt; Types/Utils" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;fontColor=#555;" vertex="1" parent="1">
+          <mxGeometry x="35" y="235" width="170" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- Flow Direction Indicator -->
+        <mxCell id="flow-arrow" value="&lt;b&gt;Data Flow →&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=14;fontColor=#666;rotation=90;" vertex="1" parent="1">
+          <mxGeometry x="240" y="300" width="100" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 1: Entry Points ==================== -->
+        <mxCell id="layer1-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1976d2;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="300" y="90" width="1600" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="layer1-label" value="&lt;b&gt;Layer 1: Entry Points&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#e3f2fd;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#1565c0;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="310" y="100" width="150" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l1-main" value="&lt;b&gt;main.tsx&lt;/b&gt;&lt;br&gt;Application Entry&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="105" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l1-setup" value="&lt;b&gt;setup.ts&lt;/b&gt;&lt;br&gt;Initialization&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="610" y="105" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l1-ink" value="&lt;b&gt;ink.ts&lt;/b&gt;&lt;br&gt;Terminal UI&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="740" y="105" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l1-context" value="&lt;b&gt;context.ts&lt;/b&gt;&lt;br&gt;Context Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1976d2;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="870" y="105" width="110" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 2: CLI Commands ==================== -->
+        <mxCell id="layer2-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="300" y="190" width="1600" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="layer2-label" value="&lt;b&gt;Layer 2: CLI Commands (100+)&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#f3e5f5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#7b1fa2;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="310" y="200" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- CLI Row 1 -->
+        <mxCell id="l2-init" value="&lt;b&gt;init&lt;/b&gt;&lt;br&gt;Project Init&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-commit" value="&lt;b&gt;commit&lt;/b&gt;&lt;br&gt;Git Commit&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="570" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-pr" value="&lt;b&gt;pr&lt;/b&gt;&lt;br&gt;Pull Request&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-review" value="&lt;b&gt;review&lt;/b&gt;&lt;br&gt;Code Review&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="750" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-install" value="&lt;b&gt;install&lt;/b&gt;&lt;br&gt;Installer&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-login" value="&lt;b&gt;login&lt;/b&gt;&lt;br&gt;Auth&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="930" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-mcp" value="&lt;b&gt;mcp&lt;/b&gt;&lt;br&gt;MCP Servers&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-skills" value="&lt;b&gt;skills&lt;/b&gt;&lt;br&gt;Skills Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-plugin" value="&lt;b&gt;plugin&lt;/b&gt;&lt;br&gt;Plugins&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-tasks" value="&lt;b&gt;tasks&lt;/b&gt;&lt;br&gt;Task Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-team" value="&lt;b&gt;team&lt;/b&gt;&lt;br&gt;Teams&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-config" value="&lt;b&gt;config&lt;/b&gt;&lt;br&gt;Settings&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1470" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-bridge" value="&lt;b&gt;bridge&lt;/b&gt;&lt;br&gt;Bridge&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1560" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-vim" value="&lt;b&gt;vim&lt;/b&gt;&lt;br&gt;Vim Mode&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1650" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l2-voice" value="&lt;b&gt;voice&lt;/b&gt;&lt;br&gt;Voice&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#8e24aa;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="205" width="75" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- CLI Row 2 -->
+        <mxCell id="l2-others" value="+ 60+ more: compact, doctor, effort, export, feedback, help, memory, plan, status, theme, ultraplan, etc." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#777;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="255" width="1000" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- CLI Core -->
+        <mxCell id="l2-commands" value="&lt;b&gt;commands.ts&lt;/b&gt;&lt;br&gt;Command Router&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#7b1fa2;fontSize=10;spacing=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="285" width="130" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 3: UI Components ==================== -->
+        <mxCell id="layer3-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#388e3c;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="300" y="360" width="780" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="layer3-label" value="&lt;b&gt;Layer 3: UI Components&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#e8f5e9;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#2e7d32;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="310" y="370" width="170" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l3-app" value="&lt;b&gt;App.tsx&lt;/b&gt;&lt;br&gt;Root Component&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#43a047;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="380" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-messages" value="&lt;b&gt;Messages.tsx&lt;/b&gt;&lt;br&gt;Message List&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#43a047;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="600" y="380" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-message" value="&lt;b&gt;Message.tsx&lt;/b&gt;&lt;br&gt;Message Item&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#43a047;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="720" y="380" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-status" value="&lt;b&gt;StatusLine.tsx&lt;/b&gt;&lt;br&gt;Status Bar&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#43a047;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="840" y="380" width="100" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-textinput" value="&lt;b&gt;TextInput.tsx&lt;/b&gt;&lt;br&gt;User Input&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#43a047;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="960" y="380" width="100" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l3-row2" value="&lt;b&gt;Dialog Components:&lt;/b&gt; BridgeDialog, Feedback, ExportDialog, GlobalSearchDialog, Onboarding, TaskListV2, etc." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="440" width="580" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-row3" value="&lt;b&gt;Sub-folders:&lt;/b&gt; agents/, diff/, memory/, mcp/, permissions/, skills/, tasks/, teams/, wizard/, design-system/, grove/, ui/" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="465" width="580" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-row4" value="&lt;b&gt;Other Key:&lt;/b&gt; Spinner.tsx, Markdown.tsx, ModelPicker.tsx, VirtualMessageList.tsx, FullscreenLayout.tsx, etc." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="490" width="580" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l3-row5" value="&lt;b&gt;Interactive:&lt;/b&gt; interactiveHelpers.tsx, dialogLaunchers.tsx, messageActions.tsx, useReplBridge.tsx" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="515" width="580" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 4: Core Logic ==================== -->
+        <mxCell id="layer4-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#f57c00;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="300" y="580" width="780" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="layer4-label" value="&lt;b&gt;Layer 4: Core Logic&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#fff3e0;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#e65100;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="310" y="590" width="150" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l4-queryengine" value="&lt;b&gt;QueryEngine.ts&lt;/b&gt;&lt;br&gt;AI Query Engine&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#f57c00;fontSize=10;spacing=2;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="605" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l4-query" value="&lt;b&gt;query.ts&lt;/b&gt;&lt;br&gt;Query Manager&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#f57c00;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="630" y="605" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l4-history" value="&lt;b&gt;history.ts&lt;/b&gt;&lt;br&gt;Session History&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#f57c00;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="760" y="605" width="110" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l4-hooks" value="&lt;b&gt;hooks/&lt;/b&gt;&lt;br&gt;(80+ hooks)&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#f57c00;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="890" y="605" width="90" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="l4-state" value="&lt;b&gt;state/&lt;/b&gt;&lt;br&gt;State Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#f57c00;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="605" width="90" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l4-hooks-list" value="&lt;b&gt;Key Hooks:&lt;/b&gt; useReplBridge, useTypeahead, useVirtualScroll, useVoice, useGlobalKeybindings, useInboxPoller, useTextInput, useHistorySearch, etc." style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="670" width="580" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l4-cost" value="&lt;b&gt;cost-tracker.ts&lt;/b&gt; | &lt;b&gt;Task.ts&lt;/b&gt; | &lt;b&gt;Tool.ts&lt;/b&gt; | &lt;b&gt;ultraplan.tsx&lt;/b&gt; | &lt;b&gt;insights.ts&lt;/b&gt; | &lt;b&gt;coordinator/&lt;/b&gt;&quot; style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="695" width="580" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 5: Services ==================== -->
+        <mxCell id="layer5-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce4ec;strokeColor=#c2185b;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="360" width="790" height="370" as="geometry" />
+        </mxCell>
+        <mxCell id="layer5-label" value="&lt;b&gt;Layer 5: Services&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#fce4ec;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#c2185b;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="370" width="130" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l5-api" value="&lt;b&gt;api/&lt;/b&gt;&lt;br&gt;API Client&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="380" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l5-analytics" value="&lt;b&gt;analytics/&lt;/b&gt;&lt;br&gt;Analytics&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="380" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l5-lsp" value="&lt;b&gt;lsp/&lt;/b&gt;&lt;br&gt;LSP Client&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="380" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l5-plugins" value="&lt;b&gt;plugins/&lt;/b&gt;&lt;br&gt;Plugin System&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1595" y="380" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l5-oauth" value="&lt;b&gt;oauth/&lt;/b&gt;&lt;br&gt;OAuth Flow&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="380" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l5-mcp" value="&lt;b&gt;mcp/&lt;/b&gt;&lt;br&gt;MCP Manager&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8bbd9;strokeColor=#d81b60;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1805" y="380" width="80" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l5-row2" value="&lt;b&gt;Other Services:&lt;/b&gt; tools/, voice.ts, settingsSync/, SessionMemory/, AgentSummary/, MagicDocs/, PromptSuggestion/, autoDream/, compact/, contextCollapse/, extractMemories/, notifier/, policyLimits/, rateLimitMessages/, teamMemorySync/, tokenEstimation/, vcr/, mockRateLimits/, preventSleep/, awaySummary/, diagnosticTracking.ts, claudeAiLimits.ts, voiceStreamSTT.ts, toolUseSummary/, mcpServerApproval.tsx, internalLogging/, remoteManagedSettings/&quot; style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="435" width="600" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 6: Tools ==================== -->
+        <mxCell id="layer6-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8e1;strokeColor=#f9a825;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="300" y="750" width="780" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="layer6-label" value="&lt;b&gt;Layer 6: AI Tools (40+)&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#fff8e1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#f57f17;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="310" y="760" width="180" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l6-bash" value="&lt;b&gt;BashTool&lt;/b&gt;&lt;br&gt;Shell Exec&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-fileedit" value="&lt;b&gt;FileEditTool&lt;/b&gt;&lt;br&gt;File Edit&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="575" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-glob" value="&lt;b&gt;GlobTool&lt;/b&gt;&lt;br&gt;File Search&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-grep" value="&lt;b&gt;GrepTool&lt;/b&gt;&lt;br&gt;Text Search&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="765" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-lsp" value="&lt;b&gt;LSPTool&lt;/b&gt;&lt;br&gt;LSP Ops&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-mcp" value="&lt;b&gt;MCPTool&lt;/b&gt;&lt;br&gt;MCP Calls&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="955" y="795" width="80" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l6-agent" value="&lt;b&gt;AgentTool&lt;/b&gt;&lt;br&gt;Sub-agents&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-task" value="&lt;b&gt;Task*Tool&lt;/b&gt;&lt;br&gt;Task Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="575" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-team" value="&lt;b&gt;Team*Tool&lt;/b&gt;&lt;br&gt;Team Mgmt&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="670" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-web" value="&lt;b&gt;Web*Tool&lt;/b&gt;&lt;br&gt;Web Access&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="765" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-workflow" value="&lt;b&gt;WorkflowTool&lt;/b&gt;&lt;br&gt;Workflows&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="l6-skill" value="&lt;b&gt;SkillTool&lt;/b&gt;&lt;br&gt;Skills&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffecb3;strokeColor=#ffa000;fontSize=9;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="955" y="840" width="80" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l6-others" value="+ FileReadTool, FileWriteTool, NotebookEditTool, BriefTool, ConfigTool, TodoWriteTool, SleepTool, AskUserQuestionTool, TungstenTool, ToolSearchTool, SendMessageTool, ScheduleCronTool, REPLTool, WebFetchTool, WebSearchTool, TaskCreate/Update/List/Get/Output/StopTool, TeamCreate/DeleteTool, VerifyPlanExecutionTool, Enter/ExitPlanModeTool, Enter/ExitWorktreeTool, McpAuthTool, List/ReadMcpResourceTool, etc.&quot; style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#777;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="480" y="890" width="580" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== LAYER 7: Types & Utils ==================== -->
+        <mxCell id="layer7-bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#616161;strokeWidth=2;opacity=30;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="750" width="790" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="layer7-label" value="&lt;b&gt;Layer 7: Types &amp;amp; Utilities&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=#f5f5f5;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=13;fontColor=#616161;spacing=4;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="760" width="180" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l7-types" value="&lt;b&gt;types/&lt;/b&gt;&lt;br&gt;Core Types&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="795" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-schemas" value="&lt;b&gt;schemas/&lt;/b&gt;&lt;br&gt;Zod Schemas&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1385" y="795" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-utils" value="&lt;b&gt;utils/&lt;/b&gt;&lt;br&gt;Utilities&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="795" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-vendor" value="&lt;b&gt;vendor/&lt;/b&gt;&lt;br&gt;3rd Party&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1595" y="795" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-native" value="&lt;b&gt;native-ts/&lt;/b&gt;&lt;br&gt;Native Bindings&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1700" y="795" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-generated" value="&lt;b&gt;types/generated/&lt;/b&gt;&lt;br&gt;Generated Types&quot; style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#757575;fontSize=10;spacing=2;" vertex="1" parent="1">
+          <mxGeometry x="1815" y="795" width="70" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="l7-files" value="&lt;b&gt;Type Files:&lt;/b&gt; command.ts, hooks.ts, logs.ts, plugin.ts, permissions.ts, textInputTypes.ts, ids.ts, connectorText.ts&quot; style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="850" width="600" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="l7-other" value="&lt;b&gt;Other Key Directories:&lt;/b&gt; constants/, memdir/, migrations/, moreright/, query/, remote/, screens/, server/, skills/, upstreamproxy/, vim/, voice/, bridge/, buddy/, entrypoints/, memdir/" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=9;fontColor=#555;spacing=1;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="880" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== FOOTER ==================== -->
+        <mxCell id="footer" value="&lt;b&gt;Project Stats:&lt;/b&gt; ~300K+ lines | TypeScript + React + Ink | 100+ Commands | 40+ Tools | 80+ Hooks | 20+ Services&quot; style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#888;" vertex="1" parent="1">
+          <mxGeometry x="300" y="970" width="1600" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Minimal connection arrows (very subtle) -->
+        <mxCell id="arrow-down" value="" style="endArrow=classic;html=1;strokeColor=#bbb;strokeWidth=1;dashed=1;endFill=1;opacity=50;" edge="1" parent="1">
+          <mxGeometry width="50" height="50" relative="1" as="geometry">
+            <mxPoint x="160" y="270" as="sourcePoint" />
+            <mxPoint x="160" y="970" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-label" value="Flow" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;fontColor=#999;rotation=90;" vertex="1" connectable="0" parent="arrow-down">
+          <mxGeometry x="-0.5" y="1" relative="1" as="geometry">
+            <mxPoint x="-15" y="0" as="offset" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -73,7 +73,6 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
         self._agent_id = agent_id
         self._config: ConfigT | None = None
         self._tools: dict[str, ToolCache] = {}
-        self._dialogs: dict[str, Dialog] = {}
 
         logger.debug(f"[{self.__class__.__name__}] Created: {agent_id}")
 
@@ -207,7 +206,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
 
     async def create_dialog(self, user_input: str, title: str | None = None) -> str:
         """
-        创建新对话
+        创建新对话（仅通过 DialogSessionManager）
 
         Args:
             user_input: 用户初始输入
@@ -222,29 +221,20 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
             user_input[:50] + "..." if len(user_input) > 50 else user_input
         )
 
-        dialog = Dialog(
-            id=dialog_id,
-            title=dialog_title,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        if user_input:
-            dialog.add_human_message(user_input)
-        self._dialogs[dialog_id] = dialog
-
-        # 如果 session_manager 可用，同步创建会话
         session_mgr = self.session_manager
-        if session_mgr is not None:
-            await session_mgr.create_session(dialog_id, title=dialog_title)
-            if user_input:
-                await session_mgr.add_user_message(dialog_id, user_input)
+        if session_mgr is None:
+            raise RuntimeError("SessionManager not set. Cannot create dialog without session manager.")
+
+        await session_mgr.create_session(dialog_id, title=dialog_title)
+        if user_input:
+            await session_mgr.add_user_message(dialog_id, user_input)
 
         logger.info(f"[{self.__class__.__name__}] Created dialog: {dialog_id}")
         return dialog_id
 
     def get_dialog(self, dialog_id: str) -> Optional[Dialog]:
         """
-        获取对话
+        获取对话（通过 DialogSessionManager）
 
         Args:
             dialog_id: 对话 ID
@@ -252,16 +242,40 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
         Returns:
             Dialog 对象或 None
         """
-        return self._dialogs.get(dialog_id)
+        session_mgr = self.session_manager
+        if session_mgr is None:
+            return None
+        session = session_mgr.get_session_sync(dialog_id)
+        if session is None:
+            return None
+        return Dialog(
+            id=session.dialog_id,
+            title=session.metadata.title or "New Dialog",
+            messages=list(session.history.messages),
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
 
     def list_dialogs(self) -> list[Dialog]:
         """
-        列出所有对话
+        列出所有对话（通过 DialogSessionManager）
 
         Returns:
             Dialog 列表
         """
-        return list(self._dialogs.values())
+        session_mgr = self.session_manager
+        if session_mgr is None:
+            return []
+        dialogs = []
+        for session in session_mgr.list_sessions():
+            dialogs.append(Dialog(
+                id=session.dialog_id,
+                title=session.metadata.title or "New Dialog",
+                messages=list(session.history.messages),
+                created_at=session.created_at,
+                updated_at=session.updated_at,
+            ))
+        return dialogs
 
     def register_tool(
         self,

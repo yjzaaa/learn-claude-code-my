@@ -147,57 +147,37 @@ def _make_message(m) -> WSMessageItem:
 
 
 def _dialog_to_snapshot(dialog_id: str) -> Optional[WSDialogSnapshot]:
-    """Convert runtime Dialog → DialogSession JSON (matches frontend types/dialog.ts)."""
-    # 优先从 SessionManager 读取（Single Source of Truth）
+    """Convert SessionManager snapshot → WSDialogSnapshot (唯一来源路径)."""
     session_snap = session_manager.build_snapshot(dialog_id)
-    if session_snap:
-        messages: list[WSMessageItem] = []
-        for m in session_snap.get("messages", []):
-            messages.append({
-                "id": m.get("id", ""),
-                "role": m.get("role", ""),
-                "content": m.get("content", ""),
-                "content_type": m.get("content_type", "text"),
-                "status": m.get("status", "completed"),
-                "timestamp": m.get("timestamp", ""),
-            })
-        metadata = session_snap.get("metadata", {})
-        return {
-            "id": session_snap["id"],
-            "title": session_snap.get("title", "New Dialog"),
-            "status": _status.get(dialog_id, "idle"),
-            "messages": messages,
-            "streaming_message": _streaming_msg.get(dialog_id),
-            "metadata": {
-                "model": metadata.get("model", ""),
-                "agent_name": metadata.get("agent_name", "Agent"),
-                "tool_calls_count": metadata.get("tool_calls_count", 0),
-                "total_tokens": metadata.get("total_tokens", 0),
-            },
-            "created_at": session_snap["created_at"],
-            "updated_at": session_snap.get("updated_at", session_snap["created_at"]),
-        }
-
-    # 回退到旧方式
-    dialog = runtime.get_dialog(dialog_id)
-    if not dialog:
+    if not session_snap:
         return None
-    msgs = [_make_message(m) for m in dialog.messages]
-    return WSDialogSnapshot(
-        id=dialog.id,
-        title=dialog.title or "New Dialog",
-        status=_status.get(dialog_id, "idle"),
-        messages=msgs,
-        streaming_message=_streaming_msg.get(dialog_id),
-        metadata=WSDialogMetadata(
-            model="",
-            agent_name="Agent",
-            tool_calls_count=0,
-            total_tokens=0,
-        ),
-        created_at=dialog.created_at.isoformat(),
-        updated_at=dialog.updated_at.isoformat(),
-    )
+
+    messages: list[WSMessageItem] = []
+    for m in session_snap.get("messages", []):
+        messages.append({
+            "id": m.get("id", ""),
+            "role": m.get("role", ""),
+            "content": m.get("content", ""),
+            "content_type": m.get("content_type", "text"),
+            "status": m.get("status", "completed"),
+            "timestamp": m.get("timestamp", ""),
+        })
+    metadata = session_snap.get("metadata", {})
+    return {
+        "id": session_snap["id"],
+        "title": session_snap.get("title", "New Dialog"),
+        "status": _status.get(dialog_id, "idle"),
+        "messages": messages,
+        "streaming_message": _streaming_msg.get(dialog_id),
+        "metadata": {
+            "model": metadata.get("model", ""),
+            "agent_name": metadata.get("agent_name", "Agent"),
+            "tool_calls_count": metadata.get("tool_calls_count", 0),
+            "total_tokens": metadata.get("total_tokens", 0),
+        },
+        "created_at": session_snap["created_at"],
+        "updated_at": session_snap.get("updated_at", session_snap["created_at"]),
+    }
 
 
 # ── Background agent runner ───────────────────────────────────────────────────
@@ -347,16 +327,15 @@ class SendMessageBody(BaseModel):
 
 @app.get("/health")
 def health():
-    dialogs = runtime.list_dialogs()
-    return {"status": "ok", "dialogs": len(dialogs)}
+    sessions = session_manager.list_sessions()
+    return {"status": "ok", "dialogs": len(sessions)}
 
 
 @app.get("/api/dialogs")
 def list_dialogs():
     data: list[WSDialogSnapshot] = []
-    dialogs = runtime.list_dialogs()
-    for dialog in dialogs:
-        d = _dialog_to_snapshot(dialog.id)
+    for session in session_manager.list_sessions():
+        d = _dialog_to_snapshot(session.dialog_id)
         if d:
             data.append(d)
     return {"success": True, "data": data}
@@ -382,13 +361,9 @@ def get_dialog(dialog_id: str):
 
 @app.delete("/api/dialogs/{dialog_id}")
 async def delete_dialog(dialog_id: str):
-    # 使用 list_dialogs 和 get_dialog 来检查并删除对话
-    dialogs = runtime.list_dialogs()
-    dialog_ids = [d.id for d in dialogs]
-    if dialog_id in dialog_ids:
-        # 通过创建一个空列表来标记删除（实际删除逻辑在 DialogManager 中）
-        # 这里我们简单处理，仅从前端状态中移除
-        pass
+    session = session_manager.get_session_sync(dialog_id)
+    if session is not None:
+        await session_manager.close_session(dialog_id)
     _status.pop(dialog_id, None)
     _streaming_msg.pop(dialog_id, None)
     return {"success": True}
@@ -425,10 +400,10 @@ def agent_status():
         for k, v in _status.items()
         if v not in ("idle", "completed")
     ]
-    dialogs = runtime.list_dialogs()
+    sessions = session_manager.list_sessions()
     return {"success": True, "data": APIAgentStatusData(
         active_dialogs=active,
-        total_dialogs=len(dialogs),
+        total_dialogs=len(sessions),
     )}
 
 

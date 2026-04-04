@@ -180,6 +180,10 @@ class DialogSessionManager:
         logger.info(f"[SessionManager] Created session: {dialog_id}")
         return session
 
+    def get_session_sync(self, dialog_id: str) -> Optional[DialogSession]:
+        """同步获取会话（只读引用）"""
+        return self._sessions.get(dialog_id)
+
     async def get_session(self, dialog_id: str) -> Optional[DialogSession]:
         """获取会话（只读引用，外部不应直接修改）"""
         session = self._sessions.get(dialog_id)
@@ -494,6 +498,10 @@ class DialogSessionManager:
             except asyncio.CancelledError:
                 pass
             self._cleanup_task = None
+
+    def list_sessions(self) -> list[DialogSession]:
+        """列出所有会话"""
+        return list(self._sessions.values())
 
     async def cleanup_expired(self) -> list[str]:
         """清理过期会话（基于 last_activity_at）"""

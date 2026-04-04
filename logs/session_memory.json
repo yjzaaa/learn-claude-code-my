@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-04-04T21:59:58.243599",
+  "session_count": 1,
+  "sessions": {
+    "3ccb13cd-6974-4dc3-8712-2ea407f39da3": {
+      "status": "completed",
+      "message_count": 2,
+      "messages": [
+        {
+          "type": "human",
+          "role": "user",
+          "content": "你好"
+        },
+        {
+          "type": "ai",
+          "role": "assistant",
+          "content": " 你好！有什么我可以帮助你的吗？"
+        }
+      ],
+      "streaming_context": null
+    }
+  }
+}
