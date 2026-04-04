@@ -75,7 +75,8 @@ config = EngineConfig.from_dict({
         "model": os.getenv("MODEL_ID", "deepseek/deepseek-chat"),
         "api_key": os.getenv("ANTHROPIC_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
         "base_url": os.getenv("ANTHROPIC_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
-    }
+    },
+    "system": "You are a helpful AI assistant with access to tools. CRITICAL INSTRUCTIONS: 1) When you need to get information, you MUST use the appropriate tool - never pretend to have a script or tell the user to run something themselves. 2) Actually execute the tool and wait for the result. 3) Based on the actual tool result, provide the answer. 4) Never invent file paths like '/tmp/query_xxx.py' or claim scripts are 'ready to run'. 5) If a tool fails, report the error truthfully. 6) After getting tool results, analyze them and provide a clear, concise answer."
 })
 runtime = factory.create(_AGENT_TYPE, "main-agent", config)
 

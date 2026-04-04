@@ -38,6 +38,14 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
 - **用户名**: postgres
 - **密码**: 123456
 
+## PostgreSQL 语法规范
+
+- 字段名使用双引号包裹（如 `"Year"`, `"Scenario"`）
+- 字符串使用单引号（如 `'Budget1'`）
+- 类型转换使用 `CAST(field AS NUMERIC)` 或 `::NUMERIC`
+- 表名：cost_database, ssme_fi_insightbot_rate, ssme_fi_insightbot_ccmapping
+- 关键字段名：year, scenario, function, amount, account, month, key, rate_no, cc, bl
+
 ## 术语对照
 
 - WCW: White Collar Worker，白领
@@ -132,16 +140,19 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
 - 目标维度按用户问题选择：
   - 提到 `CT` / 业务线 -> 使用 `Rate.BL`
   - 提到具体成本中心（如 `413001`）-> 使用 `Rate.CC`
+  - **CC 字段匹配注意**：数据库中 CC 字段为 6 位数字（如 `413001`），若用户输入 `4130011` 等格式，需模糊匹配 `LIKE '413001%'` 或截取前 6 位
 
 ### 2) 分摊金额计算口径（强制）
 
 - 必须按月计算后汇总全年：
   - `Allocated Amount = Monthly Amount * normalized RateNo`
-- `RateNo` 归一化规则：
-  - 若为百分数字符串（如 `12.5%`）先去 `%` 再 `/100`
-  - 若为小数（如 `0.125`）直接使用
+- `RateNo` 归一化规则（重要）：
+  - 数据库中 RateNo 存储格式为小数字符串（如 `"0.020800"` 表示 2.08%）
+  - **直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100**
+  - 若遇到百分数字符串（如 `"12.5%"`，极少见）才去 `%` 再 `/100`
 - 禁止用 `SUM(Amount)` 直接代替分摊金额。
 - 分摊金额符号保持原始业务符号，禁止无依据地使用 `ABS()` 改变正负。
+- **PostgreSQL 语法注意**：使用双引号 `""` 包裹字段名（如 `"Year"`），而非 SQL Server 的方括号 `[]`
 
 ### 3) 汇总题与对比题输出口径
 
@@ -162,7 +173,97 @@ description: Finance analytics skill for SQL generation, budgeting/actual compar
   - 禁止把分摊题写成 `Function = 'IT'` 或 `Function = 'HR'`
 - 费用金额问法（如“FY26 Budget 的 HR 费用”）默认输出单值汇总 SQL（SUM/COALESCE），禁止输出明细行。
 
-## 示例场景
+## 分摊计算 SQL 模板（PostgreSQL）
+
+### HR Allocation 分摊到指定 CC
+
+```sql
+SELECT 
+    c.year,
+    c.scenario,
+    SUM(c.amount * CAST(r.rate_no AS NUMERIC)) as total_allocated_amount
+FROM cost_database c
+JOIN ssme_fi_insightbot_rate r 
+    ON c.year = r.year 
+    AND c.scenario = r.scenario
+    AND c.month = r.month
+    AND c.key = r.key
+WHERE c.function = 'HR Allocation'
+    AND c.account = '91800150.0'
+    AND r.cc = '{target_cc}'
+    AND r.key = '480055 Cycle'
+    AND c.scenario IN ('Budget1', 'Actual')
+    AND c.year IN ('FY25', 'FY26')
+GROUP BY c.year, c.scenario
+ORDER BY c.year, c.scenario
+```
+
+### IT Allocation 分摊到指定 CC
+
+```sql
+SELECT 
+    c.year,
+    c.scenario,
+    SUM(c.amount * CAST(r.rate_no AS NUMERIC)) as total_allocated_amount
+FROM cost_database c
+JOIN ssme_fi_insightbot_rate r 
+    ON c.year = r.year 
+    AND c.scenario = r.scenario
+    AND c.month = r.month
+    AND c.key = r.key
+WHERE c.function = 'IT Allocation'
+    AND r.cc = '{target_cc}'
+    AND r.key = '480056 Cycle'
+    AND c.scenario IN ('Budget1', 'Actual')
+    AND c.year IN ('FY25', 'FY26')
+GROUP BY c.year, c.scenario
+ORDER BY c.year, c.scenario
+```
+
+### 对比分析（含变化率）
+
+```sql
+WITH allocation_data AS (
+    SELECT 
+        c.year,
+        c.scenario,
+        SUM(c.amount * CAST(r.rate_no AS NUMERIC)) as allocated_amount
+    FROM cost_database c
+    JOIN ssme_fi_insightbot_rate r 
+        ON c.year = r.year 
+        AND c.scenario = r.scenario
+        AND c.month = r.month
+        AND c.key = r.key
+    WHERE c.function = '{allocation_function}'
+        AND r.cc = '{target_cc}'
+        AND r.key = '{cycle_key}'
+        AND c.scenario IN ('Budget1', 'Actual')
+        AND c.year IN ('FY25', 'FY26')
+    GROUP BY c.year, c.scenario
+)
+SELECT 
+    year,
+    scenario,
+    allocated_amount,
+    LAG(allocated_amount) OVER (ORDER BY year, scenario) as prev_amount,
+    CASE 
+        WHEN LAG(allocated_amount) OVER (ORDER BY year, scenario) != 0 
+        THEN (allocated_amount - LAG(allocated_amount) OVER (ORDER BY year, scenario)) 
+             / LAG(allocated_amount) OVER (ORDER BY year, scenario) * 100
+        ELSE 0 
+    END as change_pct
+FROM allocation_data
+```
+
+## 关键检查清单
+
+执行分摊查询前，确认：
+1. ✅ 使用 `function = 'HR Allocation'` 或 `'IT Allocation'`（不是 `'HR'` 或 `'IT'`）
+2. ✅ 使用 `key = '480055 Cycle'`（HR）或 `'480056 Cycle'`（IT）
+3. ✅ RateNo 直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100
+4. ✅ CC 字段匹配使用精确值（如 `'413001'`）或模糊匹配 `LIKE '413001%'`
+5. ✅ 按月 JOIN：year, scenario, month, key 四重关联
+6. ✅ 使用 PostgreSQL 语法：双引号字段名，单引号字符串
 
 用户问题示例：
 

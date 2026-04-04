@@ -1,6 +1,6 @@
 """Deep Agent Runtime - 基于 deep-agents 框架的 Runtime 实现
 
-使用 deep-agents SDK 的 create_deep_agent() 创建 Agent，
+使用 agents 模块的灵活构建器创建 Agent，
 并通过适配器模式包装为 AgentRuntime 接口。
 """
 
@@ -13,12 +13,13 @@ from core.agent.runtimes.base import AbstractAgentRuntime, ToolCache
 from core.models.entities import Dialog
 from core.models.config import EngineConfig
 from core.types import AgentEvent
-from core.models.event_models import UserMessageModel, LangGraphConfigModel
-from .services.config_adapter import DeepConfigAdapter, DeepAgentConfig
-from .services.tool_adapter import ToolAdapter
+from core.models.event_models import UserMessageModel
+from .services.config_adapter import DeepAgentConfig
 from .services.logging_mixin import DeepLoggingMixin
-from .services.event_converter import StreamEventConverter, EventConverter
 from langchain_anthropic import ChatAnthropic
+
+# 导入新的灵活构建器
+from .agents import AgentBuilder, MiddlewareStack
 
 
 class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
@@ -112,27 +113,32 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             raise ValueError("Config conversion failed")
 
         try:
-            from deepagents import create_deep_agent
-            from deepagents.backends import FilesystemBackend
             from langgraph.checkpoint.memory import MemorySaver
             from langgraph.store.memory import InMemoryStore
+            from .services.windows_shell_backend import WindowsShellBackend
         except ImportError as e:
             raise ImportError(
-                "deepagents package is required for DeepAgentRuntime. "
-                "Install with: pip install deepagents"
+                "Required packages are missing for DeepAgentRuntime. "
+                "Install with: pip install deepagents langgraph"
             ) from e
 
+        # 加载技能脚本中的工具
+        self._load_skill_scripts()
+
         # 转换工具格式
-        adapted_tools = self._adapt_tools(self._tools)
+        adapted_tools = self.adapt_tools(self._tools)
 
         # 配置 checkpointer 和 store
-        from langgraph.checkpoint.memory import MemorySaver
-        from langgraph.store.memory import InMemoryStore
         self._checkpointer = MemorySaver()
         self._store = InMemoryStore()
 
-        # 配置 backend
-        backend = FilesystemBackend(root_dir=".", virtual_mode=True)
+        # 配置 backend - 使用 skills 目录作为根目录
+        # 使用 virtual_mode=True 让 /finance/SKILL.md 映射到 skills/finance/SKILL.md
+        # 使用 WindowsShellBackend 处理 Windows 编码问题
+        # inherit_env=True 确保继承系统 PATH 环境变量
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        skills_dir = project_root / "skills"
+        backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
 
         # 解析模型：字符串模型若无法被 deepagents 自动推断 provider，则手动构造实例
         model_name = os.getenv("MODEL_ID", "").strip() or "kimi-k2-coding"
@@ -151,21 +157,42 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             temperature=0.7,
         )
 
-        # 创建 Deep Agent
-        self._agent = create_deep_agent(
-            name=self._config.name or self._agent_id,
-            model=model,
-            tools=adapted_tools,
-            system_prompt=self._config.system or self._config.system_prompt,
-            backend=backend,
-            checkpointer=self._checkpointer,
-            store=self._store,
-            skills=self._config.skills,
-            subagents=self._config.subagents,
-            interrupt_on=self._config.interrupt_on,
+        # 构建系统提示词，添加文件路径和Windows命令使用说明
+        base_prompt = self._config.system or self._config.system_prompt or ""
+        path_hint = """\n\n## File System Path Guide\nThe filesystem is rooted at the 'skills' folder.\n\n**For file tools (read_file, glob, ls, grep):** Use absolute-style paths with leading slash, e.g., '/finance/SKILL.md' or '/code-review/SKILL.md'.\n\n**For shell commands (execute):** Use relative paths WITHOUT leading slash, e.g., 'finance/scripts/sql_query.py' or 'cd finance && dir'.\n\n## Windows Shell Commands\nThis system runs on Windows. Use Windows-style commands:\n- Use 'dir' instead of 'ls'\n- Use 'cd' with backslashes (e.g., 'cd finance\\scripts')\n- Use 'type' instead of 'cat' to display file contents\n- Use 'findstr' instead of 'grep'\n- Use 'move' instead of 'mv'\n- Use 'copy' instead of 'cp'\n- Use 'del' instead of 'rm'\n- For Python scripts: use 'py script.py' (preferred) or find python path first with 'where python' or 'where py'\n- To use the project's virtual environment: run 'py' or '.venv\Scripts\python.exe' (located at project root, one level above skills folder)\n\n## IMPORTANT: SQL Query Best Practices\nWhen executing SQL queries:\n1. **ALWAYS use the 'run_sql_query' tool directly** instead of shell commands\n2. **NEVER use shell syntax like $(type file) or backticks** - Windows doesn't support this\n3. **Pass SQL as a direct string parameter** to the run_sql_query tool\n4. **For complex multi-line SQL**: Either:\n   - Use the run_sql_query tool with the complete SQL string\n   - Or read the SQL from a file using read_file, then pass it to run_sql_query\n5. **DO NOT use**: 'python finance/scripts/sql_query.py "SELECT ..."' - this is error-prone\n6. **DO use**: Call 'run_sql_query' tool with sql parameter directly"""
+        system_prompt = base_prompt + path_hint if base_prompt else path_hint
+
+        # 使用新的灵活 AgentBuilder 创建 Agent
+        # 这种方式允许更灵活的中间件配置
+        builder = (
+            AgentBuilder()
+            .with_name(self._config.name or self._agent_id)
+            .with_model(model)
+            .with_tools(adapted_tools)
+            .with_system_prompt(system_prompt)
+            .with_backend(backend)
+            .with_checkpointer(self._checkpointer)
+            .with_store(self._store)
+            .with_skills(self._config.skills or [])
+            .with_todo_list()
+            .with_filesystem()
+            .with_claude_compression(
+                level="standard",
+                enable_session_memory=True,  # 启用 Backend 存储
+            )
+            # 可选：启用压缩中间件（默认关闭）
+            # .with_summarization(trigger=("fraction", 0.85), keep=("fraction", 0.10))
+            .with_prompt_caching()
         )
 
-        logger.info(f"[DeepAgentRuntime] Initialized: {self._agent_id}")
+        # 如果有 interrupt_on 配置，添加人工介入中间件
+        if self._config.interrupt_on:
+            builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
+
+        # 构建 Agent
+        self._agent = builder.build()
+
+        logger.info(f"[DeepAgentRuntime] Initialized: {self._agent_id} (using flexible AgentBuilder)")
 
     @staticmethod
     def _extract_text_content(msg: dict) -> str:
@@ -186,7 +213,62 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             return "".join(parts)
         return str(raw)
 
-    def _adapt_tools(self, tools: dict[str, ToolCache]) -> list:
+    def _load_skill_scripts(self) -> None:
+        """加载技能脚本中的工具（如 run_sql_query）"""
+        import sys
+        import importlib.util
+        from pathlib import Path
+        from core.tools.toolkit import scan_tools
+
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        skills_dir = project_root / "skills"
+
+        if not skills_dir.exists():
+            logger.warning("[DeepAgentRuntime] Skills directory not found: %s", skills_dir)
+            return
+
+        tool_count = 0
+        for skill_dir in sorted(skills_dir.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            
+            scripts_dir = skill_dir / "scripts"
+            if not scripts_dir.exists():
+                continue
+
+            # 将 scripts 目录添加到 sys.path 以支持相对导入
+            if str(scripts_dir) not in sys.path:
+                sys.path.insert(0, str(scripts_dir))
+
+            for py_file in sorted(scripts_dir.glob("*.py")):
+                if py_file.name.startswith("_"):
+                    continue
+                
+                module_name = f"skills.{skill_dir.name}.{py_file.stem}"
+                try:
+                    spec = importlib.util.spec_from_file_location(module_name, py_file)
+                    if spec is None or spec.loader is None:
+                        continue
+                    
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[module_name] = module
+                    spec.loader.exec_module(module)
+
+                    for tool_item in scan_tools(module):
+                        self._tools[tool_item["name"]] = ToolCache(
+                            handler=tool_item["handler"],
+                            description=tool_item["description"],
+                            parameters_schema=tool_item.get("parameters", {}),
+                        )
+                        tool_count += 1
+                        logger.info("[DeepAgentRuntime] Loaded skill tool: %s", tool_item["name"])
+                except Exception as e:
+                    # 记录警告但继续加载其他脚本
+                    logger.warning("[DeepAgentRuntime] Failed to load skill script %s: %s", py_file, e)
+
+        logger.info("[DeepAgentRuntime] Loaded %d skill tools", tool_count)
+
+    def adapt_tools(self, tools: dict[str, ToolCache]) -> list:
         """
         将我们的工具格式转换为 LangChain Tool 格式
 
@@ -196,7 +278,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         Returns:
             LangChain Tool 列表
         """
-        from langchain.tools import tool as langchain_tool
+        from langchain_core.tools import StructuredTool
 
         adapted = []
 
@@ -205,10 +287,11 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             description = tool_info.description
 
             # 创建 LangChain Tool
-            @langchain_tool(name=name, description=description)  # type: ignore[call-overload]
-            def adapted_tool(**kwargs):
-                return handler(**kwargs)
-
+            adapted_tool = StructuredTool.from_function(
+                func=handler,
+                name=name,
+                description=description,
+            )
             adapted.append(adapted_tool)
 
         return adapted
@@ -257,77 +340,128 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         last_message_id = None
 
         try:
-            # 使用 stream_mode="updates" 获取节点级完整状态更新
+            # 使用 stream_mode="messages" 获取 token 级增量数据
             self._update_logger.info("Starting astream for dialog={}", dialog_id)
             async for raw_event in self._agent.astream(
                 {"messages": messages},
                 config,
-                stream_mode=["updates"]
+                stream_mode=["messages"]
             ):
-                # stream_mode=["updates"] 返回元组 (stream_mode, data)
+                # stream_mode=["messages"] 返回元组 (stream_mode, (AIMessageChunk, metadata))
+                # 注意：LangGraph 返回的是嵌套元组结构
                 if isinstance(raw_event, tuple) and len(raw_event) == 2:
-                    event = raw_event[1]  # 取数据部分
-                else:
-                    event = raw_event
+                    stream_mode, inner_data = raw_event
 
-                self._update_logger.debug("Got raw event: type={}, is_tuple={}, content={}", type(event).__name__, isinstance(event, tuple), repr(event)[:500])
-                # 转换并 yield 事件
-                agent_event = self._convert_stream_event(event, dialog_id, accumulated_content)
-
-                if agent_event:
-                    self._update_logger.info("Yielding agent_event: type={}, data={}", agent_event.type, repr(agent_event.data)[:200])
-
-                    # 将 model_complete 转换为 main.py 能识别的 text_delta + complete
-                    if agent_event.type == "model_complete":
-                        data = agent_event.data
-                        msgs = data.get("messages", []) if isinstance(data, dict) else []
-                        ai_content = ""
-                        has_tool_calls = False
-                        for msg in msgs:
-                            if isinstance(msg, dict) and msg.get("type") == "ai":
-                                ai_content = self._extract_text_content(msg)
-                                # 检查是否包含工具调用
-                                raw_content = msg.get("data", {}).get("content", "")
-                                if isinstance(raw_content, list):
-                                    has_tool_calls = any(
-                                        isinstance(block, dict) and block.get("type") == "tool_use"
-                                        for block in raw_content
-                                    )
-                                break
-
-                        if ai_content:
-                            dialog = self._dialogs.get(dialog_id)
-                            if dialog:
-                                dialog.add_ai_message(ai_content, msg_id=message_id)
-                            accumulated_content += ai_content
-                            self._log_message_chunk(event, dialog_id, accumulated_content)
-                            yield AgentEvent(type="text_delta", data=ai_content)
-
-                        # 如果包含工具调用，不发送 complete 事件，等待工具执行完成
-                        if not has_tool_calls:
-                            yield AgentEvent(type="complete", data=None)
-                        continue
-
-                    # 更新累积内容
-                    if agent_event.type == "text_delta":
-                        accumulated_content += str(agent_event.data)
-                        self._log_message_chunk(event, dialog_id, accumulated_content)
-                        yield agent_event
-                    elif agent_event.type == "tool_start":
-                        self._log_tool_start(agent_event, dialog_id)
-                        yield agent_event
-                    elif agent_event.type == "tool_end":
-                        self._log_tool_end(agent_event, dialog_id)
-                        yield agent_event
+                    # 处理嵌套元组: (AIMessageChunk, metadata_dict)
+                    if isinstance(inner_data, tuple) and len(inner_data) == 2:
+                        message_chunk, metadata = inner_data
+                        self._update_logger.debug("Unpacked nested tuple: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
                     else:
-                        yield agent_event
+                        # 直接的 AIMessageChunk (非嵌套格式)
+                        message_chunk = inner_data
+                        metadata = {}
+                        self._update_logger.debug("Direct chunk: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
+
+                    self._update_logger.debug("Got message chunk: mode={}, type={}, content={}", stream_mode, type(message_chunk).__name__, repr(getattr(message_chunk, 'content', ''))[:200])
+
+                    # 检测新消息开始（通过 message id）
+                    current_msg_id = getattr(message_chunk, 'id', None)
+                    if current_msg_id and current_msg_id != last_message_id:
+                        if last_message_id is not None:
+                            # 新消息开始，重置累积内容
+                            self._update_logger.debug("New message detected, resetting accumulated_content. old_msg={}, new_msg={}", last_message_id, current_msg_id)
+                            accumulated_content = ""
+                        last_message_id = current_msg_id
                 else:
-                    # Debug: show what nodes are being filtered and their content
-                    if isinstance(event, dict):
-                        node_names = list(event.keys())
-                        for node_name, state_update in event.items():
-                            self._update_logger.debug("Filtered node '{}': {}", node_name, repr(state_update)[:800])
-                        self._update_logger.debug("Filtered event from nodes: {}", node_names)
+                    self._update_logger.warning("Unexpected event format: {}", type(raw_event))
+                    continue
+
+                # 处理 ToolMessage - 记录到 JSONL 文件但不渲染到前端
+                if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
+                    tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
+                    tool_content = getattr(message_chunk, 'content', '')
+                    tool_name = getattr(message_chunk, 'name', 'unknown')
+
+                    # 写入工具结果到 JSONL 日志
+                    import json
+                    from datetime import datetime
+                    log_entry = {
+                        "timestamp": datetime.now().isoformat(),
+                        "dialog_id": dialog_id,
+                        "tool_call_id": tool_call_id,
+                        "tool_name": tool_name,
+                        "content": tool_content[:2000] if isinstance(tool_content, str) else str(tool_content)[:2000]  # 限制长度
+                    }
+                    with open("logs/deep/tool_results.jsonl", "a", encoding="utf-8") as f:
+                        json_str = json.dumps(log_entry, ensure_ascii=False)
+                        f.write(json_str + chr(10))
+
+                    self._update_logger.debug("Tool result logged to JSONL: tool_call_id={}", tool_call_id)
+                    continue
+
+                # 处理消息块，直接生成 text_delta 事件
+                if hasattr(message_chunk, 'content') and message_chunk.content:
+                    content = message_chunk.content
+                    # 处理 content 是列表的情况 (Anthropic 格式)
+                    if isinstance(content, list):
+                        text_parts = []
+                        for block in content:
+                            if isinstance(block, dict) and block.get('type') == 'text':
+                                text_parts.append(block.get('text', ''))
+                            elif isinstance(block, str):
+                                text_parts.append(block)
+                        content = ''.join(text_parts)
+
+                    if content:
+                        accumulated_content += content
+                        self._log_message_chunk(message_chunk, dialog_id, accumulated_content)
+                        yield AgentEvent(
+                            type="text_delta",
+                            data=content,
+                            metadata={"accumulated_length": len(accumulated_content)}
+                        )
+
+                # 检查工具调用 - 不发送 tool_start 事件到前端
+                #                 if hasattr(message_chunk, 'additional_kwargs') and message_chunk.additional_kwargs:
+                #                     tool_calls = message_chunk.additional_kwargs.get('tool_calls')
+                #                     if tool_calls:
+                #                         self._update_logger.info("Tool calls detected: {}", tool_calls)
+                #                         yield AgentEvent(type="tool_start", data={"tool_calls": tool_calls})
+                # 
+                # 检查是否是 ToolMessage (工具执行结果)
+                if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
+                    tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
+                    tool_content = getattr(message_chunk, 'content', '')
+                    # self._update_logger.info("Tool result received: tool_call_id={}", tool_call_id)
+                    # yield AgentEvent(type="tool_end", data={
+                    #     "tool_call_id": tool_call_id,
+                    #     "content": tool_content
+                    # })
+
+                # 检查是否是完整的 AIMessage (流结束)
+                # 最后一个 chunk 的标记：chunk_position == 'last' 或 response_metadata 中有 stop_reason
+                is_last_chunk = (
+                    getattr(message_chunk, 'chunk_position', None) == 'last' or
+                    (hasattr(message_chunk, 'response_metadata') and
+                     message_chunk.response_metadata and
+                     message_chunk.response_metadata.get('stop_reason') is not None)
+                )
+
+                if is_last_chunk:
+                    # 消息结束，保存完整消息到对话历史
+                    # 注意：如果有工具调用，LangGraph 会自动继续执行工具并再次调用 LLM
+                    # 所以我们需要继续流式输出，直到整个 Agent 循环结束
+                    if accumulated_content:
+                        dialog = self._dialogs.get(dialog_id)
+                        if dialog:
+                            dialog.add_ai_message(accumulated_content, msg_id=message_id)
+                        self._update_logger.info("AIMessage complete, saved to dialog history: content_len={}", len(accumulated_content))
+
+            # 流结束，发送 text_complete 事件（包含完整消息内容）
+            self._update_logger.info("Agent stream complete, yielding text_complete event with content_len={}", len(accumulated_content))
+            # 无论 accumulated_content 是否为空，都发送 text_complete 事件
+            # 确保前端能收到流结束信号，格式与 simple_runtime 一致（字符串）
+            yield AgentEvent(type="text_complete", data=accumulated_content)
 
         except Exception as e:
             import traceback
@@ -337,14 +471,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             self._update_logger.error("Error: {}", str(e))
             self._value_logger.error("Error: {}", str(e))
             yield AgentEvent(type="error", data=str(e))
-
-    def _convert_stream_event(self, event: Any, dialog_id: str, accumulated: str) -> Optional[AgentEvent]:
-        """将 Deep Agent 流式事件转换为 AgentEvent"""
-        return StreamEventConverter.convert(event, dialog_id, accumulated)
-
-    def _convert_event(self, event: Any) -> Optional[AgentEvent]:
-        """将 Deep Agent 事件转换为 AgentEvent"""
-        return EventConverter.convert(event)
 
     async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
         """创建新对话"""

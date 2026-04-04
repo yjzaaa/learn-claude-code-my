@@ -2,9 +2,10 @@
 Event Converter - 事件转换器
 
 将 Deep Agent 流式事件转换为 AgentEvent。
+支持 stream_mode="updates" 和 stream_mode="messages" 两种模式。
 """
 from typing import Any, Optional
-from langchain_core.messages import BaseMessage, message_to_dict
+from langchain_core.messages import BaseMessage, message_to_dict, AIMessageChunk, ToolMessage
 from core.types import AgentEvent, ToolResult
 
 
@@ -25,15 +26,63 @@ def _extract_messages(state_update: Any) -> list[dict]:
 
 
 class StreamEventConverter:
-    """流式事件转换器"""
+    """流式事件转换器
+
+    支持两种 stream_mode:
+    - "updates": 返回 {node_name: state_update} dict
+    - "messages": 返回 (stream_mode, AIMessageChunk) tuple
+    """
 
     @staticmethod
     def convert(event: Any, dialog_id: str, accumulated: str) -> Optional[AgentEvent]:
         """
         将 Deep Agent 流式事件转换为 AgentEvent
 
-        stream_mode="updates" 返回格式: {node_name: state_update}
+        自动检测事件格式:
+        - stream_mode="updates" 返回格式: {node_name: state_update}
+        - stream_mode="messages" 返回格式: (mode, AIMessageChunk) tuple
         """
+        # 处理 messages 模式: (stream_mode, message_chunk) tuple
+        if isinstance(event, tuple) and len(event) == 2:
+            mode, message_chunk = event
+
+            # 处理 AIMessageChunk - 提取增量内容
+            if isinstance(message_chunk, AIMessageChunk):
+                content = message_chunk.content
+
+                # 处理 Anthropic 格式的 content 列表
+                if isinstance(content, list):
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif isinstance(block, str):
+                            text_parts.append(block)
+                    content = "".join(text_parts)
+
+                if content:
+                    return AgentEvent(type="text_delta", data=content)
+
+                # 检查工具调用 (在 additional_kwargs 中)
+                tool_calls = message_chunk.additional_kwargs.get("tool_calls")
+                if tool_calls:
+                    return AgentEvent(type="tool_start", data={"tool_calls": tool_calls})
+
+                return None
+
+            # 处理 ToolMessage - 工具执行结果
+            if isinstance(message_chunk, ToolMessage):
+                return AgentEvent(
+                    type="tool_end",
+                    data={
+                        "tool_call_id": message_chunk.tool_call_id,
+                        "content": message_chunk.content,
+                    }
+                )
+
+            return None
+
+        # 处理 updates 模式: {node_name: state_update} dict
         if not isinstance(event, dict):
             return None
 

@@ -12,7 +12,12 @@
 
 - 数值转换：所有 [Amount] 字段必须执行 CAST([Amount] AS FLOAT) 转换，无隐式类型转换
 - 空值处理：所有参与计算 / 输出的字段，必须用 COALESCE(值, 0) 做 0 值兜底，避免 sqlquery 执行返回空值
-- 比例计算：[RateNo] 字段必须先 REPLACE([RateNo], '%', '') 去除百分号，再执行 CAST(REPLACE 结果 AS FLOAT)/100 转换为小数比例
+- 比例计算：[RateNo] 字段处理规则：
+  - 数据库中 RateNo 存储为小数字符串格式（如 `"0.020800"` 表示 2.08%）
+  - **直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100**
+  - 极少数情况下若遇到百分数字符串（如 `"12.5%"`），才去 `%` 再 `/100`
+  - 错误示例：`CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) / 100`（会导致结果缩小 100 倍）
+  - 正确示例：`CAST(t7.rate_no AS NUMERIC)`
 - 维度优先级：比例关联时优先使用 [CC] 字段，[BL] 仅作为业务线辅助维度，无 CC 值时才允许使用 BL；CC/BL 与业务主体的对应关系：cc 号在 Bl 的范围内则直接取 CC 的值进行筛选
 
 ### 1.3 输出语法强制规范（适配 sqlquery 工具执行）
@@ -77,8 +82,9 @@ cdb.[Year] = t7.[Year] AND cdb.[Scenario] = t7.[Scenario] AND cdb.[Key] = t7.[Ke
   - 只有非分摊普通费用题，才允许 `IT` / `HR` Function
 - 计算必须按月执行：`CAST(cdb.[Amount] AS FLOAT) * normalized_rate_no`，再汇总到年。
 - `normalized_rate_no` 统一规则：
-  - `TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) > 1` 时除以 100
-  - 否则直接使用转换结果
+  - **数据库中 RateNo 存储为小数字符串（如 `"0.020800"` = 2.08%）**
+  - **直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100**
+  - 若遇到百分数字符串（如 `"12.5%"`，极少见）才去 `%` 再 `/100`
 
 ### 2.4 表 - 字段 - 部分字段值数据结构字典（字段值唯一校验依据）
 

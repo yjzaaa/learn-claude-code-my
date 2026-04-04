@@ -141,12 +141,17 @@ class WebSocketBroadcaster:
         is_reasoning: bool = False
     ) -> None:
         """广播流式增量"""
-        event = WSStreamDeltaEvent(
-            dialog_id=dialog_id,
-            message_id=message_id,
-            delta=WSDeltaContent(content=delta, reasoning=""),
-            timestamp=self._ts()
-        )
+        # 前端期望 delta 是纯字符串，不是对象
+        # 手动构造事件字典以匹配前端格式
+        event = {
+            "type": "stream:delta",
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+            "chunkIndex": 0,  # 前端暂时不使用，设为0
+            "delta": delta,  # 纯字符串，不是对象
+            "isReasoning": is_reasoning,
+            "timestamp": self._ts()
+        }
         await self.broadcast(event, dialog_id)
 
     async def broadcast_status_change(
@@ -172,12 +177,24 @@ class WebSocketBroadcaster:
         message: Optional[BaseMessage] = None
     ) -> None:
         """广播流开始 - 使用 LangChain 格式"""
-        event = WSStreamStartEvent(
-            dialog_id=dialog_id,
-            message_id=message_id,
-            message=message_to_dict(message) if message else None,
-            timestamp=self._ts()
-        )
+        # 提取 role 和 metadata 以匹配前端格式
+        role = "assistant"
+        metadata = {}
+        if message:
+            if hasattr(message, 'type'):
+                role = message.type
+            elif isinstance(message, dict):
+                role = message.get('type', 'assistant')
+
+        # 前端期望的格式
+        event = {
+            "type": "stream:start",
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+            "role": role,
+            "metadata": metadata,
+            "timestamp": self._ts()
+        }
         await self.broadcast(event, dialog_id)
 
     async def broadcast_stream_end(
@@ -187,12 +204,22 @@ class WebSocketBroadcaster:
         message: Optional[BaseMessage] = None
     ) -> None:
         """广播流结束 - 使用 LangChain 格式"""
-        event = WSStreamEndEvent(
-            dialog_id=dialog_id,
-            message_id=message_id,
-            message=message_to_dict(message) if message else None,
-            timestamp=self._ts()
-        )
+        # 提取消息内容
+        final_content = ""
+        if message:
+            if hasattr(message, 'content'):
+                final_content = message.content
+            elif isinstance(message, dict):
+                final_content = message.get('content', '')
+
+        # 前端期望 camelCase 字段名
+        event = {
+            "type": "stream:end",
+            "dialog_id": dialog_id,
+            "message_id": message_id,
+            "finalContent": final_content,  # camelCase 匹配前端
+            "timestamp": self._ts()
+        }
         await self.broadcast(event, dialog_id)
 
     async def broadcast_stream_truncated(

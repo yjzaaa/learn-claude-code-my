@@ -385,9 +385,12 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                     else:
                         logger.info(f"[AgentRuntimeBridge] Tool end: {result}")
 
-                elif event.type == "complete":
-                    # 对话完成
-                    logger.info(f"[AgentRuntimeBridge] Dialog complete: {dialog_id}")
+                elif event.type in ("complete", "text_complete"):
+                    # 对话完成 (处理两种事件名，兼容不同 runtime)
+                    logger.info(f"[AgentRuntimeBridge] Dialog complete: {dialog_id}, event_type={event.type}")
+                    # 如果有数据，更新累积内容
+                    if event.data and isinstance(event.data, str):
+                        accumulated = event.data
 
                 elif event.type == "hitl_request":
                     # HITL 中断请求
