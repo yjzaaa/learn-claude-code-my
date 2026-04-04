@@ -18,7 +18,7 @@ from typing import Any, Callable, Coroutine, Optional
 
 from loguru import logger
 
-from core.models.api import SkillEditPendingEvent, SkillEditResolvedEvent, DecisionResult, SkillEditProposalDTO
+from backend.domain.models.api import SkillEditPendingEvent, SkillEditResolvedEvent, DecisionResult, SkillEditProposalDTO
 
 
 @dataclass

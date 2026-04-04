@@ -21,8 +21,8 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from core.models.config import EngineConfig
-from core.agent.runtime_factory import AgentRuntimeFactory
+from backend.domain.models.config import EngineConfig
+from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 
 config = EngineConfig.from_dict({"skills": {"skills_dir": str(_PROJECT_ROOT / "skills")}})
 print("EngineConfig provider:", config.provider)

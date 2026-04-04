@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 
-from core.models.api import SkillDetailResponse
+from backend.domain.models.api import SkillDetailResponse
 
 router = APIRouter(tags=["skills"])
 

@@ -5,8 +5,8 @@ Interfaces - 接口层
 所有接口只做协议转换，无业务逻辑。
 
 使用示例:
-    from interfaces.http.server import create_app
-    from core.engine import AgentEngine
+    from backend.interfaces.http.server import create_app
+    from backend.application.engine import AgentEngine
     
     engine = AgentEngine(config)
     app = create_app(engine)

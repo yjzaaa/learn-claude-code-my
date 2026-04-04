@@ -8,7 +8,7 @@ from datetime import datetime
 import uuid
 from pydantic import BaseModel, Field
 from langchain_core.messages import BaseMessage, message_to_dict, messages_from_dict
-from core.models.message_adapter import LegacyMessageAdapter
+from backend.domain.models.message_adapter import LegacyMessageAdapter
 from .message import Message
 
 
@@ -64,21 +64,21 @@ class Dialog:
 
     def add_human_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加用户消息"""
-        from core.models.messages import create_human
+        from backend.domain.models.messages import create_human
         msg = create_human(content, **kwargs)
         self.add_message(msg)
         return msg
 
     def add_ai_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加助手消息"""
-        from core.models.messages import create_ai
+        from backend.domain.models.messages import create_ai
         msg = create_ai(content, **kwargs)
         self.add_message(msg)
         return msg
 
     def add_system_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加系统消息"""
-        from core.models.messages import create_system
+        from backend.domain.models.messages import create_system
         msg = create_system(content, **kwargs)
         self.add_message(msg)
         return msg
@@ -87,7 +87,7 @@ class Dialog:
         self, content: str, tool_call_id: str, **kwargs
     ) -> "BaseMessage":
         """添加工具消息"""
-        from core.models.messages import create_tool
+        from backend.domain.models.messages import create_tool
         msg = create_tool(content, tool_call_id, **kwargs)
         self.add_message(msg)
         return msg

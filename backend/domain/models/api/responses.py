@@ -5,9 +5,9 @@ API Response Models - API 响应模型
 """
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
-from core.models.base import Response
-from core.models.mixins import DialogRefMixin
-from core.models.websocket_models import WSDialogSnapshot
+from backend.domain.models.base import Response
+from backend.domain.models.mixins import DialogRefMixin
+from backend.domain.models.websocket_models import WSDialogSnapshot
 from .containers import ResultData, ProposalData, TodoListData, ItemData, ToolItem
 
 

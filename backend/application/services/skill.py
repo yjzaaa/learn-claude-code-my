@@ -11,9 +11,9 @@ from typing import Optional, Callable, Any
 from pathlib import Path
 from dataclasses import dataclass
 
-from core.models.entities import Skill, SkillDefinition
-from core.application.dto.responses import LoadSkillResult, SkillInfoDTO
-from core.models.events import SkillLoaded, SkillUnloaded
+from backend.domain.models import Skill, SkillDefinition
+from backend.application.dto.responses import LoadSkillResult, SkillInfoDTO
+from backend.domain.models.events import SkillLoaded, SkillUnloaded
 
 
 @dataclass

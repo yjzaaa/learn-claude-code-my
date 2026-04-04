@@ -11,17 +11,17 @@ from typing import TYPE_CHECKING, AsyncIterator, Any, Optional
 from datetime import datetime
 import logging
 
-from core.models.entities import Dialog, Message
-from core.models.events import (
+from backend.domain.models import Dialog, Message
+from backend.domain.models.events import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, DialogClosed
 )
-from core.models.config import DialogConfig
-from core.models.types import MessageDict
-from runtime.event_bus import EventBus
+from backend.domain.models.config import DialogConfig
+from backend.domain.models.types import MessageDict
+from backend.runtime.event_bus import EventBus
 
 if TYPE_CHECKING:
-    from core.managers.state_manager import StateManager
+    from backend.infrastructure.services.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 

@@ -33,9 +33,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Runtime Factory (lazy import so load_dotenv runs first) ───────────────────
-from core.agent.runtime_factory import AgentRuntimeFactory  # noqa: E402
-from core.models.config import EngineConfig  # noqa: E402
-from core.models.types import (  # noqa: E402
+from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory  # noqa: E402
+from backend.domain.models.config import EngineConfig  # noqa: E402
+from backend.domain.models.types import (  # noqa: E402
     WSMessageItem,
     WSDialogMetadata,
     WSStreamingMessage,
@@ -81,7 +81,7 @@ config = EngineConfig.from_dict({
 runtime = factory.create(_AGENT_TYPE, "main-agent", config)
 
 # ── Session Manager ───────────────────────────────────────────────────────────
-from core.session import DialogSessionManager
+from backend.domain.models.dialog import DialogSessionManager
 session_manager = DialogSessionManager(max_sessions=100, session_ttl_seconds=1800)
 if hasattr(runtime, 'set_session_manager'):
     runtime.set_session_manager(session_manager)

@@ -16,7 +16,7 @@ import pytest
 _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from core.agent.runtimes.deep_runtime import DeepAgentRuntime
+from backend.infrastructure.runtime.deep import DeepAgentRuntime
 
 
 def _has_deepagents() -> bool:
@@ -318,8 +318,8 @@ class TestDeepRuntimeSessionIntegrationWithRealSessionManager:
     @pytest.fixture
     async def real_session_manager(self):
         """创建真实的 SessionManager"""
-        from core.session.manager import DialogSessionManager
-        from core.session.exceptions import InvalidTransitionError
+        from backend.domain.models.dialog.manager import DialogSessionManager
+        from backend.domain.models.dialog.exceptions import InvalidTransitionError
         
         mgr = DialogSessionManager(max_sessions=10)
         yield mgr
@@ -379,7 +379,7 @@ class TestDeepRuntimeSessionIntegrationWithRealSessionManager:
     @pytest.mark.asyncio
     async def test_session_status_transitions(self, real_session_manager):
         """测试会话状态正确转换"""
-        from core.session.models import SessionStatus
+        from backend.domain.models.dialog.session import SessionStatus
         
         runtime = DeepAgentRuntime("test-agent")
         runtime._agent = MagicMock()

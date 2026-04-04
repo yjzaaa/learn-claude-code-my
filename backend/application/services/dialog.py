@@ -14,13 +14,13 @@ DialogService - 对话应用服务
 from typing import AsyncIterator, Optional
 from datetime import datetime
 
-from core.models.entities import Dialog
-from core.application.dto.responses import (
+from backend.domain.models import Dialog
+from backend.application.dto.responses import (
     CreateDialogResult,
     SendMessageResult,
     MessageDTO,
 )
-from core.models.events import (
+from backend.domain.models.events import (
     DialogCreated,
     MessageReceived,
     MessageCompleted,

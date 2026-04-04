@@ -9,10 +9,10 @@ import logging
 from typing import Any, Dict, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 
-from core.engine import AgentEngine
-from core.models.types import WSStreamDeltaMessage, WSDialogCreatedMessage, WSEventMessage
-from runtime.event_bus import EventBus
-from runtime.events import (
+from backend.application.engine import AgentEngine
+from backend.domain.models.types import WSStreamDeltaMessage, WSDialogCreatedMessage, WSEventMessage
+from backend.runtime.event_bus import EventBus
+from backend.runtime.events import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, ToolCallStarted, ToolCallCompleted
 )

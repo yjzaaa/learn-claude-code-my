@@ -5,9 +5,9 @@ Tests for Dialog Repository - 对话仓库测试
 import pytest
 import asyncio
 
-from core.domain.repositories.dialog_repository import IDialogRepository
-from core.infrastructure.persistence.memory.dialog_repo import InMemoryDialogRepository
-from core.models.entities import Dialog, Message
+from backend.domain.repositories.dialog_repository import IDialogRepository
+from backend.infrastructure.persistence.memory.dialog_repo import InMemoryDialogRepository
+from backend.domain.models import Dialog, Message
 
 
 @pytest.fixture

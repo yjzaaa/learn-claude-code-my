@@ -18,10 +18,10 @@ from pydantic import BaseModel
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from core.agent.runtime_factory import AgentRuntimeFactory
-from core.models.config import EngineConfig
-from core.runtime.interfaces import IAgentRuntime, AgentEvent
-from core.session import DialogSessionManager
+from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
+from backend.domain.models.config import EngineConfig
+from backend.runtime.interfaces import IAgentRuntime, AgentEvent
+from backend.domain.models.dialog import DialogSessionManager
 
 
 def _has_deepagents() -> bool:

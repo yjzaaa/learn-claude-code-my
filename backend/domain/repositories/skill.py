@@ -5,7 +5,7 @@ Skill Repository Interface - 技能仓库接口
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from core.models.entities import Skill
+from backend.domain.models import Skill
 
 
 class ISkillRepository(ABC):

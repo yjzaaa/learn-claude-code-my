@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List
 from loguru import logger
 
 from .base import AgentPlugin
-from core.tools import tool
+from backend.infrastructure.tools import tool
 
 TRANSCRIPT_DIR = Path(".transcripts")
 KEEP_RECENT = 3

@@ -15,16 +15,16 @@ from loguru import logger
 from langchain_core.messages import BaseMessage, message_to_dict
 from pydantic import BaseModel
 
-from core.bridge.interfaces import IAgentRuntimeBridge
-from core.runtime.interfaces import IAgentRuntime
-from core.models import (
+from backend.infrastructure.protocols.interfaces import IAgentRuntimeBridge
+from backend.runtime.interfaces import IAgentRuntime
+from backend.domain.models import (
     CustomHumanMessage,
     CustomAIMessage,
     make_status_change,
 )
-from core.models.types import OpenAIToolCall, OpenAIFunction
-from core.models.websocket_models import WSDialogSnapshot, WSDialogMetadata, WSSnapshotEvent, WSErrorEvent, WSErrorDetail, WSHitlRequestEvent
-from interfaces.websocket import ws_broadcaster
+from backend.domain.models.types import OpenAIToolCall, OpenAIFunction
+from backend.domain.models.websocket_models import WSDialogSnapshot, WSDialogMetadata, WSSnapshotEvent, WSErrorEvent, WSErrorDetail, WSHitlRequestEvent
+from backend.interfaces.websocket import ws_broadcaster
 
 
 class AgentRuntimeBridge(IAgentRuntimeBridge):
@@ -112,8 +112,8 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         Note:
             推荐使用 set_runtime() 注入预配置的 Runtime
         """
-        from core.models.config import EngineConfig
-        from core.agent.runtime_factory import AgentRuntimeFactory
+        from backend.domain.models.config import EngineConfig
+        from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 
         if self._runtime is None:
             engine_config = EngineConfig.model_validate(config or {})
@@ -174,7 +174,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
 
         # 构建流式消息
         streaming_msg = self._streaming_msg.get(dialog_id)
-        from core.models.websocket_models import WSStreamingMessage
+        from backend.domain.models.websocket_models import WSStreamingMessage
         ws_streaming = None
         if streaming_msg is not None:
             ws_streaming = WSStreamingMessage(

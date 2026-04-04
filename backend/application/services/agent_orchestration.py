@@ -12,11 +12,11 @@ AgentOrchestrationService - Agent 编排服务
 import asyncio
 from typing import AsyncIterator, Optional
 
-from core.application.dto.requests import ChatRequest
-from core.application.dto.responses import ChatResponse
-from core.application.services.dialog_service import DialogService
-from core.application.services.skill_service import SkillService
-from core.application.services.memory_service import MemoryService
+from backend.application.dto.requests import ChatRequest
+from backend.application.dto.responses import ChatResponse
+from backend.application.services.dialog import DialogService
+from backend.application.services.skill import SkillService
+from backend.application.services.memory import MemoryService
 
 
 class AgentOrchestrationService:

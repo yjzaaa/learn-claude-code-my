@@ -23,8 +23,8 @@ import pytest
 _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from core.agent.runtimes.deep_runtime import DeepAgentRuntime
-from core.types import AgentEvent
+from backend.infrastructure.runtime.deep import DeepAgentRuntime
+from backend.domain.models.shared import AgentEvent
 
 
 def _has_deepagents() -> bool:
@@ -317,8 +317,8 @@ class TestDeepSendMessageIntegration:
     )
     async def test_send_message_integration_basic(self):
         """集成测试：使用真实 runtime 测试 send_message"""
-        from core.agent.runtime_factory import AgentRuntimeFactory
-        from core.models.config import EngineConfig
+        from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
+        from backend.domain.models.config import EngineConfig
         
         factory = AgentRuntimeFactory()
         config = EngineConfig.from_dict({

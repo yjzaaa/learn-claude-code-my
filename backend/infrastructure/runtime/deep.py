@@ -9,11 +9,11 @@ from typing import AsyncIterator, Any, Optional, Callable
 from loguru import logger
 from pydantic import BaseModel
 
-from core.agent.runtimes.base import AbstractAgentRuntime, ToolCache
-from core.models.entities import Dialog
-from core.models.config import EngineConfig
-from core.types import AgentEvent
-from core.models.event_models import UserMessageModel
+from backend.infrastructure.runtime.runtime import AbstractAgentRuntime, ToolCache
+from backend.domain.models import Dialog
+from backend.domain.models.config import EngineConfig
+from backend.domain.models.shared import AgentEvent
+from backend.domain.models.event_models import UserMessageModel
 from .services.config_adapter import DeepAgentConfig
 from .services.logging_mixin import DeepLoggingMixin
 from langchain_anthropic import ChatAnthropic
@@ -225,7 +225,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         import sys
         import importlib.util
         from pathlib import Path
-        from core.tools.toolkit import scan_tools
+        from backend.infrastructure.tools.toolkit import scan_tools
 
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         skills_dir = project_root / "skills"

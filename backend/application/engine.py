@@ -8,16 +8,16 @@ AgentEngine - Agent 核心引擎 (Facade)
 from typing import Any
 import logging
 
-from runtime.event_bus import EventBus
-from core.managers.dialog_manager import DialogManager
-from core.managers.tool_manager import ToolManager
-from core.managers.state_manager import StateManager
-from core.managers.provider_manager import ProviderManager
-from core.managers.memory_manager import MemoryManager
-from core.managers.skill_manager import SkillManager
-from core.models.config import EngineConfig
-from core.plugins import PluginManager, CompactPlugin
-from core.agent.mixins import (
+from backend.runtime.event_bus import EventBus
+from backend.infrastructure.services.dialog_manager import DialogManager
+from backend.infrastructure.services.tool_manager import ToolManager
+from backend.infrastructure.services.state_manager import StateManager
+from backend.infrastructure.services.provider_manager import ProviderManager
+from backend.infrastructure.services.memory_manager import MemoryManager
+from backend.infrastructure.services.skill_manager import SkillManager
+from backend.domain.models.config import EngineConfig
+from backend.infrastructure.plugins import PluginManager, CompactPlugin
+from backend.infrastructure.runtime.mixins import (
     EventMixin,
     MemoryMixin,
     SkillMixin,

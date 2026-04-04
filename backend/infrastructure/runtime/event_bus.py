@@ -11,8 +11,8 @@ from typing import Callable, Optional, List, Dict, Any
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
-from core.models.events import BaseEvent, EventPriority
-from core.models.types import EventBusStatsDict
+from backend.domain.models.events import BaseEvent, EventPriority
+from backend.domain.models.types import EventBusStatsDict
 
 logger = logging.getLogger(__name__)
 

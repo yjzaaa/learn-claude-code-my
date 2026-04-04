@@ -11,12 +11,12 @@ Application Service Layer - 应用服务层
 - Service: 高层编排，面向用例
 
 Usage:
-    from core.application import DialogService, SkillService
-    from core.application.dto import ChatRequest, CreateDialogResult
+    from backend.application import DialogService, SkillService
+    from backend.application.dto import ChatRequest, CreateDialogResult
 """
 
 # Services
-from core.application.services import (
+from backend.application.services import (
     DialogService,
     SkillService,
     MemoryService,
@@ -26,7 +26,7 @@ from core.application.services import (
 )
 
 # DTOs
-from core.application.dto import (
+from backend.application.dto import (
     ChatRequest,
     CreateDialogResult,
     SendMessageResult,

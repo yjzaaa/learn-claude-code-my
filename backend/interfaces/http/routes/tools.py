@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from core.models.tool import ToolExecutionResult
+from backend.domain.models.tool import ToolExecutionResult
 
 router = APIRouter(tags=["tools"])
 
@@ -46,7 +46,7 @@ async def execute_tool(request: Request, body: ExecuteToolRequest):
     engine = request.app.state.engine
     
     # 创建 ToolCall 并执行
-    from core.models.entities import ToolCall
+    from backend.domain.models import ToolCall
     
     tool_call = ToolCall.create(
         name=body.name,

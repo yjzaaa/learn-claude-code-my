@@ -2,7 +2,7 @@
 Core - 核心模块
 
 使用示例:
-    from core.engine import AgentEngine
+    from backend.application.engine import AgentEngine
 
     engine = AgentEngine(config)
     await engine.startup()

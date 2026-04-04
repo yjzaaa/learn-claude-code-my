@@ -4,8 +4,8 @@
 
 import pytest
 import asyncio
-from core.session import DialogSessionManager, SessionStatus
-from core.session.models import SessionEvent
+from backend.domain.models.dialog import DialogSessionManager, SessionStatus
+from backend.domain.models.dialog.session import SessionEvent
 
 
 @pytest.fixture

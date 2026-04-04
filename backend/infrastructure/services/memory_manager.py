@@ -10,10 +10,10 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
-from runtime.event_bus import EventBus
-from core.models.config import MemoryConfig
-from core.models.api import MemoryStats
-from core.models.types import MessageDict
+from backend.runtime.event_bus import EventBus
+from backend.domain.models.config import MemoryConfig
+from backend.domain.models.api import MemoryStats
+from backend.domain.models.types import MessageDict
 
 logger = logging.getLogger(__name__)
 

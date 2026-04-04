@@ -15,8 +15,8 @@ from typing import Any, Callable, Coroutine, Optional
 
 from loguru import logger
 
-from core.models.api import TodoUpdatedEvent, TodoReminderEvent, TodoStateDTO
-from core.models.types import TodoItemDict
+from backend.domain.models.api import TodoUpdatedEvent, TodoReminderEvent, TodoStateDTO
+from backend.domain.models.types import TodoItemDict
 
 
 @dataclass

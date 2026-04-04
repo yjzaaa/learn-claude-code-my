@@ -9,20 +9,20 @@ from abc import abstractmethod
 
 from loguru import logger
 
-from core.agent.runtimes.base import AbstractAgentRuntime, ToolCache, ConfigT
-from core.agent.runtimes.mixins import ManagerLifecycleMixin
-from core.managers.dialog_manager import DialogManager
-from core.managers.tool_manager import ToolManager
-from core.managers.state_manager import StateManager
-from core.managers.provider_manager import ProviderManager
-from core.managers.memory_manager import MemoryManager
-from core.managers.skill_manager import SkillManager
-from core.session import DialogSessionManager
-from core.models.config import EngineConfig
-from core.models.entities import Dialog
-from core.models.tool import ToolInfo
-from core.types import AgentEvent
-from runtime.event_bus import EventBus
+from backend.infrastructure.runtime.runtime import AbstractAgentRuntime, ToolCache, ConfigT
+from backend.infrastructure.runtime.mixins import ManagerLifecycleMixin
+from backend.infrastructure.services.dialog_manager import DialogManager
+from backend.infrastructure.services.tool_manager import ToolManager
+from backend.infrastructure.services.state_manager import StateManager
+from backend.infrastructure.services.provider_manager import ProviderManager
+from backend.infrastructure.services.memory_manager import MemoryManager
+from backend.infrastructure.services.skill_manager import SkillManager
+from backend.domain.models.dialog import DialogSessionManager
+from backend.domain.models.config import EngineConfig
+from backend.domain.models import Dialog
+from backend.domain.models.tool import ToolInfo
+from backend.domain.models.shared import AgentEvent
+from backend.runtime.event_bus import EventBus
 
 
 class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMixin):
@@ -155,7 +155,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
             description: 工具描述
             parameters_schema: 参数 JSON Schema
         """
-        from core.models.types import JSONSchema
+        from backend.domain.models.types import JSONSchema
 
         # 注册到 ToolManager
         json_schema: Optional[JSONSchema] = None

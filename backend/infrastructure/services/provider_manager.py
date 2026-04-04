@@ -7,8 +7,8 @@ Provider Manager - Provider 管理器
 from typing import Any, Optional, Dict
 import logging
 
-from core.providers import BaseProvider, LiteLLMProvider
-from core.models.config import ProviderConfig
+from backend.infrastructure.providers import BaseProvider, LiteLLMProvider
+from backend.domain.models.config import ProviderConfig
 
 logger = logging.getLogger(__name__)
 

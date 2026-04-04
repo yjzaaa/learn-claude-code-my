@@ -5,9 +5,9 @@ Tests for Skill Repository - 技能仓库测试
 import pytest
 from datetime import datetime
 
-from core.domain.repositories.skill_repository import ISkillRepository
-from core.infrastructure.persistence.memory.skill_repo import InMemorySkillRepository
-from core.models.entities import Skill, SkillDefinition
+from backend.domain.repositories.skill_repository import ISkillRepository
+from backend.infrastructure.persistence.memory.skill_repo import InMemorySkillRepository
+from backend.domain.models import Skill, SkillDefinition
 
 
 @pytest.fixture

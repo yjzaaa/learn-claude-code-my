@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 try:
-    from core.tools.toolkit import tool as _tool_decorator
+    from backend.infrastructure.tools.toolkit import tool as _tool_decorator
     _has_tool = True
 except ImportError:
     _has_tool = False

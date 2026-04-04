@@ -5,7 +5,7 @@ Dialog Session Manager - 对话会话管理器
 上层封装会话生命周期和状态管理。
 
 使用示例:
-    from core.session import DialogSessionManager
+    from backend.domain.models.dialog import DialogSessionManager
 
     mgr = DialogSessionManager()
 

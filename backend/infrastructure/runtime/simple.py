@@ -9,16 +9,16 @@ from typing import AsyncIterator, Callable, Optional, Any
 
 from loguru import logger
 
-from core.agent.runtimes.manager_runtime import ManagerAwareRuntime
-from core.session import DialogSessionManager
-from core.models.config import EngineConfig
-from core.models.api import MessageDTO, ToolCallDTO, ToolCallFunctionDTO
-from core.models.entities import ToolCall
-from core.models.types import MessageDict, ToolCallDict
-from core.models.events import ErrorOccurred, AgentRoundsLimitReached, ToolStartData
-from core.plugins import PluginManager, CompactPlugin
-from core.tools import WorkspaceOps
-from core.models.agent_events import AgentEvent
+from backend.infrastructure.runtime.manager import ManagerAwareRuntime
+from backend.domain.models.dialog import DialogSessionManager
+from backend.domain.models.config import EngineConfig
+from backend.domain.models.api import MessageDTO, ToolCallDTO, ToolCallFunctionDTO
+from backend.domain.models import ToolCall
+from backend.domain.models.types import MessageDict, ToolCallDict
+from backend.domain.models.events import ErrorOccurred, AgentRoundsLimitReached, ToolStartData
+from backend.infrastructure.plugins import PluginManager, CompactPlugin
+from backend.infrastructure.tools import WorkspaceOps
+from backend.domain.models.agent_events import AgentEvent
 
 
 class SimpleRuntime(ManagerAwareRuntime):
@@ -267,8 +267,8 @@ class SimpleRuntime(ManagerAwareRuntime):
         parameters_schema: Optional[dict[str, Any]] = None
     ) -> None:
         """注册工具（注册到 ToolManager）"""
-        from core.models.types import JSONSchema
-        from core.agent.runtimes.base import ToolCache
+        from backend.domain.models.types import JSONSchema
+        from backend.infrastructure.runtime.runtime import ToolCache
 
         json_schema: Optional[JSONSchema] = None
         if parameters_schema is not None:
@@ -304,7 +304,7 @@ class SimpleRuntime(ManagerAwareRuntime):
 
     def get_skill_edit_proposals(self, dialog_id: Optional[str] = None) -> list[dict]:
         """获取待处理的 Skill 编辑提案"""
-        from core.hitl import is_skill_edit_hitl_enabled, skill_edit_hitl_store
+        from backend.hitl import is_skill_edit_hitl_enabled, skill_edit_hitl_store
         if not is_skill_edit_hitl_enabled():
             return []
         return skill_edit_hitl_store.list_pending(dialog_id)
@@ -316,23 +316,23 @@ class SimpleRuntime(ManagerAwareRuntime):
         edited_content: Optional[str] = None
     ) -> Any:
         """处理 Skill 编辑审核决定"""
-        from core.hitl import is_skill_edit_hitl_enabled, skill_edit_hitl_store
-        from core.models.api import DecisionResult
+        from backend.hitl import is_skill_edit_hitl_enabled, skill_edit_hitl_store
+        from backend.domain.models.api import DecisionResult
         if not is_skill_edit_hitl_enabled():
             return DecisionResult(success=False, message="HITL disabled")
         return skill_edit_hitl_store.decide(approval_id, decision, edited_content)
 
     def get_todos(self, dialog_id: str) -> Any:
         """获取对话的 Todo 列表"""
-        from core.hitl import is_todo_hook_enabled, todo_store
-        from core.models.api import TodoStateDTO
+        from backend.hitl import is_todo_hook_enabled, todo_store
+        from backend.domain.models.api import TodoStateDTO
         if not is_todo_hook_enabled():
             return TodoStateDTO(dialog_id=dialog_id, items=[], rounds_since_todo=0, updated_at=0.0)
         return todo_store.get_todos(dialog_id)
 
     def update_todos(self, dialog_id: str, items: list[dict]) -> tuple[bool, str]:
         """更新对话的 Todo 列表"""
-        from core.hitl import is_todo_hook_enabled, todo_store
+        from backend.hitl import is_todo_hook_enabled, todo_store
         if not is_todo_hook_enabled():
             return False, "Todo HITL disabled"
         return todo_store.update_todos(dialog_id, items)
@@ -342,8 +342,8 @@ class SimpleRuntime(ManagerAwareRuntime):
         broadcaster: Callable[[dict[str, Any]], Any]
     ) -> None:
         """注册 HITL 广播器"""
-        from core.hitl import is_skill_edit_hitl_enabled, is_todo_hook_enabled
-        from core.hitl import skill_edit_hitl_store, todo_store
+        from backend.hitl import is_skill_edit_hitl_enabled, is_todo_hook_enabled
+        from backend.hitl import skill_edit_hitl_store, todo_store
         if is_skill_edit_hitl_enabled():
             skill_edit_hitl_store.register_broadcaster(broadcaster)
         if is_todo_hook_enabled():

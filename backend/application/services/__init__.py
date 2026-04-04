@@ -1,9 +1,9 @@
 """Application Services - 应用服务"""
 
-from core.application.services.dialog_service import DialogService, DialogNotFoundError
-from core.application.services.skill_service import SkillService, SkillNotFoundError, ToolInfo
-from core.application.services.memory_service import MemoryService
-from core.application.services.agent_orchestration_service import AgentOrchestrationService
+from backend.application.services.dialog import DialogService, DialogNotFoundError
+from backend.application.services.skill import SkillService, SkillNotFoundError, ToolInfo
+from backend.application.services.memory import MemoryService
+from backend.application.services.agent_orchestration import AgentOrchestrationService
 
 __all__ = [
     # Services

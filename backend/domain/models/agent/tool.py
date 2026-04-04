@@ -7,7 +7,7 @@ Tool Models - 工具模型
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, Callable, List
 
-from core.models.types import JSONSchema
+from backend.domain.models.types import JSONSchema
 
 try:
     from dataclasses_json import dataclass_json  # type: ignore[import-not-found]

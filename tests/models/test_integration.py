@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 # 工具模型
-from core.models.tool_models import (
+from backend.domain.models.tool_models import (
     ToolSpec,
     JSONSchema,
     JSONSchemaProperty,
@@ -17,7 +17,7 @@ from core.models.tool_models import (
 )
 
 # 响应模型
-from core.models.response_models import (
+from backend.domain.models.response_models import (
     ResultModel,
     HITLResultModel,
     APIHealthResponse,
@@ -29,7 +29,7 @@ from core.models.response_models import (
 )
 
 # WebSocket 模型
-from core.models.websocket_models import (
+from backend.domain.models.websocket_models import (
     WSDialogSnapshot,
     WSDialogMetadata,
     WSStreamingMessage,
@@ -46,7 +46,7 @@ from core.models.websocket_models import (
 )
 
 # 事件模型
-from core.models.event_models import (
+from backend.domain.models.event_models import (
     EventModel,
     SkillEditEventModel,
     TodoEventModel,
@@ -316,7 +316,7 @@ class TestAPIResponsePatterns:
 
     def test_agent_status_response(self):
         """测试 Agent 状态响应"""
-        from core.models.response_models import APIAgentStatusItem, APIAgentStatusData
+        from backend.domain.models.response_models import APIAgentStatusItem, APIAgentStatusData
 
         response = APIAgentStatusResponse(
             success=True,

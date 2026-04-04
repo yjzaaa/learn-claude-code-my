@@ -11,7 +11,7 @@ import inspect
 import types
 from typing import Any, Callable, get_args, get_origin
 
-from core.models.types import (
+from backend.domain.models.types import (
     ToolSpec,
     OpenAIFunctionSchema,
     OpenAIToolSchema,

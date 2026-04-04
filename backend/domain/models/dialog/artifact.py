@@ -4,8 +4,8 @@ Artifact - 产物实体
 代码、文档等产物的领域模型。
 """
 from typing import Optional
-from core.models.base import Entity, generate_id
-from core.models.mixins import DialogRefMixin
+from backend.domain.models.base import Entity, generate_id
+from backend.domain.models.mixins import DialogRefMixin
 
 
 class Artifact(Entity, DialogRefMixin):

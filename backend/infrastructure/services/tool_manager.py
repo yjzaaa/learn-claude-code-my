@@ -9,13 +9,13 @@ from typing import Callable
 import asyncio
 import logging
 
-from core.tools import ToolRegistry, WorkspaceOps
-from core.models.entities import ToolCall
-from core.models.events import ToolCallStarted, ToolCallCompleted, ToolCallFailed
-from core.models.config import ToolManagerConfig
-from core.models.tool import ToolInfo
-from core.models.types import JSONSchema, OpenAIToolSchema, ToolSpec
-from runtime.event_bus import EventBus
+from backend.infrastructure.tools import ToolRegistry, WorkspaceOps
+from backend.domain.models import ToolCall
+from backend.domain.models.events import ToolCallStarted, ToolCallCompleted, ToolCallFailed
+from backend.domain.models.config import ToolManagerConfig
+from backend.domain.models.tool import ToolInfo
+from backend.domain.models.types import JSONSchema, OpenAIToolSchema, ToolSpec
+from backend.runtime.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 

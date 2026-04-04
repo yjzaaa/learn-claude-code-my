@@ -4,8 +4,8 @@ In-Memory Dialog Repository - 内存对话仓库实现
 
 from typing import Optional
 
-from core.domain.repositories.dialog_repository import IDialogRepository
-from core.models.entities import Dialog
+from backend.domain.repositories.dialog_repository import IDialogRepository
+from backend.domain.models import Dialog
 
 
 class InMemoryDialogRepository(IDialogRepository):

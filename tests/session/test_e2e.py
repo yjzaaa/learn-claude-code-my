@@ -7,10 +7,10 @@
 import pytest
 import asyncio
 from typing import List, Any
-from core.session import DialogSessionManager, SessionStatus
-from core.session.models import SessionEvent
-from core.agent.runtimes.simple_runtime import SimpleRuntime
-from core.models.config import EngineConfig
+from backend.domain.models.dialog import DialogSessionManager, SessionStatus
+from backend.domain.models.dialog.session import SessionEvent
+from backend.infrastructure.runtime.simple import SimpleRuntime
+from backend.domain.models.config import EngineConfig
 
 
 @pytest.fixture

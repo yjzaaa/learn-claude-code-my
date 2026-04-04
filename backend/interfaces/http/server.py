@@ -7,7 +7,7 @@ HTTP Server - FastAPI 应用
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.engine import AgentEngine
+from backend.application.engine import AgentEngine
 from .routes import dialog, skills, tools, health, hitl
 
 

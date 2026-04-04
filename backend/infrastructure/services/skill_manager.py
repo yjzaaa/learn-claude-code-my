@@ -14,15 +14,15 @@ import json
 import logging
 import sys
 
-from runtime.event_bus import EventBus
-from core.models.entities import Skill, SkillDefinition
-from core.models.config import SkillManagerConfig
-from core.models.api import SkillStats
-from core.models.tool import ActiveToolInfo
-from core.tools import ToolRegistry
+from backend.runtime.event_bus import EventBus
+from backend.domain.models import Skill, SkillDefinition
+from backend.domain.models.config import SkillManagerConfig
+from backend.domain.models.api import SkillStats
+from backend.domain.models.tool import ActiveToolInfo
+from backend.infrastructure.tools import ToolRegistry
 
 if TYPE_CHECKING:
-    from core.managers.tool_manager import ToolManager
+    from backend.infrastructure.services.tool_manager import ToolManager
 
 logger = logging.getLogger(__name__)
 

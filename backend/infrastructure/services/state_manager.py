@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from core.models.config import StateConfig
+from backend.domain.models.config import StateConfig
 
 logger = logging.getLogger(__name__)
 

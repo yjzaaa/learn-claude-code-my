@@ -4,7 +4,7 @@
 
 import pytest
 from datetime import datetime
-from core.models.event_models import (
+from backend.domain.models.event_models import (
     TodoStatus,
     EventModel,
     SkillEditEventModel,

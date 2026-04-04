@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 if TYPE_CHECKING:
-    from core.models.entities import Skill
+    from backend.domain.models import Skill
 
 
 class SkillScriptLoader:
@@ -22,7 +22,7 @@ class SkillScriptLoader:
 
     def load_scripts(self, skill: "Skill") -> None:
         """懒加载：导入 scripts/ 下的 .py 文件，注册 @tool 函数。"""
-        from core.tools.toolkit import scan_tools
+        from backend.infrastructure.tools.toolkit import scan_tools
 
         if not skill.path:
             skill.scripts_loaded = True
