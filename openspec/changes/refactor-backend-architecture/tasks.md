@@ -14,9 +14,9 @@
 
 ## 3. Rename core/ to backend/
 
-- [ ] 3.1 Rename `core/` directory to `backend/` (use git mv to preserve history)
-- [ ] 3.2 Verify the rename preserves git history
-- [ ] 3.3 New structure should be: `backend/`, `backend/interfaces/`, `backend/runtime/`
+- [x] 3.1 Rename `core/` directory to `backend/` (use git mv to preserve history)
+- [x] 3.2 Verify the rename preserves git history
+- [x] 3.3 New structure should be: `backend/`, `backend/interfaces/`, `backend/runtime/`
 
 ## 4. Create New Directory Structure under backend/
 
