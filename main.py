@@ -13,7 +13,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Set, Optional
+from typing import Any, Set, Optional, Dict
 
 import uvicorn
 from contextlib import asynccontextmanager
@@ -80,6 +80,12 @@ config = EngineConfig.from_dict({
 })
 runtime = factory.create(_AGENT_TYPE, "main-agent", config)
 
+# ── Session Manager ───────────────────────────────────────────────────────────
+from core.session import DialogSessionManager
+session_manager = DialogSessionManager(max_sessions=100, session_ttl_seconds=1800)
+if hasattr(runtime, 'set_session_manager'):
+    runtime.set_session_manager(session_manager)
+
 # ── WebSocket broadcast ───────────────────────────────────────────────────────
 _ws_clients: Set[WebSocket] = set()
 
@@ -102,6 +108,16 @@ async def _broadcast(event: Any) -> None:
 _status: dict[str, str] = {}
 # dialog_id → current streaming Message dict (or None)
 _streaming_msg: dict[str, Optional[WSStreamingMessage]] = {}
+
+# ── Dialog-level locks to prevent concurrent agent execution ───────────────────
+_dialog_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_dialog_lock(dialog_id: str) -> asyncio.Lock:
+    """获取对话级别的锁，防止同一对话并发执行多个 agent 任务"""
+    if dialog_id not in _dialog_locks:
+        _dialog_locks[dialog_id] = asyncio.Lock()
+    return _dialog_locks[dialog_id]
 
 
 def _ts() -> int:
@@ -132,6 +148,37 @@ def _make_message(m) -> WSMessageItem:
 
 def _dialog_to_snapshot(dialog_id: str) -> Optional[WSDialogSnapshot]:
     """Convert runtime Dialog → DialogSession JSON (matches frontend types/dialog.ts)."""
+    # 优先从 SessionManager 读取（Single Source of Truth）
+    session_snap = session_manager.build_snapshot(dialog_id)
+    if session_snap:
+        messages: list[WSMessageItem] = []
+        for m in session_snap.get("messages", []):
+            messages.append({
+                "id": m.get("id", ""),
+                "role": m.get("role", ""),
+                "content": m.get("content", ""),
+                "content_type": m.get("content_type", "text"),
+                "status": m.get("status", "completed"),
+                "timestamp": m.get("timestamp", ""),
+            })
+        metadata = session_snap.get("metadata", {})
+        return {
+            "id": session_snap["id"],
+            "title": session_snap.get("title", "New Dialog"),
+            "status": _status.get(dialog_id, "idle"),
+            "messages": messages,
+            "streaming_message": _streaming_msg.get(dialog_id),
+            "metadata": {
+                "model": metadata.get("model", ""),
+                "agent_name": metadata.get("agent_name", "Agent"),
+                "tool_calls_count": metadata.get("tool_calls_count", 0),
+                "total_tokens": metadata.get("total_tokens", 0),
+            },
+            "created_at": session_snap["created_at"],
+            "updated_at": session_snap.get("updated_at", session_snap["created_at"]),
+        }
+
+    # 回退到旧方式
     dialog = runtime.get_dialog(dialog_id)
     if not dialog:
         return None
@@ -156,82 +203,98 @@ def _dialog_to_snapshot(dialog_id: str) -> Optional[WSDialogSnapshot]:
 # ── Background agent runner ───────────────────────────────────────────────────
 
 async def _run_agent(dialog_id: str, content: str, message_id: str) -> None:
-    msg_id = message_id
+    # 使用对话级别锁防止并发执行
+    async with _get_dialog_lock(dialog_id):
+        msg_id = message_id
 
-    # Set up streaming message placeholder
-    _status[dialog_id] = "thinking"
-    _streaming_msg[dialog_id] = WSStreamingMessage(
-        id=msg_id,
-        role="assistant",
-        content="",
-        content_type="markdown",
-        status="streaming",
-        timestamp=_iso(),
-        agent_name="Agent",
-        reasoning_content=None,
-        tool_calls=[],
-    )
+        # Set up streaming message placeholder
+        _status[dialog_id] = "thinking"
+        _streaming_msg[dialog_id] = WSStreamingMessage(
+            id=msg_id,
+            role="assistant",
+            content="",
+            content_type="markdown",
+            status="streaming",
+            timestamp=_iso(),
+            agent_name="Agent",
+            reasoning_content=None,
+            tool_calls=[],
+        )
 
-    await _broadcast(make_status_change(dialog_id, "idle", "thinking", _ts()))
+        await _broadcast(make_status_change(dialog_id, "idle", "thinking", _ts()))
 
-    accumulated = ""
-    first_chunk = True
+        accumulated = ""
+        first_chunk = True
 
-    try:
-        async for event in runtime.send_message(dialog_id, content, stream=True, message_id=msg_id):
-            if event.type == "text_delta":
-                if first_chunk:
-                    first_chunk = False
-                    # runtime has now added user message to dialog — send snapshot before first delta
-                    # streaming_message content is still empty so frontend doesn't double-count it
-                    snap = _dialog_to_snapshot(dialog_id)
-                    if snap:
-                        await _broadcast(WSSnapshotEvent(
-                            type="dialog:snapshot", data=snap, timestamp=_ts()
-                        ))
+        try:
+            async for event in runtime.send_message(dialog_id, content, stream=True, message_id=msg_id):
+                if event.type == "text_delta":
+                    if first_chunk:
+                        first_chunk = False
+                        # runtime has now added user message to dialog — send snapshot before first delta
+                        # streaming_message content is still empty so frontend doesn't double-count it
+                        snap = _dialog_to_snapshot(dialog_id)
+                        if snap:
+                            await _broadcast(WSSnapshotEvent(
+                                type="dialog:snapshot", data=snap, timestamp=_ts()
+                            ))
 
-                chunk = event.data
-                if isinstance(chunk, list):
-                    chunk = "".join(str(c) for c in chunk)
-                elif not isinstance(chunk, str):
-                    chunk = str(chunk)
-                accumulated += chunk
-                sm = _streaming_msg.get(dialog_id)
-                if sm is not None:
-                    sm["content"] = accumulated
+                    chunk = event.data
+                    if isinstance(chunk, list):
+                        chunk = "".join(str(c) for c in chunk)
+                    elif not isinstance(chunk, str):
+                        chunk = str(chunk)
+                    accumulated += chunk
+                    sm = _streaming_msg.get(dialog_id)
+                    if sm is not None:
+                        sm["content"] = accumulated
 
-                await _broadcast(WSStreamDeltaEvent(
-                    type="stream:delta",
-                    dialog_id=dialog_id,
-                    message_id=msg_id,
-                    delta=WSDeltaContent(content=chunk, reasoning=""),
-                    timestamp=_ts(),
-                ))
-            elif event.type == "complete":
-                break
-            elif event.type == "error":
-                raise Exception(str(event.data))
+                    await _broadcast(WSStreamDeltaEvent(
+                        type="stream:delta",
+                        dialog_id=dialog_id,
+                        message_id=msg_id,
+                        delta=WSDeltaContent(content=chunk, reasoning=""),
+                        timestamp=_ts(),
+                    ))
+                # elif event.type in ("tool_call", "agent:tool_call"):
+                #     await _broadcast({
+                #         "type": "agent:tool_call",
+                #         "dialog_id": dialog_id,
+                #         "data": event.data,
+                #         "timestamp": _ts(),
+                #     })
+                # elif event.type in ("tool_result", "agent:tool_result"):
+                #     await _broadcast({
+                #         "type": "agent:tool_result",
+                #         "dialog_id": dialog_id,
+                #         "data": event.data,
+                #         "timestamp": _ts(),
+                #     })
+                elif event.type == "complete":
+                    break
+                elif event.type == "error":
+                    raise Exception(str(event.data))
 
-        # Send status:change while streaming_message is still set so frontend can fire
-        # agent:message_complete using prevSnapshot.streaming_message
-        _status[dialog_id] = "completed"
-        await _broadcast(make_status_change(dialog_id, "thinking", "completed", _ts()))
+            # Send status:change while streaming_message is still set so frontend can fire
+            # agent:message_complete using prevSnapshot.streaming_message
+            _status[dialog_id] = "completed"
+            await _broadcast(make_status_change(dialog_id, "thinking", "completed", _ts()))
 
-        # Clean up — no second snapshot to avoid duplicate assistant message
-        _streaming_msg[dialog_id] = None
-        _status[dialog_id] = "idle"
+            # Clean up — no second snapshot to avoid duplicate assistant message
+            _streaming_msg[dialog_id] = None
+            _status[dialog_id] = "idle"
 
-    except Exception as exc:
-        logger.exception("[agent] Error running dialog %s: %s", dialog_id, exc)
-        _streaming_msg[dialog_id] = None
-        _status[dialog_id] = "error"
-        await _broadcast(WSErrorEvent(
-            type="error",
-            dialog_id=dialog_id,
-            error=WSErrorDetail(code="agent_error", message=str(exc)),
-            timestamp=_ts(),
-        ))
-        await _broadcast(make_status_change(dialog_id, "thinking", "error", _ts()))
+        except Exception as exc:
+            logger.exception("[agent] Error running dialog %s: %s", dialog_id, exc)
+            _streaming_msg[dialog_id] = None
+            _status[dialog_id] = "error"
+            await _broadcast(WSErrorEvent(
+                type="error",
+                dialog_id=dialog_id,
+                error=WSErrorDetail(code="agent_error", message=str(exc)),
+                timestamp=_ts(),
+            ))
+            await _broadcast(make_status_change(dialog_id, "thinking", "error", _ts()))
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────

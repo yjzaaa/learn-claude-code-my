@@ -17,6 +17,7 @@ from core.managers.state_manager import StateManager
 from core.managers.provider_manager import ProviderManager
 from core.managers.memory_manager import MemoryManager
 from core.managers.skill_manager import SkillManager
+from core.session import DialogSessionManager
 from core.models.config import EngineConfig
 from core.models.entities import Dialog
 from core.models.tool import ToolInfo
@@ -74,6 +75,10 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
             event_bus=self._event_bus,
             tool_manager=self._tool_mgr
         )
+
+        # 初始化 SessionManager（新会话管理层）
+        # 初始化 SessionManager（新会话管理层）
+        self._session_mgr: Optional[DialogSessionManager] = None
 
         logger.debug(f"[{self.__class__.__name__}] Managers initialized")
 
@@ -285,6 +290,60 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
     def emit(self, event: Any) -> None:
         """发射事件"""
         self._event_bus.emit(event)
+
+    # ═══════════════════════════════════════════════════════════
+    # SessionManager 集成 - 新的会话管理层
+    # ═══════════════════════════════════════════════════════════
+
+    @property
+    def session_manager(self) -> Optional[DialogSessionManager]:
+        """获取 SessionManager 实例"""
+        return self._session_mgr
+
+    def set_session_manager(self, session_manager: DialogSessionManager) -> None:
+        """设置 SessionManager 实例（用于外部注入）"""
+        self._session_mgr = session_manager
+        logger.debug(f"[{self.__class__.__name__}] SessionManager set")
+
+    async def create_session(self, dialog_id: str, title: Optional[str] = None) -> Any:
+        """
+        使用 SessionManager 创建新会话
+
+        Args:
+            dialog_id: 对话 ID
+            title: 会话标题
+
+        Returns:
+            DialogSession 实例
+        """
+        if self._session_mgr is None:
+            raise RuntimeError("SessionManager not initialized")
+        return await self._session_mgr.create_session(dialog_id, title)
+
+    async def get_session(self, dialog_id: str) -> Optional[Any]:
+        """
+        使用 SessionManager 获取会话
+
+        Args:
+            dialog_id: 对话 ID
+
+        Returns:
+            DialogSession 实例或 None
+        """
+        if self._session_mgr is None:
+            return None
+        return await self._session_mgr.get_session(dialog_id)
+
+    async def close_session(self, dialog_id: str) -> None:
+        """
+        使用 SessionManager 关闭会话
+
+        Args:
+            dialog_id: 对话 ID
+        """
+        if self._session_mgr is None:
+            return
+        await self._session_mgr.close_session(dialog_id)
 
     # ═══════════════════════════════════════════════════════════
     # 抽象方法 - 子类必须实现

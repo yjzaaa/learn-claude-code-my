@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import AsyncIterator, Callable, Any
 from core.models.entities import Dialog
 from core.models.config import EngineConfig
-from core.types import AgentEvent
+from core.models.agent_events import AgentEvent
 
 
 class AgentRuntime(ABC):

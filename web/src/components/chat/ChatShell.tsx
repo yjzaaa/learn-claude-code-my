@@ -1,28 +1,29 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useMessageStore, type ChatSession } from "@/hooks/useMessageStore";
 import { useAgentApi } from "@/hooks/useAgentApi";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useUIStore } from "@/stores/ui";
+import { useAgentStore } from "@/agent/agent-store";
+import type { DialogSummary } from "@/types/dialog";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChatArea } from "./ChatArea";
 
 export function ChatShell() {
   const [activeDialogId, setActiveDialogId] = useState<string>("");
   const [newChatError, setNewChatError] = useState<string | null>(null);
-  const { resetAndSetDialog } = useMessageStore();
   const { createDialog } = useAgentApi();
-  const { isConnected, subscribeToDialog } = useWebSocket();
+  const { isConnected, subscribeToDialog, dialogList } = useWebSocket();
   const { theme } = useUIStore();
+  const setCurrentSnapshot = useAgentStore((s) => s.setCurrentSnapshot);
 
   const handleSelectDialog = useCallback(
-    (dialog: ChatSession) => {
+    (dialog: DialogSummary) => {
       setActiveDialogId(dialog.id);
-      resetAndSetDialog(dialog);
+      setCurrentSnapshot(null); // 等待 subscribe 后后端推送 snapshot
       if (isConnected) subscribeToDialog(dialog.id);
     },
-    [isConnected, resetAndSetDialog, subscribeToDialog],
+    [isConnected, setCurrentSnapshot, subscribeToDialog],
   );
 
   const handleNewChat = useCallback(async () => {
@@ -33,15 +34,6 @@ export function ChatShell() {
       console.log("[ChatShell] createDialog result:", result);
       if (result.success && result.data) {
         const d = result.data;
-        const dialog: ChatSession = {
-          id: d.id,
-          title: d.title,
-          messages: [],
-          created_at: Date.parse(d.created_at) || Date.now(),
-          updated_at: Date.parse(d.updated_at) || Date.now(),
-        };
-        console.log("[ChatShell] Setting dialog:", dialog);
-        resetAndSetDialog(dialog);
         setActiveDialogId(d.id);
         if (isConnected) subscribeToDialog(d.id);
       } else {
@@ -53,7 +45,7 @@ export function ChatShell() {
       console.error("[ChatShell] createDialog threw:", e);
       setNewChatError(String(e));
     }
-  }, [createDialog, isConnected, resetAndSetDialog, subscribeToDialog]);
+  }, [createDialog, isConnected, subscribeToDialog]);
 
   return (
     <div
@@ -92,6 +84,7 @@ export function ChatShell() {
       )}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         <SessionSidebar
+          dialogs={dialogList}
           activeDialogId={activeDialogId}
           onSelectDialog={handleSelectDialog}
           onNewChat={handleNewChat}

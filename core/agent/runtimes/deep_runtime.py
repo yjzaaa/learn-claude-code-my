@@ -55,6 +55,13 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
     def agent_type(self) -> str:
         return "deep"
 
+    @property
+    def session_manager(self):
+        return getattr(self, "_session_mgr", None)
+
+    def set_session_manager(self, mgr):
+        self._session_mgr = mgr
+
     async def _do_initialize(self) -> None:
         """初始化 Runtime 和 Deep Agent"""
         import os
@@ -312,20 +319,44 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         发送消息，返回流式事件
 
         使用 stream_mode="messages" 实现真正的 token 级流式输出，
-        同时记录三种 stream_mode 的日志。
+        同时与 SessionManager 集成进行对话历史管理。
 
         所有日志写入使用异步队列（enqueue=True），不影响主流程性能。
         """
         if self._agent is None:
             raise RuntimeError("DeepAgentRuntime not initialized. Call initialize() first.")
-        
 
-        # 构造消息
-        user_msg = UserMessageModel(role="user", content=message)
-        if isinstance(user_msg, BaseModel):
-            messages = [user_msg.model_dump()]
+        # 获取或创建会话
+        session_mgr = self.session_manager
+        if session_mgr is not None:
+            # 检查会话是否存在，不存在则创建
+            session = await session_mgr.get_session(dialog_id)
+            if session is None:
+                await session_mgr.create_session(dialog_id, title=message[:50])
+            # 添加用户消息到 SessionManager
+            await session_mgr.add_user_message(dialog_id, message)
+            # 从 SessionManager 获取对话历史
+            history_messages = await session_mgr.get_messages(dialog_id)
+            # 转换为 LangChain 消息格式
+            messages = []
+            for msg in history_messages:
+                if hasattr(msg, 'model_dump'):
+                    messages.append(msg.model_dump())
+                elif hasattr(msg, 'content'):
+                    messages.append({
+                        "role": getattr(msg, 'type', 'unknown'),
+                        "content": msg.content
+                    })
+                else:
+                    messages.append(msg)
+            # 标记 AI 响应开始
+            ai_message_id = message_id or f"msg_{id(message)}"
+            await session_mgr.start_ai_response(dialog_id, ai_message_id)
         else:
-            messages = [{"role": "user", "content": message}]
+            # 回退：直接使用当前消息
+            user_msg = UserMessageModel(role="user", content=message)
+            messages = [user_msg.model_dump() if isinstance(user_msg, BaseModel) else {"role": "user", "content": message}]
+            ai_message_id = message_id or f"msg_{id(message)}"
 
         # 配置 thread_id 用于持久化，同时提高 recursion_limit 以避免复杂 agent 循环超限
         config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": 100}
@@ -337,6 +368,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
 
         # 用于累积流式内容
         accumulated_content = ""
+        accumulated_reasoning = ""
         last_message_id = None
 
         try:
@@ -347,79 +379,186 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 config,
                 stream_mode=["messages"]
             ):
-                # stream_mode=["messages"] 返回元组 (stream_mode, (AIMessageChunk, metadata))
-                # 注意：LangGraph 返回的是嵌套元组结构
-                if isinstance(raw_event, tuple) and len(raw_event) == 2:
-                    stream_mode, inner_data = raw_event
-
-                    # 处理嵌套元组: (AIMessageChunk, metadata_dict)
-                    if isinstance(inner_data, tuple) and len(inner_data) == 2:
-                        message_chunk, metadata = inner_data
-                        self._update_logger.debug("Unpacked nested tuple: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
-                    else:
-                        # 直接的 AIMessageChunk (非嵌套格式)
-                        message_chunk = inner_data
-                        metadata = {}
-                        self._update_logger.debug("Direct chunk: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
-
-                    self._update_logger.debug("Got message chunk: mode={}, type={}, content={}", stream_mode, type(message_chunk).__name__, repr(getattr(message_chunk, 'content', ''))[:200])
-
-                    # 检测新消息开始（通过 message id）
-                    current_msg_id = getattr(message_chunk, 'id', None)
-                    if current_msg_id and current_msg_id != last_message_id:
-                        if last_message_id is not None:
-                            # 新消息开始，重置累积内容
-                            self._update_logger.debug("New message detected, resetting accumulated_content. old_msg={}, new_msg={}", last_message_id, current_msg_id)
-                            accumulated_content = ""
-                        last_message_id = current_msg_id
-                else:
-                    self._update_logger.warning("Unexpected event format: {}", type(raw_event))
-                    continue
-
-                # 处理 ToolMessage - 记录到 JSONL 文件但不渲染到前端
-                if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
-                    tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
-                    tool_content = getattr(message_chunk, 'content', '')
-                    tool_name = getattr(message_chunk, 'name', 'unknown')
-
-                    # 写入工具结果到 JSONL 日志
-                    import json
-                    from datetime import datetime
-                    log_entry = {
-                        "timestamp": datetime.now().isoformat(),
-                        "dialog_id": dialog_id,
-                        "tool_call_id": tool_call_id,
-                        "tool_name": tool_name,
-                        "content": tool_content[:2000] if isinstance(tool_content, str) else str(tool_content)[:2000]  # 限制长度
-                    }
-                    with open("logs/deep/tool_results.jsonl", "a", encoding="utf-8") as f:
-                        json_str = json.dumps(log_entry, ensure_ascii=False)
+                import json
+                from datetime import datetime
+                
+                # 记录原始事件到 JSONL（处理不可序列化的对象）
+                try:
+                    with open("logs/deep/raw_event.jsonl", "a", encoding="utf-8") as f:
+                        json_str = json.dumps(raw_event, ensure_ascii=False, default=str)
                         f.write(json_str + chr(10))
+                except Exception as log_e:
+                    self._update_logger.debug("Failed to log raw event: {}", log_e)
 
-                    self._update_logger.debug("Tool result logged to JSONL: tool_call_id={}", tool_call_id)
-                    continue
+                # 处理流式事件并转发给 SessionManager
+                # 提取内容增量
+                delta_content = ""
+                delta_reasoning = ""
+                
+                # 处理不同格式的 raw_event
+                if isinstance(raw_event, tuple) and len(raw_event) >= 2:
+                    # (stream_mode, (message_chunk, metadata)) 格式
+                    msg_chunk = raw_event[1]
+                    if isinstance(msg_chunk, tuple):
+                        msg_chunk = msg_chunk[0]
 
-                # 处理消息块，直接生成 text_delta 事件
-                if hasattr(message_chunk, 'content') and message_chunk.content:
-                    content = message_chunk.content
-                    # 处理 content 是列表的情况 (Anthropic 格式)
-                    if isinstance(content, list):
-                        text_parts = []
-                        for block in content:
-                            if isinstance(block, dict) and block.get('type') == 'text':
-                                text_parts.append(block.get('text', ''))
-                            elif isinstance(block, str):
-                                text_parts.append(block)
-                        content = ''.join(text_parts)
-
-                    if content:
-                        accumulated_content += content
-                        self._log_message_chunk(message_chunk, dialog_id, accumulated_content)
+                    # 仅向前端广播 ToolMessage（不写入 SessionManager）
+                    if getattr(msg_chunk, 'type', None) == 'tool':
+                        tool_call_id = getattr(msg_chunk, 'tool_call_id', 'unknown')
+                        tool_content = getattr(msg_chunk, 'content', '')
+                        tool_name = getattr(msg_chunk, 'name', 'unknown')
                         yield AgentEvent(
-                            type="text_delta",
-                            data=content,
-                            metadata={"accumulated_length": len(accumulated_content)}
+                            type="tool_result",
+                            data={
+                                "tool_name": tool_name,
+                                "tool_call_id": tool_call_id,
+                                "result": str(tool_content),
+                            },
+                            metadata={"tool_call_id": tool_call_id}
                         )
+                        continue
+
+                    # 仅向前端广播 assistant 的 tool_calls
+                    if getattr(msg_chunk, 'type', None) in ('ai', 'assistant'):
+                        tool_calls = getattr(msg_chunk, 'tool_calls', None) or []
+                        if tool_calls:
+                            for tc in tool_calls:
+                                tc_id = tc.get('id', 'call_0')
+                                tc_name = tc.get('name', 'unknown')
+                                tc_args = tc.get('args', {})
+                                if isinstance(tc_args, str):
+                                    try:
+                                        import json
+                                        tc_args = json.loads(tc_args)
+                                    except Exception:
+                                        tc_args = {"raw": tc_args}
+                                yield AgentEvent(
+                                    type="tool_call",
+                                    data={
+                                        "message_id": message_id or "unknown",
+                                        "tool_call": {
+                                            "id": tc_id,
+                                            "name": tc_name,
+                                            "arguments": tc_args,
+                                            "status": "pending",
+                                        },
+                                    },
+                                )
+
+                    if hasattr(msg_chunk, 'content') and msg_chunk.content:
+                        content = msg_chunk.content
+                        if isinstance(content, list):
+                            for block in content:
+                                if isinstance(block, dict) and block.get('type') == 'text':
+                                    delta_content += block.get('text', '')
+                                elif isinstance(block, str):
+                                    delta_content += block
+                        else:
+                            delta_content = str(content)
+
+                    # 检查推理内容
+                    if hasattr(msg_chunk, 'additional_kwargs'):
+                        reasoning = msg_chunk.additional_kwargs.get('reasoning_content', '')
+                        if reasoning:
+                            delta_reasoning = str(reasoning)
+                
+                # 转发 delta 到 SessionManager
+                if session_mgr is not None:
+                    if delta_content:
+                        await session_mgr.emit_delta(dialog_id, delta_content, ai_message_id)
+                    if delta_reasoning:
+                        await session_mgr.emit_reasoning_delta(dialog_id, delta_reasoning, ai_message_id)
+                
+                # 累积内容并产出事件给调用者
+                if delta_content:
+                    accumulated_content += delta_content
+                    yield AgentEvent(
+                        type="text_delta",
+                        data=delta_content,
+                        metadata={"accumulated_length": len(accumulated_content)}
+                    )
+                
+                if delta_reasoning:
+                    accumulated_reasoning += delta_reasoning
+                    yield AgentEvent(
+                        type="reasoning_delta",
+                        data=delta_reasoning,
+                        metadata={"accumulated_length": len(accumulated_reasoning)}
+                    )
+
+                # # stream_mode=["messages"] 返回元组 (stream_mode, (AIMessageChunk, metadata))
+                # # 注意：LangGraph 返回的是嵌套元组结构
+                # if isinstance(raw_event, tuple) and len(raw_event) == 2:
+                #     stream_mode, inner_data = raw_event
+
+                #     # 处理嵌套元组: (AIMessageChunk, metadata_dict)
+                #     if isinstance(inner_data, tuple) and len(inner_data) == 2:
+                #         message_chunk, metadata = inner_data
+                #         self._update_logger.debug("Unpacked nested tuple: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
+                #     else:
+                #         # 直接的 AIMessageChunk (非嵌套格式)
+                #         message_chunk = inner_data
+                #         metadata = {}
+                #         self._update_logger.debug("Direct chunk: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
+
+                #     self._update_logger.debug("Got message chunk: mode={}, type={}, content={}", stream_mode, type(message_chunk).__name__, repr(getattr(message_chunk, 'content', ''))[:200])
+
+                #     # 检测新消息开始（通过 message id）
+                #     current_msg_id = getattr(message_chunk, 'id', None)
+                #     if current_msg_id and current_msg_id != last_message_id:
+                #         if last_message_id is not None:
+                #             # 新消息开始，重置累积内容
+                #             self._update_logger.debug("New message detected, resetting accumulated_content. old_msg={}, new_msg={}", last_message_id, current_msg_id)
+                #             accumulated_content = ""
+                #         last_message_id = current_msg_id
+                # else:
+                #     self._update_logger.warning("Unexpected event format: {}", type(raw_event))
+                #     continue
+
+                # # 处理 ToolMessage - 记录到 JSONL 文件但不渲染到前端
+                # if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
+                #     tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
+                #     tool_content = getattr(message_chunk, 'content', '')
+                #     tool_name = getattr(message_chunk, 'name', 'unknown')
+
+                #     # 写入工具结果到 JSONL 日志
+                #     import json
+                #     from datetime import datetime
+                #     log_entry = {
+                #         "timestamp": datetime.now().isoformat(),
+                #         "dialog_id": dialog_id,
+                #         "tool_call_id": tool_call_id,
+                #         "tool_name": tool_name,
+                #         "content": tool_content[:2000] if isinstance(tool_content, str) else str(tool_content)[:2000]  # 限制长度
+                #     }
+                #     with open("logs/deep/tool_results.jsonl", "a", encoding="utf-8") as f:
+                #         json_str = json.dumps(log_entry, ensure_ascii=False)
+                #         f.write(json_str + chr(10))
+
+                #     self._update_logger.debug("Tool result logged to JSONL: tool_call_id={}", tool_call_id)
+                #     continue
+
+                # # 处理消息块，直接生成 text_delta 事件
+                # if hasattr(message_chunk, 'content') and message_chunk.content:
+                #     content = message_chunk.content
+                #     # 处理 content 是列表的情况 (Anthropic 格式)
+                #     if isinstance(content, list):
+                #         text_parts = []
+                #         for block in content:
+                #             if isinstance(block, dict) and block.get('type') == 'text':
+                #                 text_parts.append(block.get('text', ''))
+                #             elif isinstance(block, str):
+                #                 text_parts.append(block)
+                #         content = ''.join(text_parts)
+
+                #     if content:
+                #         accumulated_content += content
+                #         self._log_message_chunk(message_chunk, dialog_id, accumulated_content)
+                #         yield AgentEvent(
+                #             type="text_delta",
+                #             data=content,
+                #             metadata={"accumulated_length": len(accumulated_content)}
+                #         )
 
                 # 检查工具调用 - 不发送 tool_start 事件到前端
                 #                 if hasattr(message_chunk, 'additional_kwargs') and message_chunk.additional_kwargs:
@@ -429,9 +568,9 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 #                         yield AgentEvent(type="tool_start", data={"tool_calls": tool_calls})
                 # 
                 # 检查是否是 ToolMessage (工具执行结果)
-                if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
-                    tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
-                    tool_content = getattr(message_chunk, 'content', '')
+                # if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
+                #     tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
+                #     tool_content = getattr(message_chunk, 'content', '')
                     # self._update_logger.info("Tool result received: tool_call_id={}", tool_call_id)
                     # yield AgentEvent(type="tool_end", data={
                     #     "tool_call_id": tool_call_id,
@@ -440,28 +579,45 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
 
                 # 检查是否是完整的 AIMessage (流结束)
                 # 最后一个 chunk 的标记：chunk_position == 'last' 或 response_metadata 中有 stop_reason
-                is_last_chunk = (
-                    getattr(message_chunk, 'chunk_position', None) == 'last' or
-                    (hasattr(message_chunk, 'response_metadata') and
-                     message_chunk.response_metadata and
-                     message_chunk.response_metadata.get('stop_reason') is not None)
+                # is_last_chunk = (
+                #     getattr(message_chunk, 'chunk_position', None) == 'last' or
+                #     (hasattr(message_chunk, 'response_metadata') and
+                #      message_chunk.response_metadata and
+                #      message_chunk.response_metadata.get('stop_reason') is not None)
+                # )
+
+                # if is_last_chunk:
+                #     # 消息结束，保存完整消息到对话历史
+                #     # 注意：如果有工具调用，LangGraph 会自动继续执行工具并再次调用 LLM
+                #     # 所以我们需要继续流式输出，直到整个 Agent 循环结束
+                #     if accumulated_content:
+                #         dialog = self._dialogs.get(dialog_id)
+                #         if dialog:
+                #             dialog.add_ai_message(accumulated_content, msg_id=message_id)
+                #         self._update_logger.info("AIMessage complete, saved to dialog history: content_len={}", len(accumulated_content))
+
+            # 流结束，保存完整 AI 响应到 SessionManager
+            if session_mgr is not None:
+                final_content = accumulated_content
+                if final_content:
+                    await session_mgr.complete_ai_response(
+                        dialog_id, 
+                        ai_message_id, 
+                        final_content,
+                        metadata={"reasoning_content": accumulated_reasoning} if accumulated_reasoning else {}
+                    )
+                    self._update_logger.info(
+                        "AI response completed and saved to session: dialog_id={}, content_len={}",
+                        dialog_id, len(final_content)
+                    )
+            
+            # 发送完成事件给调用者
+            if accumulated_content:
+                yield AgentEvent(
+                    type="text_complete",
+                    data=accumulated_content,
+                    metadata={"reasoning_content": accumulated_reasoning} if accumulated_reasoning else {}
                 )
-
-                if is_last_chunk:
-                    # 消息结束，保存完整消息到对话历史
-                    # 注意：如果有工具调用，LangGraph 会自动继续执行工具并再次调用 LLM
-                    # 所以我们需要继续流式输出，直到整个 Agent 循环结束
-                    if accumulated_content:
-                        dialog = self._dialogs.get(dialog_id)
-                        if dialog:
-                            dialog.add_ai_message(accumulated_content, msg_id=message_id)
-                        self._update_logger.info("AIMessage complete, saved to dialog history: content_len={}", len(accumulated_content))
-
-            # 流结束，发送 text_complete 事件（包含完整消息内容）
-            self._update_logger.info("Agent stream complete, yielding text_complete event with content_len={}", len(accumulated_content))
-            # 无论 accumulated_content 是否为空，都发送 text_complete 事件
-            # 确保前端能收到流结束信号，格式与 simple_runtime 一致（字符串）
-            yield AgentEvent(type="text_complete", data=accumulated_content)
 
         except Exception as e:
             import traceback
@@ -475,22 +631,28 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
     async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
         """创建新对话"""
         import uuid
-        from datetime import datetime
-        from core.models.entities import Dialog
 
         dialog_id = str(uuid.uuid4())
+        dialog_title = title or (user_input[:50] if len(user_input) > 50 else user_input)
 
-        # 创建对话
-        dialog_title = title if title else (user_input[:50] + "..." if len(user_input) > 50 else user_input)
+        from datetime import datetime
+        from core.models.entities import Dialog
         dialog = Dialog(
             id=dialog_id,
             title=dialog_title,
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
-        dialog.add_human_message(user_input)
-
+        if user_input:
+            dialog.add_human_message(user_input)
         self._dialogs[dialog_id] = dialog
+
+        # 使用 SessionManager 创建会话
+        session_mgr = self.session_manager
+        if session_mgr is not None:
+            await session_mgr.create_session(dialog_id, title=dialog_title)
+            if user_input:
+                await session_mgr.add_user_message(dialog_id, user_input)
 
         # 记录创建日志
         self._msg_logger.debug("Dialog created: dialog_id={}, title={}", dialog_id, dialog_title)

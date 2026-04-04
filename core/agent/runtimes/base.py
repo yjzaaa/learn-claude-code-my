@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.agent.runtime import AgentRuntime
 from core.models.entities import Dialog
-from core.types import AgentEvent
+from core.models.agent_events import AgentEvent
 
 
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
@@ -90,6 +90,17 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
 
         Returns:
             类型字符串，如 "simple", "deep"
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def session_manager(self) -> Optional[Any]:
+        """
+        获取 SessionManager 实例
+
+        Returns:
+            DialogSessionManager 实例或 None
         """
         pass
 
@@ -217,9 +228,16 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
-        dialog.add_human_message(user_input)
-
+        if user_input:
+            dialog.add_human_message(user_input)
         self._dialogs[dialog_id] = dialog
+
+        # 如果 session_manager 可用，同步创建会话
+        session_mgr = self.session_manager
+        if session_mgr is not None:
+            await session_mgr.create_session(dialog_id, title=dialog_title)
+            if user_input:
+                await session_mgr.add_user_message(dialog_id, user_input)
 
         logger.info(f"[{self.__class__.__name__}] Created dialog: {dialog_id}")
         return dialog_id

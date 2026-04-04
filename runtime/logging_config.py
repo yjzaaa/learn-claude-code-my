@@ -106,14 +106,35 @@ def setup_deep_loggers():
     """初始化 Deep Agent 专用 loggers"""
     global deep_msg_logger, deep_update_logger, deep_value_logger
 
+    if deep_msg_logger is not None:
+        return
+
+    # 如果 loguru 默认 sink 还在（说明 setup_logging() 未被调用），
+    # 把它替换成带过滤器的 sink，防止 deep 日志刷到控制台。
+    try:
+        logger.remove(0)
+    except ValueError:
+        pass
+    else:
+        logger.add(
+            sys.stderr,
+            level=LOG_LEVEL,
+            format=LOG_FORMAT,
+            colorize=True,
+            enqueue=True,
+            filter=lambda record: "deep_log_type" not in record["extra"],
+        )
+
     deep_msg_logger = _create_deep_logger("messages", "deep_messages.log")
     deep_update_logger = _create_deep_logger("updates", "deep_updates.log")
     deep_value_logger = _create_deep_logger("values", "deep_values.log")
 
-    logger.debug("Deep Agent loggers initialized: messages={}, updates={}, values={}",
-                deep_msg_logger is not None,
-                deep_update_logger is not None,
-                deep_value_logger is not None)
+    logger.debug(
+        "Deep Agent loggers initialized: messages={}, updates={}, values={}",
+        deep_msg_logger is not None,
+        deep_update_logger is not None,
+        deep_value_logger is not None,
+    )
 
 
 def get_deep_msg_logger() -> 'Logger':
@@ -157,12 +178,14 @@ def setup_logging():
     logger.remove()
 
     # 控制台输出（开发环境彩色）
+    # 过滤掉 Deep Agent 专用日志，避免 deep_msg_logger/update_logger/value_logger 刷屏
     logger.add(
         sys.stderr,
         level=LOG_LEVEL,
         format=LOG_FORMAT,
         colorize=True,
         enqueue=True,
+        filter=lambda record: "deep_log_type" not in record["extra"],
     )
 
     # 文件输出（生产环境）

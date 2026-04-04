@@ -59,8 +59,13 @@ Copy `.env.example` to `.env` and configure:
 
 ### Entry Point (`main.py`)
 
-FastAPI app with REST + WebSocket. Instantiates `AgentEngine`, manages per-dialog state (`_status`, `_streaming_msg`), broadcasts events to all connected WebSocket clients. Key routes:
-- `POST /api/dialogs` — create dialog
+FastAPI app with REST + WebSocket. Uses `DialogSessionManager` as the single source of truth for dialog state. Key components:
+- `DialogSessionManager` — manages dialog lifecycle and message history
+- `EventCoordinator` — bridges Runtime events to WebSocket broadcasts
+- Background tasks handle agent execution
+
+Key routes:
+- `POST /api/dialogs` — create dialog (via `SessionManager.create_session()`)
 - `POST /api/dialogs/{id}/messages` — send message (spawns background agent task)
 - `WebSocket /ws/{client_id}` — real-time event stream
 
@@ -78,6 +83,42 @@ FastAPI app with REST + WebSocket. Instantiates `AgentEngine`, manages per-dialo
 | SkillManager | `core/managers/skill_manager.py` | Dynamic skill loading |
 
 All managers communicate via `runtime/event_bus.py`.
+
+### Dialog Session Manager (`core/session/`)
+
+Centralized dialog lifecycle management using LangChain's `InMemoryChatMessageHistory`:
+
+```python
+from core.session import DialogSessionManager, SessionStatus
+
+mgr = DialogSessionManager()
+
+# Create session
+session = await mgr.create_session("dlg_001", "Test Dialog")
+
+# Add user message (stored in LangChain history)
+await mgr.add_user_message("dlg_001", "Hello")
+
+# Start streaming (marks status, doesn't store content)
+await mgr.start_ai_response("dlg_001", "msg_001")
+
+# Forward delta to frontend (not stored)
+await mgr.emit_delta("dlg_001", "Hi ")
+
+# Complete response (stores final message in history)
+await mgr.complete_ai_response("dlg_001", "msg_001", "Hi there!")
+```
+
+**Key Design:**
+- **Message Storage**: Uses `InMemoryChatMessageHistory` (LangChain) — only final messages stored
+- **Delta Handling**: Forwarded via events, not accumulated in memory
+- **Lifecycle States**: `CREATING → ACTIVE → STREAMING → COMPLETED → CLOSED`
+- **Cleanup**: TTL (30min) + LRU eviction when max sessions reached
+
+**Files:**
+- `core/session/manager.py` — `DialogSessionManager` class
+- `core/session/models.py` — `DialogSession`, `SessionStatus`, `SessionEvent`
+- `core/session/exceptions.py` — `SessionNotFoundError`, `InvalidTransitionError`
 
 ### Agent Loop (`core/agent/`)
 
@@ -126,13 +167,16 @@ Skills are loaded dynamically by `SkillManager`.
 ### WebSocket Event Flow
 
 1. User sends message → `POST /api/dialogs/{id}/messages`
-2. Background task runs `AgentEngine.send_message()` → streams chunks
-3. `main.py` broadcasts typed events to all WebSocket clients:
-   - `dialog:snapshot` — full dialog state
-   - `stream:delta` — streaming content chunk
-   - `status:change` — `idle → thinking → completed/error`
+2. Background task runs `AgentEngine.send_message()`:
+   - Uses `DialogSessionManager` to store messages
+   - Streams chunks via `AgentEvent`
+3. `EventCoordinator` receives events, updates `SessionManager` state
+4. `main.py` broadcasts typed events to all WebSocket clients:
+   - `dialog:snapshot` — full dialog state (from `SessionManager.build_snapshot()`)
+   - `stream:delta` — streaming content chunk (forwarded, not stored)
+   - `status:change` — `idle → thinking → streaming → completed/error`
    - `error` — error details
-4. Frontend receives events → updates Zustand stores → re-renders
+5. Frontend receives events → updates Zustand stores → re-renders
 
 ### Code Size Limits
 

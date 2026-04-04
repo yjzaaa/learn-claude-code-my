@@ -3,16 +3,17 @@
 import { useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useMessageStore, type ChatSession } from "@/hooks/useMessageStore";
+import type { DialogSummary } from "@/types/dialog";
 import { Plus, MessageSquare, Settings } from "lucide-react";
 
 interface SessionSidebarProps {
+  dialogs: DialogSummary[];
   activeDialogId: string;
-  onSelectDialog: (dialog: ChatSession) => void;
+  onSelectDialog: (dialog: DialogSummary) => void;
   onNewChat: () => void;
 }
 
-function formatTime(ts: number): string {
+function formatTime(ts: string): string {
   const d = new Date(ts);
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
@@ -23,12 +24,11 @@ function formatTime(ts: number): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export function SessionSidebar({ activeDialogId, onSelectDialog, onNewChat }: SessionSidebarProps) {
-  const { dialogs } = useMessageStore();
+export function SessionSidebar({ dialogs, activeDialogId, onSelectDialog, onNewChat }: SessionSidebarProps) {
   const params = useParams();
   const locale = (params?.locale as string) || "zh";
 
-  const sorted = [...dialogs].sort((a, b) => b.updated_at - a.updated_at);
+  const sorted = [...dialogs].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
 
   return (
     <div
@@ -153,9 +153,9 @@ export function SessionSidebar({ activeDialogId, onSelectDialog, onNewChat }: Se
 }
 
 interface SessionItemProps {
-  dialog: ChatSession;
+  dialog: DialogSummary;
   isActive: boolean;
-  onSelect: (dialog: ChatSession) => void;
+  onSelect: (dialog: DialogSummary) => void;
 }
 
 function SessionItem({ dialog, isActive, onSelect }: SessionItemProps) {
@@ -203,7 +203,7 @@ function SessionItem({ dialog, isActive, onSelect }: SessionItemProps) {
           justifyContent: "space-between",
         }}
       >
-        <span>{dialog.messages.length} 条</span>
+        <span>{dialog.message_count} 条</span>
         <span>{formatTime(dialog.updated_at)}</span>
       </div>
     </button>

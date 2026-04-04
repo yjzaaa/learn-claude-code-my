@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { MessageSquare } from "lucide-react";
-import { useMessageStore } from "@/hooks/useMessageStore";
+import { useAgentStore } from "@/agent/agent-store";
 import { useAgentApi } from "@/hooks/useAgentApi";
 import { MessageItem } from "./MessageItem";
 import { InputArea, type SendOptions } from "./InputArea";
@@ -12,8 +12,17 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ dialogId }: ChatAreaProps) {
-  const { messages, isStreaming } = useMessageStore();
+  const currentSnapshot = useAgentStore((s) => s.currentSnapshot);
+  const messages = currentSnapshot?.messages || [];
+  const streamingMessage = currentSnapshot?.streaming_message;
+  const isStreaming = currentSnapshot?.status === "thinking" && !!streamingMessage;
   const { sendMessage, stopAgent } = useAgentApi();
+
+  const displayMessages = useMemo(() => {
+    if (!streamingMessage) return messages;
+    const exists = messages.some((m) => m.id === streamingMessage.id);
+    return exists ? messages : [...messages, streamingMessage];
+  }, [messages, streamingMessage]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
@@ -23,7 +32,7 @@ export function ChatArea({ dialogId }: ChatAreaProps) {
     if (isAtBottomRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [displayMessages]);
 
   // Track scroll position to decide whether to auto-scroll
   const handleScroll = useCallback(() => {
@@ -47,7 +56,7 @@ export function ChatArea({ dialogId }: ChatAreaProps) {
   }, [stopAgent]);
 
   const hasDialog = Boolean(dialogId);
-  const hasMessages = messages.length > 0;
+  const hasMessages = displayMessages.length > 0;
 
   return (
     <div
@@ -108,8 +117,8 @@ export function ChatArea({ dialogId }: ChatAreaProps) {
             </div>
           )}
 
-          {messages.map((msg, i) => {
-            const isLast = i === messages.length - 1;
+          {displayMessages.map((msg, i) => {
+            const isLast = i === displayMessages.length - 1;
             return (
               <MessageItem
                 key={msg.id ?? i}

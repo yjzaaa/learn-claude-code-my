@@ -261,25 +261,26 @@ class WSDialogSnapshot(TypedDict):
     updated_at: str
 
 
-# status:change event — 'from' 是 Python 保留字，用 functional form 定义
-WSStatusChangeEvent = TypedDict("WSStatusChangeEvent", {
-    "type": str,
-    "dialog_id": str,
-    "from": str,
-    "to": str,
-    "timestamp": int,
-})
+# status:change event — 符合前端期望的嵌套 data 格式
+class WSStatusChangeEvent(TypedDict):
+    """status:change 事件 - 符合前端期望的嵌套 data 格式"""
+    type: str
+    dialog_id: str
+    data: dict[str, str]  # { "from": ..., "to": ... }
+    timestamp: int
 
 
 def make_status_change(dialog_id: str, from_: str, to: str, timestamp: int) -> WSStatusChangeEvent:
-    """构造 status:change 事件（绕过 'from' 保留字限制）"""
-    return WSStatusChangeEvent(**{  # type: ignore[misc]
+    """构造 status:change 事件（符合前端期望的嵌套 data 格式）"""
+    return {
         "type": "status:change",
         "dialog_id": dialog_id,
-        "from": from_,
-        "to": to,
+        "data": {
+            "from": from_,
+            "to": to,
+        },
         "timestamp": timestamp,
-    })
+    }
 
 
 class WSSnapshotEvent(TypedDict):

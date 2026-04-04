@@ -10,7 +10,7 @@ from typing import AsyncIterator, Callable, Optional, Any
 from loguru import logger
 
 from core.agent.runtimes.manager_runtime import ManagerAwareRuntime
-# from core.agent.simple.agent import SimpleAgent  # 已删除
+from core.session import DialogSessionManager
 from core.models.config import EngineConfig
 from core.models.api import MessageDTO, ToolCallDTO, ToolCallFunctionDTO
 from core.models.entities import ToolCall
@@ -18,7 +18,7 @@ from core.models.types import MessageDict, ToolCallDict
 from core.models.events import ErrorOccurred, AgentRoundsLimitReached, ToolStartData
 from core.plugins import PluginManager, CompactPlugin
 from core.tools import WorkspaceOps
-from core.types import AgentEvent, ToolResult
+from core.models.agent_events import AgentEvent
 
 
 class SimpleRuntime(ManagerAwareRuntime):
@@ -34,6 +34,11 @@ class SimpleRuntime(ManagerAwareRuntime):
     @property
     def agent_type(self) -> str:
         return "simple"
+
+    @property
+    def session_manager(self) -> Optional[DialogSessionManager]:
+        """获取 SessionManager 实例"""
+        return self._session_mgr
 
     async def _do_initialize(self) -> None:
         """初始化 SimpleRuntime 特定组件"""
@@ -103,16 +108,29 @@ class SimpleRuntime(ManagerAwareRuntime):
         stream: bool = True,
         message_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """发送消息，返回流式事件"""
-        await self._dialog_mgr.add_user_message(dialog_id, message)
+        """发送消息，返回流式事件（使用 SessionManager 管理状态）"""
+
+        # 使用 SessionManager 管理对话状态
+        if self._session_mgr is not None:
+            # 确保会话存在
+            session = await self._session_mgr.get_session(dialog_id)
+            if session is None:
+                await self._session_mgr.create_session(dialog_id, title="New Dialog")
+
+            # 添加用户消息
+            await self._session_mgr.add_user_message(dialog_id, message)
+            messages = await self._session_mgr.get_messages_for_llm(dialog_id)
+        else:
+            # 回退到旧方式
+            await self._dialog_mgr.add_user_message(dialog_id, message)
+            messages = self._dialog_mgr.get_messages_for_llm(dialog_id)
+
         logger.info(f"[{self.__class__.__name__}] User message: dialog={dialog_id}")
 
         provider = self._provider_mgr.default
         if not provider:
             yield AgentEvent(type="error", data="Error: No provider available")
             return
-
-        messages = self._dialog_mgr.get_messages_for_llm(dialog_id)
 
         system_prompt = self._build_system_prompt()
         if system_prompt:
@@ -188,13 +206,16 @@ class SimpleRuntime(ManagerAwareRuntime):
                     )
 
                     yield AgentEvent(
-                        type="tool_start",
-                        data=ToolStartData(
-                            dialog_id=dialog_id,
-                            tool_call_id=tc.get("id", "call_0"),
-                            tool_name=tc["name"],
-                            arguments=tc["arguments"] if isinstance(tc["arguments"], dict) else {}
-                        ),
+                        type="tool_call",
+                        data={
+                            "message_id": message_id or "unknown",
+                            "tool_call": {
+                                "id": tc.get("id", "call_0"),
+                                "name": tc["name"],
+                                "arguments": tc["arguments"] if isinstance(tc["arguments"], dict) else {},
+                                "status": "pending",
+                            },
+                        },
                     )
 
                     result = await self._tool_mgr.execute(dialog_id, tool_call)
@@ -206,17 +227,31 @@ class SimpleRuntime(ManagerAwareRuntime):
                     ))
 
                     yield AgentEvent(
-                        type="tool_end",
-                        data=ToolResult(
-                            tool_name=tc["name"],
-                            tool_call_id=tc.get("id", "call_0"),
-                            output=str(result)
-                        ),
+                        type="tool_result",
+                        data={
+                            "tool_name": tc["name"],
+                            "tool_call_id": tc.get("id", "call_0"),
+                            "result": str(result),
+                        },
                         metadata={"tool_call_id": tc.get("id", "call_0")}
                     )
 
-            await self._dialog_mgr.add_assistant_message(dialog_id, assistant_text, message_id=message_id)
-            yield AgentEvent(type="complete", data=assistant_text)
+            # 使用 SessionManager 保存完整 AI 回复
+            logger.info(f"[SimpleRuntime] Saving AI response for {dialog_id}, text_len={len(assistant_text)}, _session_mgr={self._session_mgr is not None}")
+            if self._session_mgr is not None:
+                try:
+                    await self._session_mgr.complete_ai_response(
+                        dialog_id,
+                        message_id or "msg_unknown",
+                        assistant_text,
+                        metadata={"rounds": _round}
+                    )
+                    logger.info(f"[SimpleRuntime] AI response saved successfully for {dialog_id}")
+                except Exception as e:
+                    logger.error(f"[SimpleRuntime] Failed to save AI response for {dialog_id}: {e}")
+            else:
+                await self._dialog_mgr.add_assistant_message(dialog_id, assistant_text, message_id=message_id)
+            yield AgentEvent(type="message_complete", data=assistant_text)
 
         except Exception as e:
             logger.exception(f"[{self.__class__.__name__}] Error: {e}")
