@@ -230,6 +230,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         logger.info(f"[DeepAgentRuntime] Initialized: {self._agent_id} (using flexible AgentBuilder)")
 
     @staticmethod
+    @staticmethod
     def _extract_text_content(msg: dict) -> str:
         """从 message dict 中安全提取文本内容，兼容 str / list / dict"""
         raw = msg.get("data", {}).get("content", "") if isinstance(msg, dict) else ""
@@ -247,6 +248,28 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                     parts.append(block)
             return "".join(parts)
         return str(raw)
+
+    @classmethod
+    def _merge_system_messages(cls, messages: list[dict]) -> list[dict]:
+        """合并所有 system 消息到列表最前面，满足 Anthropic 格式要求。"""
+        system_parts: list[str] = []
+        others: list[dict] = []
+        for msg in messages:
+            role = msg.get("role") or msg.get("type", "")
+            if role == "system":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    system_parts.append(content)
+                elif isinstance(content, list):
+                    system_parts.append(cls._extract_text_content(msg))
+                else:
+                    system_parts.append(str(content))
+            else:
+                others.append(msg)
+        if system_parts:
+            merged_system = {"role": "system", "content": "\n\n".join(system_parts)}
+            return [merged_system] + others
+        return others
 
     def _load_skill_scripts(self) -> None:
         """加载技能脚本中的工具（如 run_sql_query）"""
@@ -390,6 +413,11 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             user_msg = UserMessageModel(role="user", content=message)
             messages = [user_msg.model_dump() if isinstance(user_msg, BaseModel) else {"role": "user", "content": message}]
             ai_message_id = message_id or f"msg_{id(message)}"
+
+        # Anthropic 要求所有 system 消息必须连续出现在最开头，不能夹杂在对话中间。
+        # 中间件（如 TodoListMiddleware、SkillsMiddleware）可能在历史消息中插入了 system 消息，
+        # 因此需要在传给模型前把它们合并到第一条。
+        messages = self._merge_system_messages(messages)
 
         # 配置 thread_id 用于持久化，同时支持通过环境变量调整 recursion_limit
         import os
