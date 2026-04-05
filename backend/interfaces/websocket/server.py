@@ -5,19 +5,20 @@ WebSocket Server - WebSocket 服务器
 """
 
 import json
-import logging
 from typing import Any, Dict, Optional, Set
+
+from backend.infrastructure.logging import get_logger
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.application.engine import AgentEngine
 from backend.domain.models.shared.types import WSStreamDeltaMessage, WSDialogCreatedMessage, WSEventMessage
-from backend.infrastructure.runtime.event_bus import EventBus
+from backend.infrastructure.event_bus import EventBus
 from backend.domain.models.events import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, ToolCallStarted, ToolCallCompleted
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ConnectionManager:

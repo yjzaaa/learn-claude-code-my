@@ -1,0 +1,85 @@
+# Pre-commit hooks configuration
+# Install: pre-commit install
+# Run all: pre-commit run --all-files
+# Run single: pre-commit run ruff
+
+default_stages: [pre-commit]
+
+repos:
+  # ═════════════════════════════════════════════════════════════════
+  # Ruff - Python linter and formatter (replaces flake8, black, isort)
+  # ═════════════════════════════════════════════════════════════════
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff-lint
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^backend/.*\.py$
+        exclude: ^(\.venv|logs|tmp|web|workspace)/
+      - id: ruff-format
+        name: ruff-format
+        files: ^backend/.*\.py$
+        exclude: ^(\.venv|logs|tmp|web|workspace)/
+
+  # ═════════════════════════════════════════════════════════════════
+  # MyPy - Static type checking
+  # ═════════════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        name: mypy-type-check
+        additional_dependencies:
+          - pydantic>=2.0
+          - types-python-dateutil
+          - types-requests
+        files: ^backend/.*\.py$
+        exclude: ^(\.venv|logs|tmp|web|workspace|tests)/
+        args: [--ignore-missing-imports, --show-error-codes]
+
+  # ═════════════════════════════════════════════════════════════════
+  # Basic file checks
+  # ═════════════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(logs|tmp|web|workspace)/
+      - id: end-of-file-fixer
+        exclude: ^(logs|tmp|web|workspace)/
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # ═════════════════════════════════════════════════════════════════
+  # Python specific checks
+  # ═════════════════════════════════════════════════════════════════
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-no-eval
+      - id: python-no-log-warn
+
+  # ═════════════════════════════════════════════════════════════════
+  # Local hooks - Bare dict checker (custom script)
+  # ═════════════════════════════════════════════════════════════════
+  - repo: local
+    hooks:
+      - id: check-bare-dicts
+        name: Check for bare dict literals
+        entry: .venv-new/Scripts/python.exe scripts/check_bare_dicts.py
+        language: script
+        files: ^backend/.*\.py$
+        exclude: ^(\.venv|logs|tmp|web|workspace|tests)/
+        pass_filenames: false  # Script checks entire backend directory
+        always_run: false

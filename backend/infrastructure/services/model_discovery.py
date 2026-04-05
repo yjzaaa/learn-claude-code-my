@@ -1,51 +1,45 @@
 """
 Model Discovery - 模型发现服务
 
-负责从 .env 文件发现所有配置的 API key，并测试模型连通性。
-参考: tests/test_freeform_provider_discovery.py, tests/test_deep_with_discovered_models.py
+后台异步发现和缓存可用 LLM 模型配置，不阻塞主线程启动。
+优化策略：根据 URL 只测试相关模型，减少无意义请求。
 """
 
 import asyncio
-import logging
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
-logger = logging.getLogger(__name__)
+from backend.infrastructure.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
 class Credential:
     """API 凭证"""
-    key_var: str          # 环境变量名，如 DEEPSEEK_API_KEY
-    api_key: str          # key 值
-    url_var: Optional[str]  # 对应的 URL 变量名
-    base_url: Optional[str]  # URL 值
+    key_var: str
+    api_key: str
+    url_var: Optional[str]
+    base_url: Optional[str]
 
 
 @dataclass
 class ModelConfig:
     """发现的模型配置"""
-    model_id: str         # 模型标识，如 "deepseek/deepseek-chat"
-    key_var: str          # API key 环境变量名
-    api_key: str          # API key 值
-    base_url: Optional[str]  # Base URL
-    client_type: str      # "ChatLiteLLM" 或 "ChatAnthropic"
-    provider: str         # 提供商名称，如 "deepseek", "kimi"
+    model_id: str
+    key_var: str
+    api_key: str
+    base_url: Optional[str]
+    client_type: str
+    provider: str
+    response_time_ms: float = 0.0
 
 
 def discover_credentials(project_root: Optional[Path] = None) -> list[Credential]:
-    """
-    从 .env 文件发现所有配置的 API key（只读非注释行）
-
-    Args:
-        project_root: 项目根目录，默认为当前文件的上级目录
-
-    Returns:
-        Credential 列表
-
-    Reference: test_freeform_provider_discovery.py::discover_all_credentials()
-    """
+    """从 .env 文件发现所有配置的 API key"""
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -53,24 +47,18 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
     credentials = []
 
     if not env_path.exists():
-        logger.warning(f"[ModelDiscovery] .env file not found at {env_path}")
         return credentials
 
     configured_keys: dict[str, str] = {}
 
-    # 从 .env 文件读取，只获取非注释的配置
     with open(env_path, "r", encoding="utf-8") as f:
         for line in f:
             line_stripped = line.strip()
             if not line_stripped or "=" not in line:
                 continue
 
-            # 检查是否是注释行
             is_commented = line_stripped.startswith("#")
-            if is_commented:
-                line_content = line_stripped[1:].strip()
-            else:
-                line_content = line_stripped
+            line_content = line_stripped[1:].strip() if is_commented else line_stripped
 
             if "=" not in line_content:
                 continue
@@ -79,29 +67,21 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
             key = key.strip()
             value = value.strip().strip('"').strip("'")
 
-            if key and value and key.endswith("_API_KEY"):
-                # 只保存非注释的配置
-                if not is_commented:
-                    configured_keys[key] = value
+            if key and value and key.endswith("_API_KEY") and not is_commented:
+                configured_keys[key] = value
 
-    # 为每个配置的 key 创建 Credential
     for key, value in configured_keys.items():
         base_key = key.replace("_API_KEY", "")
         url_var = f"{base_key}_BASE_URL"
 
-        # 从 .env 读取对应的 URL（也检查是否注释）
         base_url = None
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 line_stripped = line.strip()
                 if line_stripped.startswith(url_var + "="):
-                    # 非注释行
                     _, url_val = line_stripped.split("=", 1)
                     base_url = url_val.strip().strip('"').strip("'")
                     break
-                elif line_stripped.startswith("#" + url_var + "=") or line_stripped.startswith("# " + url_var + "="):
-                    # 注释掉的 URL，跳过
-                    continue
 
         credentials.append(Credential(
             key_var=key,
@@ -110,7 +90,6 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
             base_url=base_url,
         ))
 
-    logger.info(f"[ModelDiscovery] Discovered {len(credentials)} API keys: {[c.key_var for c in credentials]}")
     return credentials
 
 
@@ -133,6 +112,53 @@ def detect_provider_from_url(base_url: Optional[str]) -> Optional[str]:
     return None
 
 
+def get_models_for_provider(provider: str) -> list[str]:
+    """
+    根据 provider 获取最可能成功的模型列表
+    只返回与该 provider 真正相关的模型，避免无意义混搭
+    """
+    provider_models = {
+        "deepseek": [
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-reasoner",
+        ],
+        "anthropic": [
+            "anthropic/claude-sonnet-4-6",
+            "claude-sonnet-4-6",
+        ],
+        "kimi": [
+            "kimi-k2-coding",
+            "kimi-k2.5",
+        ],
+        "openai": [
+            "openai/gpt-4o",
+            "gpt-4o",
+        ],
+    }
+
+    # 返回该 provider 的模型，加上通用格式
+    models = provider_models.get(provider, [])
+    return models if models else [f"{provider}/test-model"]
+
+
+async def _test_with_timeout(model, timeout: float = 10.0) -> tuple[bool, str]:
+    """带超时的模型测试"""
+    messages = [{"role": "user", "content": "Say 'OK' and nothing else"}]
+
+    try:
+        async with asyncio.timeout(timeout):
+            response_chunks = []
+            async for chunk in model.astream(messages):
+                content = getattr(chunk, "content", str(chunk))
+                if content:
+                    response_chunks.append(content)
+
+            full_response = "".join(response_chunks).strip()
+            return bool(full_response), full_response
+    except asyncio.TimeoutError:
+        return False, "timeout"
+
+
 async def _try_chatlitellm(model_name: str, api_key: str, base_url: Optional[str]):
     """尝试使用 ChatLiteLLM 创建模型"""
     from langchain_community.chat_models import ChatLiteLLM
@@ -150,141 +176,90 @@ async def _try_chatlitellm(model_name: str, api_key: str, base_url: Optional[str
     if base_url:
         kwargs["api_base"] = base_url
 
-    model = ChatLiteLLM(**kwargs)
-    return model
+    return ChatLiteLLM(**kwargs)
 
 
 async def _try_chatanthropic(model_name: str, api_key: str, base_url: Optional[str]):
     """尝试使用 ChatAnthropic 创建模型"""
     from langchain_anthropic import ChatAnthropic
 
-    # 清理模型名称中的 provider 前缀
     clean_model = model_name.replace("anthropic/", "").replace("openai/", "")
 
-    model = ChatAnthropic(
+    return ChatAnthropic(
         model=clean_model,
         api_key=api_key,
         anthropic_api_url=base_url,
         temperature=0.7,
     )
-    return model
 
 
-async def _test_model_streaming(model) -> tuple[bool, str]:
-    """测试模型流式调用，返回 (success, response_or_error)"""
-    messages = [{"role": "user", "content": "Say 'OK' and nothing else"}]
-
-    response_chunks = []
-    async for chunk in model.astream(messages):
-        content = getattr(chunk, "content", str(chunk))
-        if content:
-            response_chunks.append(content)
-
-    full_response = "".join(response_chunks).strip()
-    return bool(full_response), full_response
-
-
-async def test_model_connectivity(
-    model_id: str,
+async def test_single_model(
+    model_name: str,
     api_key: str,
     base_url: Optional[str],
     provider: str,
 ) -> Optional[ModelConfig]:
     """
-    测试单个模型配置的连通性，检测应该使用的客户端类型
-
-    Args:
-        model_id: 模型标识，如 "deepseek/deepseek-chat"
-        api_key: API key
-        base_url: Base URL
-        provider: 提供商名称
-
-    Returns:
-        ModelConfig 如果测试成功，None 如果失败
-
-    Reference: test_deep_with_discovered_models.py::test_model_in_deep_context()
+    测试单个模型配置，带超时控制
     """
-    logger.debug(f"[ModelDiscovery] Testing {model_id} (provider: {provider})")
+    import time
+    start_time = time.time()
 
-    # 步骤 1: 尝试 ChatLiteLLM
+    # 步骤 1: 尝试 ChatLiteLLM（10秒超时）
     try:
-        model = await _try_chatlitellm(model_id, api_key, base_url)
-        success, _ = await _test_model_streaming(model)
+        model = await _try_chatlitellm(model_name, api_key, base_url)
+        success, _ = await _test_with_timeout(model, timeout=10.0)
         if success:
-            logger.info(f"[ModelDiscovery] {model_id} works with ChatLiteLLM")
+            elapsed = (time.time() - start_time) * 1000
             return ModelConfig(
-                model_id=model_id,
-                key_var="",  # 将在上层填充
+                model_id=model_name,
+                key_var="",
                 api_key=api_key,
                 base_url=base_url,
                 client_type="ChatLiteLLM",
                 provider=provider,
+                response_time_ms=elapsed,
             )
-    except Exception as e:
-        logger.debug(f"[ModelDiscovery] {model_id} ChatLiteLLM failed: {e}")
+    except Exception:
+        pass
 
-    # 步骤 2: 尝试 ChatAnthropic（适用于 kimi 或 anthropic 格式）
+    # 步骤 2: 尝试 ChatAnthropic（仅适用于 anthropic/kimi，10秒超时）
     should_try_anthropic = (
-        provider == "anthropic" or
-        "claude" in model_id.lower() or
-        "kimi" in model_id.lower() or
-        "kimi" in (base_url or "").lower()
+        provider in ("anthropic", "kimi") or
+        "claude" in model_name.lower() or
+        "kimi" in model_name.lower()
     )
 
     if should_try_anthropic:
         try:
-            model = await _try_chatanthropic(model_id, api_key, base_url)
-            success, _ = await _test_model_streaming(model)
+            model = await _try_chatanthropic(model_name, api_key, base_url)
+            success, _ = await _test_with_timeout(model, timeout=10.0)
             if success:
-                logger.info(f"[ModelDiscovery] {model_id} works with ChatAnthropic")
+                elapsed = (time.time() - start_time) * 1000
                 return ModelConfig(
-                    model_id=model_id,
-                    key_var="",  # 将在上层填充
+                    model_id=model_name,
+                    key_var="",
                     api_key=api_key,
                     base_url=base_url,
                     client_type="ChatAnthropic",
                     provider=provider,
+                    response_time_ms=elapsed,
                 )
-        except Exception as e:
-            logger.debug(f"[ModelDiscovery] {model_id} ChatAnthropic failed: {e}")
+        except Exception:
+            pass
 
-    logger.warning(f"[ModelDiscovery] {model_id} failed all connectivity tests")
     return None
-
-
-# 预定义的测试模型列表
-TEST_MODELS: dict[str, list[str]] = {
-    "deepseek": [
-        "deepseek/deepseek-chat",
-        "deepseek/deepseek-reasoner",
-    ],
-    "anthropic": [
-        "anthropic/claude-sonnet-4-6",
-        "claude-sonnet-4-6",
-    ],
-    "kimi": [
-        "kimi-k2-coding",
-    ],
-    "openai": [
-        "openai/gpt-4o",
-        "gpt-4o",
-    ],
-}
 
 
 async def discover_available_models(project_root: Optional[Path] = None) -> list[ModelConfig]:
     """
-    发现所有可用的模型配置
+    发现所有可用的模型配置（优化版本）
 
-    1. 从 .env 读取所有 API key
-    2. 为每个 key 测试预定义的模型列表
-    3. 返回所有成功连通的模型配置
-
-    Args:
-        project_root: 项目根目录
-
-    Returns:
-        ModelConfig 列表，每个包含 client_type
+    策略：
+    1. 根据 URL 识别 provider
+    2. 只测试该 provider 相关的模型（减少无意义请求）
+    3. 每个请求 10 秒超时
+    4. 并发限制 5
     """
     credentials = discover_credentials(project_root)
     if not credentials:
@@ -292,23 +267,24 @@ async def discover_available_models(project_root: Optional[Path] = None) -> list
         return []
 
     all_configs: list[ModelConfig] = []
-    semaphore = asyncio.Semaphore(3)  # 限制并发数
+    semaphore = asyncio.Semaphore(5)  # 限制并发
 
-    async def test_credential_models(cred: Credential):
-        """测试单个 credential 的所有模型"""
-        async with semaphore:
-            # 检测 provider
-            provider_from_url = detect_provider_from_url(cred.base_url)
-            provider_from_key = cred.key_var.replace("_API_KEY", "").lower()
-            provider = provider_from_url or provider_from_key
+    async def test_credential(cred: Credential) -> list[ModelConfig]:
+        """测试单个 credential 的相关模型"""
+        # 检测 provider（优先从 URL）
+        provider_from_url = detect_provider_from_url(cred.base_url)
+        provider_from_key = cred.key_var.replace("_API_KEY", "").lower()
+        provider = provider_from_url or provider_from_key
 
-            # 获取测试模型列表
-            models_to_test = TEST_MODELS.get(provider, [f"{provider}/test-model"])
+        # 只获取该 provider 相关的模型
+        models_to_test = get_models_for_provider(provider)
+        logger.info(f"[ModelDiscovery] Testing {len(models_to_test)} models for {provider}")
 
-            configs = []
-            for model_id in models_to_test:
-                config = await test_model_connectivity(
-                    model_id=model_id,
+        configs = []
+        for model_name in models_to_test:
+            async with semaphore:
+                config = await test_single_model(
+                    model_name=model_name,
                     api_key=cred.api_key,
                     base_url=cred.base_url,
                     provider=provider,
@@ -316,14 +292,12 @@ async def discover_available_models(project_root: Optional[Path] = None) -> list
                 if config:
                     config.key_var = cred.key_var
                     configs.append(config)
+                    logger.info(f"[ModelDiscovery] ✓ {model_name} ({config.client_type}, {config.response_time_ms:.0f}ms)")
 
-                # 间隔避免限流
-                await asyncio.sleep(0.5)
-
-            return configs
+        return configs
 
     # 并行测试所有 credential
-    tasks = [test_credential_models(cred) for cred in credentials]
+    tasks = [test_credential(cred) for cred in credentials]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:
@@ -332,8 +306,12 @@ async def discover_available_models(project_root: Optional[Path] = None) -> list
         elif isinstance(result, Exception):
             logger.error(f"[ModelDiscovery] Credential test failed: {result}")
 
-    logger.info(f"[ModelDiscovery] Found {len(all_configs)} available models")
-    for config in all_configs:
-        logger.info(f"  - {config.model_id} ({config.client_type})")
+    # 按响应时间排序
+    all_configs.sort(key=lambda x: x.response_time_ms)
 
+    logger.info(f"[ModelDiscovery] Found {len(all_configs)} available models")
     return all_configs
+
+
+# 向后兼容的别名
+discover_all_credentials = discover_credentials

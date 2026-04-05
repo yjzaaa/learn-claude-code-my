@@ -12,6 +12,7 @@ Deep Agent 专用日志：
 import sys
 import os
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 from loguru import logger
@@ -164,6 +165,66 @@ def get_deep_value_logger() -> "Logger":
     return deep_value_logger
 
 
+class WarningRedirectHandler:
+    """将 warnings 重定向到专用日志文件，不输出到控制台"""
+
+    def __init__(self, log_dir: str = "logs/deep"):
+        self._original_showwarning = None
+        self._original_formatwarning = None
+        self.log_dir = Path(log_dir)
+        self._log_file = self.log_dir / "serialization_warnings.jsonl"
+
+    def install(self):
+        """安装 warnings 处理器"""
+        self._original_showwarning = warnings.showwarning
+        self._original_formatwarning = warnings.formatwarning
+
+        # 替换为自定义处理器
+        warnings.showwarning = self._showwarning
+        warnings.formatwarning = self._formatwarning
+
+        # 确保目录存在
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+        # 忽略 Pydantic 序列化警告在控制台的显示
+        warnings.filterwarnings("ignore", message=".*PydanticSerialization.*")
+        warnings.filterwarnings("ignore", message=".*Expected.*Message.*")
+
+    def _formatwarning(self, message, category, filename, lineno, line=None):
+        """格式化警告为简洁格式"""
+        return f"{category.__name__}: {message}"
+
+    def _showwarning(self, message, category, filename, lineno, file=None, line=None):
+        """处理警告消息 - 写入文件，不输出到控制台"""
+        # 构造条目
+        import json
+        from datetime import datetime
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "category": category.__name__,
+            "message": str(message),
+            "filename": filename,
+            "lineno": lineno,
+        }
+
+        # 写入 JSONL 文件
+        try:
+            with open(self._log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                f.flush()
+        except Exception as e:
+            # 如果写入失败，使用原始方式（但这种情况应该很少）
+            if self._original_showwarning:
+                self._original_showwarning(message, category, filename, lineno, file, line)
+
+        # 同时记录到 loguru 日志（仅文件，不控制台）
+        # 使用 bind 标记为 warning，但控制台 sink 会过滤掉
+        logger.bind(warning_category=category.__name__).opt(depth=2).warning(
+            f"{category.__name__}: {message} [{filename}:{lineno}]"
+        )
+
+
 def setup_logging():
     """配置统一日志系统
 
@@ -173,6 +234,7 @@ def setup_logging():
     3. 添加文件输出（带轮转）
     4. 初始化 Deep Agent 专用 loggers
     5. 拦截标准库日志
+    6. 重定向 warnings 到日志文件
     """
     # 移除默认处理器
     logger.remove()
@@ -230,10 +292,13 @@ def setup_logging():
     logger.info(f"Logging configured: level={LOG_LEVEL}, file={LOG_FILE}")
     logger.info(f"Deep Agent logs: dir={DEEP_LOG_DIR}, rotation={DEEP_LOG_ROTATION}")
 
+    # 重定向 warnings 到日志文件
+    WarningRedirectHandler().install()
+
 
 # 导出配置好的 logger
 __all__ = [
-    "logger", "setup_logging", "InterceptHandler",
+    "logger", "setup_logging", "InterceptHandler", "WarningRedirectHandler",
     "deep_msg_logger", "deep_update_logger", "deep_value_logger",
     "get_deep_msg_logger", "get_deep_update_logger", "get_deep_value_logger",
 ]

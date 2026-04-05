@@ -4,21 +4,22 @@
 """
 
 import asyncio
-import logging
 
 from fastapi import APIRouter, HTTPException
 
 from backend.infrastructure.container import container
+from backend.infrastructure.logging import get_logger
 from backend.domain.services.dialog_service import (
     DialogService,
     build_dialog_snapshot,
     generate_message_id,
 )
+from backend.domain.utils import timestamp_ms
 from backend.domain.models.types import SendMessageBody, APISendMessageData
 from backend.domain.models.events.agent_events import AgentExecuteRequest
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @router.post("/api/dialogs/{dialog_id}/messages")

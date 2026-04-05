@@ -6,15 +6,16 @@
 from __future__ import annotations
 
 import json
-import logging
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.infrastructure.container import container
-from backend.domain.services.dialog_service import build_dialog_snapshot, timestamp_ms
+from backend.infrastructure.logging import get_logger
+from backend.domain.services.dialog_service import build_dialog_snapshot
+from backend.domain.utils import timestamp_ms
 from backend.interfaces.websocket.broadcast import _get_or_create_buffer, cleanup_client
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def handle_websocket(websocket: WebSocket, client_id: str) -> None:

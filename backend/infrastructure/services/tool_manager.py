@@ -5,19 +5,22 @@ Tool Manager - 工具管理器
 与 core.tools.ToolRegistry 集成。
 """
 
-from typing import Optional, Callable
+from typing import Optional, Callable, TYPE_CHECKING
 import asyncio
-import logging
 
-from backend.infrastructure.tools import ToolRegistry, WorkspaceOps
+from backend.infrastructure.tools import ToolRegistry
+from backend.infrastructure.tools.workspace import WorkspaceOps
+from backend.infrastructure.logging import get_logger
 from backend.domain.models.agent.tool_call import ToolCall
 from backend.domain.models.events.base import ToolCallStarted, ToolCallCompleted, ToolCallFailed
 from backend.domain.models.shared.config import ToolManagerConfig
 from backend.domain.models.agent.tool import ToolInfo
 from backend.domain.models.shared.types import JSONSchema, OpenAIToolSchema, ToolSpec
-from backend.infrastructure.runtime.event_bus import EventBus
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from backend.infrastructure.event_bus import EventBus
+
+logger = get_logger(__name__)
 
 
 class ToolManager:
@@ -36,7 +39,7 @@ class ToolManager:
     
     def __init__(
         self,
-        event_bus: EventBus,
+        event_bus: 'EventBus',
         workspace_ops: Optional[WorkspaceOps] = None,
         config: Optional[ToolManagerConfig] = None
     ):

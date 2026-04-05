@@ -23,13 +23,13 @@ Example:
 """
 
 import asyncio
-import logging
 from typing import Callable, Optional, List, Any
 
 from backend.domain.models.events import BaseEvent, EventPriority
 from backend.infrastructure.queue import InMemoryAsyncQueue, QueueFull
+from backend.infrastructure.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class QueuedEventBus:

@@ -3,7 +3,7 @@
 处理流式 LLM 响应的增量解析，支持内容累积、推理内容提取和统一事件发射。
 """
 
-import logging
+from backend.infrastructure.logging import get_logger
 from typing import Any, Optional, Callable
 
 from .base import LLMResponseAdapter, StreamingParseResult
@@ -14,7 +14,7 @@ from .models import (
     TokenUsage,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StreamingParser:

@@ -6,12 +6,12 @@ State Manager - 状态管理器
 
 from typing import Any, Optional
 import json
-import logging
 from pathlib import Path
 
 from backend.domain.models.shared.config import StateConfig
+from backend.infrastructure.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StateManager:

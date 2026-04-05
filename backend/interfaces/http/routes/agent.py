@@ -99,7 +99,7 @@ async def stop_agent():
 
     # 更新状态并广播
     from backend.interfaces.websocket.broadcast import broadcast
-    from backend.domain.services.dialog_service import timestamp_ms
+    from backend.domain.utils import timestamp_ms
     from backend.domain.models.types import make_status_change
 
     for k in stopped:

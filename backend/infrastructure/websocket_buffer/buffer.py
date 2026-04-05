@@ -21,14 +21,14 @@ Example:
 
 import asyncio
 import json
-import logging
+from backend.infrastructure.logging import get_logger
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
 from backend.infrastructure.queue import InMemoryAsyncQueue, QueueFull
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BufferStrategy(Enum):

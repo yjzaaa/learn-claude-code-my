@@ -6,7 +6,7 @@ Agent Runtime Factory - 运行时工厂
 
 from typing import Optional
 from backend.infrastructure.runtime.simple import SimpleRuntime
-from backend.infrastructure.runtime.manager import ManagerAwareRuntime
+from backend.infrastructure.runtime.base.manager import ManagerAwareRuntime
 from backend.infrastructure.services import ProviderManager
 
 # DeepRuntime 是可选的，需要额外的依赖

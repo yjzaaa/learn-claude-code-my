@@ -6,9 +6,9 @@ AgentEngine - Agent 核心引擎 (Facade)
 """
 
 from typing import Any, Optional
-import logging
 
-from backend.infrastructure.runtime.event_bus import EventBus
+from backend.infrastructure.event_bus import EventBus
+from backend.infrastructure.logging import get_logger
 from backend.infrastructure.services.dialog_manager import DialogManager
 from backend.infrastructure.services.tool_manager import ToolManager
 from backend.infrastructure.services.state_manager import StateManager
@@ -17,7 +17,7 @@ from backend.infrastructure.services.memory_manager import MemoryManager
 from backend.infrastructure.services.skill_manager import SkillManager
 from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.plugins import PluginManager, CompactPlugin
-from backend.infrastructure.runtime.mixins import (
+from backend.infrastructure.runtime.base.mixins import (
     EventMixin,
     MemoryMixin,
     SkillMixin,
@@ -27,7 +27,7 @@ from backend.infrastructure.runtime.mixins import (
     DialogMixin,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentEngine(

@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 import json
-import logging
 from typing import Any
 
 from backend.infrastructure.container import container
+from backend.infrastructure.logging import get_logger
 from backend.infrastructure.websocket_buffer import WebSocketMessageBuffer, BufferStrategy
 from backend.domain.services.dialog_service import timestamp_ms
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def _get_or_create_buffer(client_id: str, websocket) -> WebSocketMessageBuffer:

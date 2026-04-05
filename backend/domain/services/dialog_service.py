@@ -3,9 +3,7 @@
 处理对话相关的业务逻辑，不依赖 HTTP 层。
 """
 
-import time
 import uuid
-from datetime import datetime, timezone
 from typing import Optional
 
 from backend.domain.models.types import (
@@ -13,16 +11,7 @@ from backend.domain.models.types import (
     WSStreamingMessage,
     WSDialogSnapshot,
 )
-
-
-def timestamp_ms() -> int:
-    """获取毫秒时间戳"""
-    return int(time.time() * 1000)
-
-
-def iso_timestamp() -> str:
-    """获取 ISO 格式时间戳"""
-    return datetime.now(timezone.utc).isoformat()
+from backend.domain.utils import timestamp_ms, iso_timestamp, SnapshotBuilder
 
 
 def make_message_item(m) -> WSMessageItem:
@@ -34,20 +23,24 @@ def make_message_item(m) -> WSMessageItem:
     Returns:
         WSMessageItem
     """
-    # LangChain 消息使用 type 属性 (human/ai/system/tool)
-    msg_type = getattr(m, 'type', 'unknown')
-
-    # 映射为前端期望的角色名
-    role_map = {'human': 'user', 'ai': 'assistant', 'system': 'system', 'tool': 'tool'}
-    role = role_map.get(msg_type, msg_type)
-
-    # 获取消息ID
-    msg_id = getattr(m, 'msg_id', '') or getattr(m, 'id', '')
+    # 使用 SnapshotBuilder 的转换逻辑
+    if hasattr(m, 'type'):
+        # LangChain 消息使用 type 属性 (human/ai/system/tool)
+        msg_type = m.type
+        role_map = {'human': 'user', 'ai': 'assistant', 'system': 'system', 'tool': 'tool'}
+        role = role_map.get(msg_type, msg_type)
+        msg_id = getattr(m, 'msg_id', '') or getattr(m, 'id', '')
+        content = getattr(m, 'content', '') or ""
+    else:
+        # 字典格式
+        role = m.get('role', 'unknown')
+        msg_id = m.get('id', '')
+        content = m.get('content', '')
 
     return WSMessageItem(
         id=msg_id,
         role=role,
-        content=getattr(m, 'content', '') or "",
+        content=content,
         content_type="markdown",
         status="completed",
         timestamp=iso_timestamp(),
@@ -94,23 +87,15 @@ def build_dialog_snapshot(
     Returns:
         WSDialogSnapshot 或 None
     """
-    from backend.infrastructure.container import container
-
     session_snap = session_manager.build_snapshot(dialog_id)
     if not session_snap:
         return None
 
-    # 转换消息列表
-    messages = []
-    for m in session_snap.get("messages", []):
-        messages.append({
-            "id": m.get("id", ""),
-            "role": m.get("role", ""),
-            "content": m.get("content", ""),
-            "content_type": m.get("content_type", "text"),
-            "status": m.get("status", "completed"),
-            "timestamp": m.get("timestamp", ""),
-        })
+    # 使用 SnapshotBuilder 转换消息列表
+    messages = [
+        SnapshotBuilder.transform_message_for_ws(m)
+        for m in session_snap.get("messages", [])
+    ]
 
     metadata = session_snap.get("metadata", {})
 

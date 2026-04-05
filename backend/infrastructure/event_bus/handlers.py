@@ -6,8 +6,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING
+
+from backend.infrastructure.logging import get_logger
 
 from backend.infrastructure.container import container
 from backend.domain.models.events.agent_events import (
@@ -26,15 +27,15 @@ from backend.domain.models.types import (
     make_status_change,
 )
 from backend.domain.services.dialog_service import (
-    timestamp_ms,
     build_dialog_snapshot,
     create_streaming_placeholder,
 )
+from backend.domain.utils import timestamp_ms
 
 if TYPE_CHECKING:
     from backend.infrastructure.event_bus import QueuedEventBus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EventHandlers:

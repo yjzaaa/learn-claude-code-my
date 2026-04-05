@@ -224,6 +224,12 @@ web/out/
 .env*.local
 test_providers.py
 
+# Logs - 运行时日志（不提交到版本控制）
+logs/runtime/
+logs/debug/
+logs/snapshots/
+!logs/.gitkeep
+
 # Internal analysis artifacts (not learning material)
 analysis/
 analysis_progress.md

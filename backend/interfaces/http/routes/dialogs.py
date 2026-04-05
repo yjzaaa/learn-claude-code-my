@@ -3,12 +3,12 @@
 提供对话 CRUD 接口。
 """
 
-import logging
 from fastapi import APIRouter, HTTPException
 
 from backend.infrastructure.container import container
+from backend.infrastructure.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 from backend.domain.services.dialog_service import (
     DialogService,
     build_dialog_snapshot,

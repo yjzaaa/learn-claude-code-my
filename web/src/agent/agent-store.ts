@@ -1,8 +1,14 @@
 /**
- * Agent Store - 前端单一真相源
+ * Agent Store - 前端单一真相源（组合入口）
  *
  * 所有服务端事件经 AgentEventBus 路由后更新此 Zustand store。
  * 以完整 DialogSession snapshot 为真相源，delta 只做渲染级更新。
+ *
+ * 架构：组合式 Store 设计
+ * - dialog-store: 管理对话列表
+ * - message-store: 管理消息状态
+ * - status-store: 管理应用状态和错误
+ * - agent-store: 组合层，处理事件路由
  */
 
 import { create } from "zustand";
@@ -21,6 +27,11 @@ import type {
   ToolResultEvent,
   ErrorEvent,
 } from "@/types/agent-events";
+
+// 导出子 store
+export { useDialogStore } from "@/stores/dialog-store";
+export { useMessageStore } from "@/stores/message-store";
+export { useStatusStore } from "@/stores/status-store";
 
 interface AgentStoreState {
   currentSnapshot: DialogSession | null;

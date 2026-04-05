@@ -11,10 +11,9 @@ from typing import TYPE_CHECKING, Callable, Any, Optional
 from pathlib import Path
 import importlib.util
 import json
-import logging
 import sys
 
-from backend.infrastructure.runtime.event_bus import EventBus
+from backend.infrastructure.logging import get_logger
 from backend.domain.models.agent.skill import Skill, SkillDefinition
 from backend.domain.models.shared.config import SkillManagerConfig
 from backend.domain.models.api.stats import SkillStats
@@ -23,8 +22,9 @@ from backend.infrastructure.tools import ToolRegistry
 
 if TYPE_CHECKING:
     from backend.infrastructure.services.tool_manager import ToolManager
+    from backend.infrastructure.event_bus import EventBus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class SkillManager:
     """
@@ -42,8 +42,8 @@ class SkillManager:
     
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        tool_manager: Optional[ToolManager] = None,
+        event_bus: Optional['EventBus'] = None,
+        tool_manager: Optional['ToolManager'] = None,
         config: Optional[SkillManagerConfig] = None
     ):
         self._event_bus = event_bus

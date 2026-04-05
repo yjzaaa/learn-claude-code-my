@@ -5,17 +5,19 @@ Memory Manager - 记忆管理器
 追加写入 memory.md，供后续对话注入 system prompt。
 """
 
-from typing import Any, Optional, List
+from typing import Any, Optional, List, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
-import logging
 
-from backend.infrastructure.runtime.event_bus import EventBus
+from backend.infrastructure.logging import get_logger
 from backend.domain.models.shared.config import MemoryConfig
 from backend.domain.models.api import MemoryStats
 from backend.domain.models.shared.types import MessageDict
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from backend.infrastructure.event_bus import EventBus
+
+logger = get_logger(__name__)
 
 _SUMMARIZE_PROMPT = """\
 请将以下对话历史总结为一条简短的重要信息（不超过200字），
@@ -38,7 +40,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
+        event_bus: Optional['EventBus'] = None,
         config: Optional[MemoryConfig] = None,
         memory_file: str = "memory.md",
     ):

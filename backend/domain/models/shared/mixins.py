@@ -9,6 +9,13 @@ from typing import Any, Dict
 
 from pydantic import BaseModel, Field
 
+from .base_mixins import (
+    ComparableMixin,
+    SerializableMixin,
+    ValidatableMixin,
+    LoggerMixin,
+)
+
 
 class TimestampMixin(BaseModel):
     """
@@ -55,6 +62,12 @@ class IdMixin(BaseModel):
 
 
 __all__ = [
+    # 基础 Mixin
+    "ComparableMixin",
+    "SerializableMixin",
+    "ValidatableMixin",
+    "LoggerMixin",
+    # 领域 Mixin
     "TimestampMixin",
     "DialogRefMixin",
     "MetadataMixin",

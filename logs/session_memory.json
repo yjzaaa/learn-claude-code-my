@@ -1,23 +1,20 @@
 {
-  "timestamp": "2026-04-06T00:14:16.782758",
+  "timestamp": "2026-04-06T03:42:00.839978",
   "session_count": 1,
   "sessions": {
-    "013d3cec-206e-433d-b48f-bcf6100ef44b": {
-      "status": "completed",
-      "message_count": 2,
+    "ac41c83b-4fd2-4cf0-8f25-853895b3dd7e": {
+      "status": "streaming",
+      "message_count": 1,
       "messages": [
         {
           "type": "human",
           "role": "user",
-          "content": "你好"
-        },
-        {
-          "type": "ai",
-          "role": "assistant",
-          "content": "你好！我是你的AI助手，很高兴为你服务。我可以帮你处理各种任务，包括文件操作、代码编写、数据分析、技能开发等。如果你有任何问题或需要帮助完成某个任务，请随时告诉我！"
+          "content": "25财年实际分摊给CT的IT费用是多少？"
         }
       ],
-      "streaming_context": null
+      "streaming_context": {
+        "message_id": "msg_5ebdc1308c4b"
+      }
     }
   }
 }

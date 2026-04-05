@@ -14,7 +14,6 @@ from .skill_manager import SkillManager
 from .model_discovery import (
     discover_credentials,
     discover_available_models,
-    test_model_connectivity,
     ModelConfig as DiscoveredModelConfig,
     Credential,
 )
@@ -28,7 +27,6 @@ __all__ = [
     "SkillManager",
     "discover_credentials",
     "discover_available_models",
-    "test_model_connectivity",
     "DiscoveredModelConfig",
     "Credential",
 ]

@@ -25,6 +25,7 @@ The codebase has accumulated significant technical debt: 3 backend files exceed 
 ### New Capabilities
 - `runtime-modularity`: Modular runtime architecture with separated concerns for agent lifecycle, events, and model management
 - `logging-abstraction`: Centralized logging factory with consistent configuration across all modules
+- `code-deduplication`: Systematic elimination of duplicate code patterns (logger definitions, timestamp functions, snapshot builders, mixins, exceptions)
 - `frontend-component-split`: Component decomposition strategy for large UI components
 - `directory-reorganization`: File organization standards and directory structure improvements
 

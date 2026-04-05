@@ -8,7 +8,7 @@ Plugin Base - 插件基类
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
-from backend.infrastructure.runtime.event_bus import EventBus
+from backend.infrastructure.event_bus import EventBus
 from backend.domain.models.events.base import (
     MessageReceived, StreamDelta, MessageCompleted,
     ToolCallStarted, ToolCallCompleted, ErrorOccurred

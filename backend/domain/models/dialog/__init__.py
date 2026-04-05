@@ -17,6 +17,12 @@ from backend.domain.models.dialog.exceptions import (
     SessionFullError,
 )
 
+# 子模块导出
+from .session_lifecycle import SessionLifecycleManager, SessionEvent
+from .message_ops import MessageOperations
+from .event_emitter import EventEmitter
+from .snapshot import SnapshotManager
+
 __all__ = [
     "Dialog",
     "DialogSession",
@@ -29,4 +35,10 @@ __all__ = [
     "StreamingStateError",
     "InvalidTransitionError",
     "SessionFullError",
+    # 子模块
+    "SessionLifecycleManager",
+    "SessionEvent",
+    "MessageOperations",
+    "EventEmitter",
+    "SnapshotManager",
 ]

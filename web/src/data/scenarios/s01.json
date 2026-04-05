@@ -1,0 +1,17 @@
+{
+  "id": "s01",
+  "name": "基础 Agent 循环",
+  "description": "演示最基本的 Agent 循环：用户输入 -> LLM 响应",
+  "steps": [
+    {
+      "id": "1",
+      "type": "user",
+      "content": "你好，请介绍一下自己"
+    },
+    {
+      "id": "2",
+      "type": "assistant",
+      "content": "你好！我是一个 AI 助手，可以帮助你解答问题、编写代码、分析数据等。"
+    }
+  ]
+}

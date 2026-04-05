@@ -9,21 +9,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, AsyncIterator, Any, Optional
 from datetime import datetime
-import logging
 
 from backend.domain.models.dialog.dialog import Dialog, Message
+from backend.infrastructure.logging import get_logger
 from backend.domain.models.events.base import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, DialogClosed
 )
 from backend.domain.models.shared.config import DialogConfig
 from backend.domain.models.shared.types import MessageDict
-from backend.infrastructure.runtime.event_bus import EventBus
 
 if TYPE_CHECKING:
     from backend.infrastructure.services.state_manager import StateManager
+    from backend.infrastructure.event_bus import EventBus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class DialogManager:
     """
@@ -41,7 +41,7 @@ class DialogManager:
     
     def __init__(
         self,
-        event_bus: EventBus,
+        event_bus: 'EventBus',
         state_manager: Optional['StateManager'] = None,
         config: Optional[DialogConfig] = None
     ):

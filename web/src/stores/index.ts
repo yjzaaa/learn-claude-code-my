@@ -4,6 +4,7 @@
  * 按领域划分的状态管理：
  * - DialogStore: 对话领域状态
  * - MessageStore: 消息领域状态
+ * - StatusStore: 应用状态和错误管理
  * - SyncStore: 同步领域状态
  * - UIStore: UI 状态
  */
@@ -27,10 +28,17 @@ export {
 } from './message-store';
 
 export {
+  useStatusStore,
+  type ConnectionStatus,
+  type AppStatus,
+  type StatusStoreState,
+} from './status-store';
+
+export {
   useSyncStore,
   selectSyncStatus,
   selectConnectionStatus,
-  type ConnectionStatus,
+  type ConnectionStatus as SyncConnectionStatus,
   type SyncError,
   type SyncState,
 } from './sync-store';
