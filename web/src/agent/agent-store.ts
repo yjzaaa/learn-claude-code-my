@@ -130,6 +130,7 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
 
       case "status:change": {
         const e = event as StatusChangeEvent;
+        console.log("[AgentStore] status:change:", e.data);
         set((state) => {
           if (!state.currentSnapshot || state.currentSnapshot.id !== e.dialog_id) {
             return {
