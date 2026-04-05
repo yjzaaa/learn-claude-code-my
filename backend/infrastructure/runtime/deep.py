@@ -792,6 +792,39 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             self._fire_log_msg("error", f"Error: {error_detail}", dialog_id)
             self._fire_log_update("error", f"Error: {str(e)}", dialog_id)
             self._fire_log_value("error", f"Error: {str(e)}", dialog_id)
+
+            # 如果有累积的内容，先保存到 SessionManager 并 yield text_complete
+            # 这样即使发生错误，用户也能看到已生成的内容
+            if accumulated_content and session_mgr is not None:
+                logger.warning(f"[DeepAgentRuntime] Saving partial content due to error: {len(accumulated_content)} chars")
+                try:
+                    from langchain_core.messages import AIMessage
+                    # 构建包含模型信息的 metadata
+                    effective_model = actual_model_name or self._model_name or "unknown"
+                    completion_metadata = {
+                        "model": effective_model,
+                        "provider": self._adapter_factory.detect_provider(effective_model) or "unknown",
+                        "error_interrupted": True,
+                        "error_type": type(e).__name__,
+                    }
+                    if accumulated_reasoning:
+                        completion_metadata["reasoning_content"] = accumulated_reasoning
+
+                    await session_mgr.complete_ai_response(
+                        dialog_id,
+                        ai_message_id,
+                        accumulated_content,
+                        completion_metadata
+                    )
+                    # yield text_complete 让前端显示内容
+                    yield AgentEvent(
+                        type="text_complete",
+                        data=accumulated_content,
+                        metadata=completion_metadata
+                    )
+                except Exception as save_error:
+                    logger.error(f"[DeepAgentRuntime] Failed to save partial content: {save_error}")
+
             yield AgentEvent(type="error", data=str(e))
 
     def register_tool(
