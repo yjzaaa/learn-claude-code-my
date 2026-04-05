@@ -111,13 +111,14 @@ class EventHandlers:
 
         dialog_id = event.dialog_id
 
-        # 发送状态变更
+        # 发送状态变更 thinking -> completed
         container.set_status(dialog_id, "completed")
         await broadcast(make_status_change(dialog_id, "thinking", "completed", timestamp_ms()))
 
-        # 清理
+        # 清理并发送状态变更 completed -> idle
         container.set_streaming_message(dialog_id, None)
         container.set_status(dialog_id, "idle")
+        await broadcast(make_status_change(dialog_id, "completed", "idle", timestamp_ms()))
 
     async def _handle_agent_error(self, event: AgentErrorEvent) -> None:
         """处理 Agent 错误事件"""
