@@ -110,15 +110,20 @@ class EventHandlers:
         from backend.interfaces.websocket.broadcast import broadcast
 
         dialog_id = event.dialog_id
+        logger.info(f"[_handle_agent_complete] dialog_id={dialog_id}")
 
         # 发送状态变更 thinking -> completed
         container.set_status(dialog_id, "completed")
-        await broadcast(make_status_change(dialog_id, "thinking", "completed", timestamp_ms()))
+        status_change_1 = make_status_change(dialog_id, "thinking", "completed", timestamp_ms())
+        logger.info(f"[_handle_agent_complete] Broadcasting: {status_change_1}")
+        await broadcast(status_change_1)
 
         # 清理并发送状态变更 completed -> idle
         container.set_streaming_message(dialog_id, None)
         container.set_status(dialog_id, "idle")
-        await broadcast(make_status_change(dialog_id, "completed", "idle", timestamp_ms()))
+        status_change_2 = make_status_change(dialog_id, "completed", "idle", timestamp_ms())
+        logger.info(f"[_handle_agent_complete] Broadcasting: {status_change_2}")
+        await broadcast(status_change_2)
 
     async def _handle_agent_error(self, event: AgentErrorEvent) -> None:
         """处理 Agent 错误事件"""
