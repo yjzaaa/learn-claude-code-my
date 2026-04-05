@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.runtime import Runtime
+
+logger = logging.getLogger(__name__)
 
 # 若 backend 支持 write 则优先落盘，否则回退到本地
 TRANSCRIPT_DIR = Path(".transcripts")
@@ -34,8 +37,13 @@ def _micro_compact(messages: list[Any]) -> list[Any]:
     tool_indices = [
         (i, msg) for i, msg in enumerate(messages) if isinstance(msg, ToolMessage)
     ]
+    original_count = len(tool_indices)
+
     if len(tool_indices) <= KEEP_RECENT:
+        logger.debug(f"[ClaudeCompression] Layer 1: {original_count} tool messages, no compaction needed (keep {KEEP_RECENT})")
         return messages
+
+    logger.info(f"[ClaudeCompression] Layer 1 Micro Compact: {original_count} tool messages -> keeping last {KEEP_RECENT}")
 
     # 建立 tool_call_id -> tool_name 映射
     tool_name_map: dict[str, str] = {}
@@ -52,13 +60,18 @@ def _micro_compact(messages: list[Any]) -> list[Any]:
                     tool_name_map[tid] = tname
 
     to_clear = tool_indices[:-KEEP_RECENT]
+    cleared_count = 0
     for _, msg in to_clear:
         content = msg.content
         if isinstance(content, str) and len(content) > 100:
             tid = getattr(msg, "tool_call_id", "")
             tname = tool_name_map.get(tid, "unknown")
+            original_len = len(content)
             msg.content = f"[Previous: used {tname}]"
+            cleared_count += 1
+            logger.debug(f"[ClaudeCompression]   Compacted tool {tname}: {original_len} chars -> placeholder")
 
+    logger.info(f"[ClaudeCompression] Layer 1 completed: {cleared_count} tool messages compacted")
     return messages
 
 
@@ -134,24 +147,35 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
     ) -> dict[str, Any] | None:
         messages = list(state.get("messages", []))
         if not messages:
+            logger.debug("[ClaudeCompression] before_model: no messages, skipping")
             return None
+
+        msg_count = len(messages)
+        estimated_tokens = _estimate_tokens(messages)
+        logger.info(f"[ClaudeCompression] before_model: {msg_count} messages, ~{estimated_tokens} tokens, threshold={self.threshold}")
 
         # Layer 1
         messages = _micro_compact(messages)
 
         # Layer 2: 检查是否触发自动压缩
         if _estimate_tokens(messages) <= self.threshold:
+            logger.debug(f"[ClaudeCompression] Layer 2: below threshold, no auto-compact needed")
             return {"messages": messages}
 
         to_summarize, preserved = _partition_messages(messages, self.keep_recent)
         if not to_summarize:
+            logger.debug(f"[ClaudeCompression] Nothing to summarize")
             return {"messages": messages}
+
+        logger.warning(f"[ClaudeCompression] Layer 2 Auto Compact triggered! Summarizing {len(to_summarize)} messages, keeping {len(preserved)}")
 
         # Layer 4: 保存完整会话
         transcript_path = _save_transcript(messages, self.backend)
+        logger.info(f"[ClaudeCompression] Layer 4: transcript saved to {transcript_path}")
 
         # 生成摘要（同步路径）
         summary = self._create_summary(to_summarize)
+        logger.info(f"[ClaudeCompression] Summary generated: {len(summary)} chars")
 
         new_messages: list[Any] = [
             SystemMessage(
@@ -162,6 +186,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
             ),
             *preserved,
         ]
+        logger.info(f"[ClaudeCompression] Compression complete: {msg_count} -> {len(new_messages)} messages")
         return {"messages": new_messages}
 
     async def abefore_model(
@@ -169,24 +194,35 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
     ) -> dict[str, Any] | None:
         messages = list(state.get("messages", []))
         if not messages:
+            logger.debug("[ClaudeCompression] abefore_model: no messages, skipping")
             return None
+
+        msg_count = len(messages)
+        estimated_tokens = _estimate_tokens(messages)
+        logger.info(f"[ClaudeCompression] abefore_model: {msg_count} messages, ~{estimated_tokens} tokens, threshold={self.threshold}")
 
         # Layer 1
         messages = _micro_compact(messages)
 
         # Layer 2
         if _estimate_tokens(messages) <= self.threshold:
+            logger.debug(f"[ClaudeCompression] Layer 2: below threshold, no auto-compact needed")
             return {"messages": messages}
 
         to_summarize, preserved = _partition_messages(messages, self.keep_recent)
         if not to_summarize:
+            logger.debug(f"[ClaudeCompression] Nothing to summarize")
             return {"messages": messages}
+
+        logger.warning(f"[ClaudeCompression] Layer 2 Auto Compact triggered! Summarizing {len(to_summarize)} messages, keeping {len(preserved)}")
 
         # Layer 4
         transcript_path = _save_transcript(messages, self.backend)
+        logger.info(f"[ClaudeCompression] Layer 4: transcript saved to {transcript_path}")
 
         # 生成摘要（异步路径）
         summary = await self._acreate_summary(to_summarize)
+        logger.info(f"[ClaudeCompression] Summary generated: {len(summary)} chars")
 
         new_messages: list[Any] = [
             SystemMessage(
@@ -197,6 +233,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
             ),
             *preserved,
         ]
+        logger.info(f"[ClaudeCompression] Compression complete: {msg_count} -> {len(new_messages)} messages")
         return {"messages": new_messages}
 
     def _create_summary(self, messages: list[Any]) -> str:

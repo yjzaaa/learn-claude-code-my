@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-04-05T22:14:34.363411",
+  "dialog_id": "849c1b1b-c02f-471f-9829-0cdbb2fee66f",
+  "checkpoint": {
+    "dialog_id": "849c1b1b-c02f-471f-9829-0cdbb2fee66f",
+    "checkpoint_exists": true,
+    "checkpoint_id": "1f130f9c-57ec-6fb1-8005-ba8c33f55ab0",
+    "checkpoint_ns": "",
+    "messages_count": 2,
+    "messages": [
+      {
+        "content": "你好",
+        "additional_kwargs": {},
+        "response_metadata": {},
+        "type": "human",
+        "name": null,
+        "id": "f4c320bc-a7bb-4a3b-bd4e-2461af561359"
+      },
+      {
+        "content": [
+          {
+            "text": " 你好！有什么我可以帮助你的吗？😊",
+            "type": "text",
+            "index": 0
+          }
+        ],
+        "additional_kwargs": {},
+        "response_metadata": {
+          "model_name": "kimi-for-coding",
+          "model_provider": "anthropic",
+          "stop_reason": "end_turn",
+          "stop_sequence": null
+        },
+        "type": "ai",
+        "name": "main-agent",
+        "id": "lc_run--019d5dfe-6206-7b02-bf12-5a4cfb54c20c",
+        "tool_calls": [],
+        "invalid_tool_calls": [],
+        "usage_metadata": {
+          "input_tokens": 4245,
+          "output_tokens": 9,
+          "total_tokens": 4254,
+          "input_token_details": {
+            "cache_creation": 0,
+            "cache_read": 0
+          }
+        }
+      }
+    ],
+    "channel_values": {
+      "skills_metadata": "[]"
+    },
+    "pending_writes": [],
+    "metadata": {
+      "source": "loop",
+      "step": 5,
+      "parents": "{}",
+      "ls_integration": "langchain_create_agent",
+      "lc_agent_name": "main-agent"
+    }
+  }
+}

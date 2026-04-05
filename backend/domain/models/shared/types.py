@@ -259,6 +259,7 @@ class WSDialogSnapshot(TypedDict):
     metadata: WSDialogMetadata
     created_at: str
     updated_at: str
+    selected_model_id: NotRequired[str]   # 对话选择的模型
 
 
 # status:change event — 符合前端期望的嵌套 data 格式

@@ -2,44 +2,43 @@ from typing import List
 
 ALLOC_TEMPLATE = """WITH monthly_alloc AS (
     SELECT
-        cdb.[Year],
-        COALESCE(SUM(CAST(cdb.[Amount] AS FLOAT)), 0) AS [Base_Month_Cost],
+        cdb.year,
+        cdb.month,
+        cdb.key,
+        cdb.amount AS base_cost,
         COALESCE(
-            SUM(
-                CAST(cdb.[Amount] AS FLOAT) * 
-                COALESCE(
-                    CASE 
-                        WHEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) > 1 
-                        THEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) / 100
-                        ELSE TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT)
-                    END, 
-                    0
-                )
-            ), 
+            CAST(cdb.amount AS NUMERIC) * 
+            COALESCE(
+                CASE 
+                    WHEN REPLACE(rt.rate_no::TEXT, '%', '')::NUMERIC > 1 
+                    THEN REPLACE(rt.rate_no::TEXT, '%', '')::NUMERIC / 100
+                    ELSE REPLACE(rt.rate_no::TEXT, '%', '')::NUMERIC
+                END, 
+                0
+            ),
             0
-        ) AS [Allocated_Month_Cost]
-    FROM SSME_FI_InsightBot_CostDataBase cdb
-    LEFT JOIN SSME_FI_InsightBot_Rate t7
-        ON cdb.[Year] = t7.[Year]
-        AND cdb.[Scenario] = t7.[Scenario]
-        AND cdb.[Key] = t7.[Key]
-        AND cdb.[Month] = t7.[Month]
+        ) AS allocated_cost
+    FROM cost_database cdb
+    LEFT JOIN rate_table rt
+        ON cdb.year = rt.year
+        AND cdb.scenario = rt.scenario
+        AND cdb.key = rt.key
+        AND cdb.month = rt.month
+        AND {party_filter}
     WHERE {year_filter}
         AND {scenario_filter}
-        AND cdb.[Function] = {function_literal}
-        AND {party_filter}
-    GROUP BY cdb.Year
+        AND cdb.function = {function_literal}
 ),
 yearly_agg AS (
     SELECT
-        [Year],
-        SUM([Allocated_Month_Cost]) AS [Year_Allocated_Cost]
+        year,
+        SUM(allocated_cost) AS total_allocated_cost
     FROM monthly_alloc
-    GROUP BY [Year]
+    GROUP BY year
 )
 SELECT
-    [Year],
-    [Year_Allocated_Cost]
+    year,
+    total_allocated_cost
 FROM yearly_agg
 WHERE {year_filter_output};"""
 

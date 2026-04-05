@@ -23,6 +23,7 @@ class ModelInfo(BaseModel):
     id: str
     label: str
     provider: str
+    client_type: str  # "ChatLiteLLM" 或 "ChatAnthropic"
 
 
 class ActiveModelResponse(BaseModel):
@@ -38,6 +39,7 @@ async def get_available_models():
 
     Returns:
         ActiveModelResponse: 当前模型配置和可用模型列表
+        只返回通过实际连通性测试的模型
     """
     from backend.infrastructure.services import ProviderManager
 
@@ -45,13 +47,16 @@ async def get_available_models():
     provider_mgr = ProviderManager()
     model_config = provider_mgr.get_model_config()
 
-    # 可用模型列表（从 ProviderManager 支持的模型）
+    # 获取实际可用的模型（通过连通性测试）
+    available_models_raw = await provider_mgr.discover_models()
     available_models = [
-        ModelInfo(id="deepseek-reasoner", label="DeepSeek R1", provider="deepseek"),
-        ModelInfo(id="deepseek-chat", label="DeepSeek V3", provider="deepseek"),
-        ModelInfo(id="claude-sonnet-4-6", label="Claude Sonnet", provider="anthropic"),
-        ModelInfo(id="kimi-k2-coding", label="Kimi K2", provider="kimi"),
-        ModelInfo(id="gpt-4o", label="GPT-4o", provider="openai"),
+        ModelInfo(
+            id=m["id"],
+            label=m["label"],
+            provider=m["provider"],
+            client_type=m.get("client_type", "ChatLiteLLM")
+        )
+        for m in available_models_raw
     ]
 
     return {

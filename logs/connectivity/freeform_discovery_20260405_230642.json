@@ -1,0 +1,199 @@
+{
+  "timestamp": "2026-04-05T23:06:42.852930",
+  "credentials_found": 2,
+  "total_tests": 96,
+  "working_configs": [
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "api_key_preview": "sk-938dfb4...",
+      "base_url": "https://api.deepseek.com/v1",
+      "working_model": "openai/deepseek-chat",
+      "api_format": "openai",
+      "response_time_ms": 2290.67
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/claude-sonnet-4-6",
+      "api_format": "openai",
+      "response_time_ms": 976.7
+    }
+  ],
+  "all_working": [
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "api_key_preview": "sk-938dfb4...",
+      "base_url": "https://api.deepseek.com/v1",
+      "working_model": "deepseek/deepseek-chat",
+      "api_format": "openai",
+      "response_time_ms": 2653.24
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "api_key_preview": "sk-938dfb4...",
+      "base_url": "https://api.deepseek.com/v1",
+      "working_model": "openai/deepseek-chat",
+      "api_format": "openai",
+      "response_time_ms": 2290.67
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "api_key_preview": "sk-938dfb4...",
+      "base_url": "https://api.deepseek.com/v1",
+      "working_model": "deepseek/deepseek-reasoner",
+      "api_format": "openai",
+      "response_time_ms": 4290.4
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "api_key_preview": "sk-938dfb4...",
+      "base_url": "https://api.deepseek.com/v1",
+      "working_model": "openai/deepseek-reasoner",
+      "api_format": "openai",
+      "response_time_ms": 3305.03
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/deepseek-chat",
+      "api_format": "openai",
+      "response_time_ms": 1725.07
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/deepseek-reasoner",
+      "api_format": "openai",
+      "response_time_ms": 4630.64
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "claude-sonnet-4-6",
+      "api_format": "openai",
+      "response_time_ms": 3975.17
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "claude-sonnet-4-6",
+      "api_format": "openai",
+      "response_time_ms": 4177.11
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/claude-sonnet-4-6",
+      "api_format": "openai",
+      "response_time_ms": 976.7
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "claude-opus-4-6",
+      "api_format": "openai",
+      "response_time_ms": 8977.56
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "claude-opus-4-6",
+      "api_format": "openai",
+      "response_time_ms": 7942.8
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/claude-opus-4-6",
+      "api_format": "openai",
+      "response_time_ms": 5531.13
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/kimi-k2-coding",
+      "api_format": "openai",
+      "response_time_ms": 1243.93
+    },
+    {
+      "key_var": "ANTHROPIC_API_KEY",
+      "api_key_preview": "sk-kimi-1r...",
+      "base_url": "https://api.kimi.com/coding/",
+      "working_model": "anthropic/kimi-k2.5",
+      "api_format": "openai",
+      "response_time_ms": 1475.15
+    }
+  ],
+  "sample_failures": [
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "deepseek-chat",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=deepseek-chat\n Pass model as E.g. For 'Huggingface' inference endpoints pass in `c"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "deepseek-chat",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=deepseek-chat\n Pass model as E.g. For 'Huggingface' inference endpoints pass in `c"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "anthropic/deepseek-chat",
+      "api_format": "openai",
+      "error": "litellm.AuthenticationError: AnthropicException - b'{\"error\":{\"message\":\"Authentication Fails, Your api key: ****HrO9 is invalid\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_request_err"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "kimi/deepseek-chat",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=kimi/deepseek-chat\n Pass model as E.g. For 'Huggingface' inference endpoints pass "
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "deepseek-reasoner",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=deepseek-reasoner\n Pass model as E.g. For 'Huggingface' inference endpoints pass i"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "deepseek-reasoner",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=deepseek-reasoner\n Pass model as E.g. For 'Huggingface' inference endpoints pass i"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "anthropic/deepseek-reasoner",
+      "api_format": "openai",
+      "error": "litellm.AuthenticationError: AnthropicException - b'{\"error\":{\"message\":\"Authentication Fails, Your api key: ****HrO9 is invalid\",\"type\":\"authentication_error\",\"param\":null,\"code\":\"invalid_request_err"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "kimi/deepseek-reasoner",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: LLM Provider NOT provided. Pass in the LLM provider you are trying to call. You passed model=kimi/deepseek-reasoner\n Pass model as E.g. For 'Huggingface' inference endpoints p"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "claude-sonnet-4-6",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: AnthropicException - {\"error\":{\"message\":\"Model Not Exist\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+    },
+    {
+      "key_var": "DEEPSEEK_API_KEY",
+      "model": "claude-sonnet-4-6",
+      "api_format": "openai",
+      "error": "litellm.BadRequestError: AnthropicException - {\"error\":{\"message\":\"Model Not Exist\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_request_error\"}}"
+    }
+  ]
+}

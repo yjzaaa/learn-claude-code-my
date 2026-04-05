@@ -20,6 +20,7 @@ class DialogOutput(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+    selected_model_id: Optional[str] = None  # 对话选择的模型
 
 
 class Dialog:
@@ -27,6 +28,7 @@ class Dialog:
     对话 - 管理消息列表和元数据
 
     使用 LangChain BaseMessage 作为消息存储格式。
+    支持 per-dialog 模型选择。
     """
 
     def __init__(
@@ -37,6 +39,7 @@ class Dialog:
         metadata: Optional[Dict[str, Any]] = None,
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
+        selected_model_id: Optional[str] = None,
     ):
         self.id: str = id or f"dlg_{uuid.uuid4().hex[:16]}"
         self.title: Optional[str] = title
@@ -44,16 +47,23 @@ class Dialog:
         self.metadata: Dict[str, Any] = metadata or {}
         self.created_at: datetime = created_at or datetime.now()
         self.updated_at: datetime = updated_at or datetime.now()
+        self.selected_model_id: Optional[str] = selected_model_id  # 对话选择的模型
 
     @classmethod
     def create(cls, title: Optional[str] = None) -> "Dialog":
         """创建新对话"""
-        return cls(title=title)
+        import os
+        # 从环境变量获取默认模型
+        default_model = os.getenv("MODEL_ID", "")
+        return cls(title=title, selected_model_id=default_model or None)
 
     @classmethod
     def from_user_input(cls, user_input: str) -> "Dialog":
         """从用户输入创建对话"""
+        import os
+        default_model = os.getenv("MODEL_ID", "")
         dialog = cls.create(title=user_input[:50])
+        dialog.selected_model_id = default_model or None
         dialog.add_human_message(user_input)
         return dialog
 
@@ -105,6 +115,7 @@ class Dialog:
             metadata=self.metadata,
             created_at=self.created_at.isoformat(),
             updated_at=self.updated_at.isoformat(),
+            selected_model_id=self.selected_model_id,
         )
         return output.model_dump()
 
@@ -132,6 +143,7 @@ class Dialog:
             updated_at=datetime.fromisoformat(data.get("updated_at", ""))
             if "updated_at" in data
             else None,
+            selected_model_id=data.get("selected_model_id"),
         )
 
     @property

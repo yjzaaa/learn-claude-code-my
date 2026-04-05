@@ -666,6 +666,83 @@ class UnifiedLoggingMixin:
         }
         return await self._jsonl_buffer.write("transcript", entry)
 
+    # ═════════════════════════════════════════════════════════════════
+    # Fire-and-Forget 日志接口（同步调用，不阻塞主流程）
+    # ═════════════════════════════════════════════════════════════════
+
+    def _fire_log_msg(self, level: str, message: str, dialog_id: Optional[str] = None) -> None:
+        """Fire-and-forget 记录消息日志（同步调用，不阻塞）"""
+        if not self._msg_log_buffer:
+            return
+        import asyncio
+        try:
+            asyncio.create_task(self._msg_log_buffer.log(level, message, dialog_id))
+        except Exception:
+            pass
+
+    def _fire_log_update(self, level: str, message: str, dialog_id: Optional[str] = None, **extra) -> None:
+        """Fire-and-forget 记录更新日志（同步调用，不阻塞）"""
+        if not self._update_log_buffer:
+            return
+        import asyncio
+        try:
+            asyncio.create_task(self._update_log_buffer.log(level, message, dialog_id, **extra))
+        except Exception:
+            pass
+
+    def _fire_log_value(self, level: str, message: str, dialog_id: Optional[str] = None, **extra) -> None:
+        """Fire-and-forget 记录值日志（同步调用，不阻塞）"""
+        if not self._value_log_buffer:
+            return
+        import asyncio
+        try:
+            asyncio.create_task(self._value_log_buffer.log(level, message, dialog_id, **extra))
+        except Exception:
+            pass
+
+    def _fire_log_event(self, event_type: str, data: dict, dialog_id: Optional[str] = None) -> None:
+        """Fire-and-forget 记录事件到 raw_event.jsonl（同步调用，不阻塞）"""
+        if not self._jsonl_buffer:
+            return
+        import asyncio
+        from datetime import datetime
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": event_type,
+            "dialog_id": dialog_id,
+            **data
+        }
+        try:
+            asyncio.create_task(self._jsonl_buffer.write("raw_event", entry))
+        except Exception:
+            pass
+
+    def _fire_log_tool_result(
+        self,
+        tool_name: str,
+        arguments: dict,
+        result: Any,
+        dialog_id: str,
+        duration_ms: Optional[int] = None
+    ) -> None:
+        """Fire-and-forget 记录工具调用结果到 tool_results.jsonl（同步调用，不阻塞）"""
+        if not self._jsonl_buffer:
+            return
+        import asyncio
+        from datetime import datetime
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "dialog_id": dialog_id,
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "result": str(result)[:1000] if result else None,
+            "duration_ms": duration_ms,
+        }
+        try:
+            asyncio.create_task(self._jsonl_buffer.write("tool_results", entry))
+        except Exception:
+            pass
+
     def get_log_stats(self) -> dict:
         """获取所有日志统计"""
         return {

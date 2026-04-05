@@ -114,6 +114,9 @@ def build_dialog_snapshot(
 
     metadata = session_snap.get("metadata", {})
 
+    # 从 session_snap 获取 selected_model_id（已由 manager.build_snapshot 提供）
+    selected_model_id = session_snap.get('selected_model_id')
+
     return {
         "id": session_snap["id"],
         "title": session_snap.get("title", "New Dialog"),
@@ -128,6 +131,7 @@ def build_dialog_snapshot(
         },
         "created_at": session_snap["created_at"],
         "updated_at": session_snap.get("updated_at", session_snap["created_at"]),
+        "selected_model_id": selected_model_id,
     }
 
 

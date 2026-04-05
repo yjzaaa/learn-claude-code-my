@@ -64,6 +64,7 @@ class DialogSession(BaseModel):
     - status: 会话生命周期状态
     - metadata: 会话级元数据
     - streaming_context: 流式标记（仅标记，不存内容）
+    - selected_model_id: 对话选择的模型（支持 per-dialog 模型切换）
     """
     dialog_id: str
     status: SessionStatus = SessionStatus.CREATING
@@ -72,6 +73,7 @@ class DialogSession(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     last_activity_at: datetime = Field(default_factory=datetime.now)
+    selected_model_id: Optional[str] = None  # 对话选择的模型
 
     # LangChain 消息历史 - 不序列化，运行时创建
     history: InMemoryChatMessageHistory = Field(default_factory=InMemoryChatMessageHistory, exclude=True)

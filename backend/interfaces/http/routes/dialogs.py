@@ -3,9 +3,12 @@
 提供对话 CRUD 接口。
 """
 
+import logging
 from fastapi import APIRouter, HTTPException
 
 from backend.infrastructure.container import container
+
+logger = logging.getLogger(__name__)
 from backend.domain.services.dialog_service import (
     DialogService,
     build_dialog_snapshot,
@@ -78,3 +81,70 @@ async def get_messages(dialog_id: str):
     if not messages and not container.session_manager.get_session_sync(dialog_id):
         raise HTTPException(status_code=404, detail="Dialog not found")
     return {"success": True, "data": messages}
+
+
+@router.post("/api/dialogs/{dialog_id}/model")
+async def switch_model(dialog_id: str, body: dict):
+    """
+    切换对话使用的模型
+
+    Request body:
+        - model_id: 模型标识，如 "deepseek/deepseek-chat"
+
+    Returns:
+        - success: 是否成功
+        - data: 包含 dialog_id 和 selected_model_id
+    """
+    from pydantic import BaseModel
+
+    class SwitchModelBody(BaseModel):
+        model_id: str
+
+    try:
+        parsed = SwitchModelBody(**body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid request body: {e}")
+
+    # 获取对话
+    session = container.session_manager.get_session_sync(dialog_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Dialog not found")
+
+    # 验证模型是否可用
+    from backend.infrastructure.services import ProviderManager
+    provider_manager = ProviderManager()
+    try:
+        # 确保模型已发现
+        if provider_manager._discovered_models is None:
+            await provider_manager.discover_models()
+
+        # 检查模型是否在可用列表中（支持完整ID和简短名称）
+        model_config = None
+        for m in provider_manager._discovered_models or []:
+            if m["id"] == parsed.model_id or m["id"].endswith(f"/{parsed.model_id}"):
+                model_config = m
+                break
+
+        if not model_config:
+            available = [m["id"] for m in provider_manager._discovered_models or []]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Model '{parsed.model_id}' is not available. Available models: {available}"
+            )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        logger.error(f"[switch_model] Failed to validate model: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate model: {e}")
+
+    # 更新对话的模型选择
+    session.selected_model_id = parsed.model_id
+    session.touch()  # 更新活动时间
+
+    return {
+        "success": True,
+        "data": {
+            "dialog_id": dialog_id,
+            "selected_model_id": parsed.model_id,
+        }
+    }

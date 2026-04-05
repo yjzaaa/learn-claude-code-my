@@ -150,6 +150,45 @@ class DialogSessionManager:
         except Exception as e:
             logger.debug(f"[SessionManager] Memory dump error: {e}")
 
+    def save_checkpoint_snapshot(self, checkpoint_data: dict[str, Any]) -> str | None:
+        """保存 LangGraph checkpoint 快照到独立文件
+
+        Args:
+            checkpoint_data: LangGraph checkpoint 数据，包含完整运行时状态
+
+        Returns:
+            保存的文件路径，如果保存失败则返回 None
+        """
+        if not checkpoint_data or not checkpoint_data.get("checkpoint_exists"):
+            return None
+
+        try:
+            # 创建快照目录
+            snapshot_dir = Path("logs/snapshots")
+            snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+            # 生成文件名：{dialog_id}_{timestamp}.json
+            dialog_id = checkpoint_data.get("dialog_id", "unknown")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{dialog_id}_{ts}.json"
+            filepath = snapshot_dir / filename
+
+            # 构建完整的快照数据
+            snapshot = {
+                "timestamp": datetime.now().isoformat(),
+                "dialog_id": dialog_id,
+                "checkpoint": checkpoint_data,
+            }
+
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, ensure_ascii=False, indent=2, default=str)
+
+            logger.debug(f"[SessionManager] Checkpoint snapshot saved: {filepath}")
+            return str(filepath)
+        except Exception as e:
+            logger.debug(f"[SessionManager] Checkpoint snapshot error: {e}")
+            return None
+
     # ==================== Session 生命周期 ====================
 
     async def create_session(
@@ -165,10 +204,15 @@ class DialogSessionManager:
             # LRU 清理: 移除最久未活动的会话
             await self._cleanup_lru()
 
+        # 获取默认模型（从环境变量）
+        import os
+        default_model = os.getenv("MODEL_ID", "")
+
         session = DialogSession(
             dialog_id=dialog_id,
             status=SessionStatus.CREATING,
             metadata=SessionMetadata(title=title),
+            selected_model_id=default_model if default_model else None,
         )
 
         self._sessions[dialog_id] = session
@@ -497,6 +541,7 @@ class DialogSessionManager:
             },
             "created_at": session.created_at.isoformat(),
             "updated_at": session.updated_at.isoformat(),
+            "selected_model_id": getattr(session, 'selected_model_id', None),
         }
 
     # ==================== 清理任务 ====================

@@ -182,32 +182,55 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             for name, tool_info in self._tools.items()
         ]
 
-        # 解析模型：从 ProviderManager 获取统一配置（单一配置来源）
+   
+        # 使用 ProviderManager 创建模型实例（支持动态模型选择）
         if self._provider_manager:
+            # 获取默认模型配置用于日志记录
             model_config = self._provider_manager.get_model_config()
             model_name = model_config.model
             api_key = model_config.api_key
             base_url = model_config.base_url or ""
+
+            logger.info(
+                f"[DeepAgentRuntime] Model config: model_name={model_name}, "
+                f"base_url={base_url}, api_key_set={'yes' if api_key else 'no'}, "
+                f"provider_manager={'used' if self._provider_manager else 'not used'}"
+            )
+
+            # 使用 ProviderManager 创建模型实例（自动选择 ChatLiteLLM 或 ChatAnthropic）
+            try:
+                model = await self._provider_manager.create_model_instance(model_name)
+                logger.info(f"[DeepAgentRuntime] Created model instance via ProviderManager: {model_name}")
+            except Exception as e:
+                logger.error(f"[DeepAgentRuntime] Failed to create model via ProviderManager: {e}")
+                raise RuntimeError(f"Failed to create model instance: {e}")
         else:
-            # 回退：从环境变量获取（保持向后兼容）
-            model_name = os.getenv("MODEL_ID", "").strip() or "claude-sonnet-4-6"
-            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-            base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip() or "https://api.anthropic.com/v1/"
+            # 回退：直接创建（向后兼容）
+            import os
+            model_name = os.getenv("MODEL_ID", "claude-sonnet-4-6")
+            api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or ""
+            base_url = os.getenv("ANTHROPIC_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or ""
+
+            logger.warning(f"[DeepAgentRuntime] No ProviderManager, falling back to direct model creation")
+
+            try:
+                from langchain_community.chat_models import ChatLiteLLM
+                model = ChatLiteLLM(
+                    model=model_name,
+                    api_key=api_key,
+                    api_base=base_url if base_url else None,
+                    temperature=0.7,
+                )
+            except Exception as e:
+                logger.warning(f"[DeepAgentRuntime] ChatLiteLLM failed, falling back to ChatAnthropic: {e}")
+                model = ChatAnthropic(
+                    model=model_name,
+                    api_key=api_key,
+                    anthropic_api_url=base_url,
+                    temperature=0.7,
+                )
 
         self._model_name = model_name  # 存储模型名称供适配器使用
-
-        logger.info(
-            f"[DeepAgentRuntime] Model config: model_name={model_name}, "
-            f"base_url={base_url}, api_key_set={'yes' if api_key else 'no'}, "
-            f"provider_manager={'used' if self._provider_manager else 'not used'}"
-        )
-
-        model = ChatAnthropic(
-            model=model_name,
-            api_key=api_key,
-            anthropic_api_url=base_url,
-            temperature=0.7,
-        )
 
         # 构建系统提示词，告知 LLM 它在容器环境中，应自治解决依赖与路径问题
         base_prompt = self._config.system or self._config.system_prompt or ""
@@ -391,6 +414,84 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         # 停止统一日志记录器
         await self._stop_unified_loggers()
 
+    async def _ensure_agent_for_dialog(self, dialog_id: str) -> bool:
+        """
+        确保 agent 使用正确的模型（支持动态模型切换）
+
+        Args:
+            dialog_id: 对话 ID
+
+        Returns:
+            如果重新创建了 agent 返回 True，否则返回 False
+        """
+        if not self._provider_manager:
+            return False
+
+        # 获取对话选择的模型
+        try:
+            from backend.infrastructure.container import container
+            if container.session_manager:
+                session = container.session_manager.get_session_sync(dialog_id)
+                if session:
+                    selected_model = getattr(session, 'selected_model_id', None)
+                    if selected_model and selected_model != self._model_name:
+                        logger.info(
+                            f"[DeepAgentRuntime] Model changed from {self._model_name} to {selected_model} for dialog {dialog_id}"
+                        )
+                        # 重新创建模型实例
+                        new_model = await self._provider_manager.create_model_instance(selected_model)
+                        self._model_name = selected_model
+
+                        # 重新创建 agent builder
+                        project_root = Path(__file__).resolve().parent.parent.parent.parent
+                        skills_dir = project_root / "skills"
+
+                        # 转换工具格式
+                        from langchain_core.tools import StructuredTool
+                        adapted_tools = [
+                            StructuredTool.from_function(
+                                func=tool_info.handler,
+                                name=name,
+                                description=tool_info.description,
+                            )
+                            for name, tool_info in self._tools.items()
+                        ]
+
+                        # 重新构建 agent
+                        from .agents import AgentBuilder
+                        base_prompt = self._config.system or self._config.system_prompt or ""
+                        system_prompt = base_prompt + (
+                            "\n\n## Environment\n"
+                            "You run inside a Linux Docker container. "
+                            "Use Linux commands (ls, cat, grep, cd). "
+                        )
+
+                        builder = (
+                            AgentBuilder()
+                            .with_name(self._config.name or self._agent_id)
+                            .with_model(new_model)
+                            .with_tools(adapted_tools)
+                            .with_system_prompt(system_prompt)
+                            .with_checkpointer(self._checkpointer)
+                            .with_store(self._store)
+                            .with_skills(self._config.skills or [])
+                            .with_todo_list()
+                            .with_filesystem()
+                            .with_claude_compression(level="standard", enable_session_memory=True)
+                            .with_prompt_caching()
+                        )
+
+                        if self._config.interrupt_on:
+                            builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
+
+                        self._agent = builder.build()
+                        logger.info(f"[DeepAgentRuntime] Rebuilt agent with new model: {selected_model}")
+                        return True
+        except Exception as e:
+            logger.debug(f"[DeepAgentRuntime] Failed to check/switch model: {e}")
+
+        return False
+
     async def send_message(  # type: ignore[override,misc]
         self,
         dialog_id: str,
@@ -408,6 +509,9 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         """
         if self._agent is None:
             raise RuntimeError("DeepAgentRuntime not initialized. Call initialize() first.")
+
+        # 检查是否需要切换模型
+        await self._ensure_agent_for_dialog(dialog_id)
 
         # 获取或创建会话
         session_mgr = self.session_manager
@@ -459,6 +563,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         accumulated_content = ""
         accumulated_reasoning = ""
         last_message_id = None
+        actual_model_name = None  # 从流式响应中捕获的实际模型名称
 
         try:
             # 使用 stream_mode="messages" 获取 token 级增量数据
@@ -484,11 +589,17 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 delta_reasoning = ""
                 
                 # 处理不同格式的 raw_event
+                event_metadata = None
                 if isinstance(raw_event, tuple) and len(raw_event) >= 2:
                     # (stream_mode, (message_chunk, metadata)) 格式
                     msg_chunk = raw_event[1]
                     if isinstance(msg_chunk, tuple):
+                        event_metadata = msg_chunk[1] if len(msg_chunk) > 1 else None
                         msg_chunk = msg_chunk[0]
+
+                    # 从元数据中提取实际模型名称（如果尚未捕获）
+                    if actual_model_name is None and event_metadata:
+                        actual_model_name = event_metadata.get('ls_model_name')
 
                     # 仅向前端广播 ToolMessage（不写入 SessionManager）
                     if getattr(msg_chunk, 'type', None) == 'tool':
@@ -594,10 +705,11 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 # 检查当前状态，避免重复完成
                 session = await session_mgr.get_session(dialog_id)
                 if final_content and session and session.status.value not in ("completed", "closed"):
-                    # 构建包含模型信息的 metadata
+                    # 构建包含模型信息的 metadata（优先使用从流式响应捕获的实际模型名称）
+                    effective_model = actual_model_name or self._model_name or "unknown"
                     completion_metadata = {
-                        "model": self._model_name or "unknown",
-                        "provider": self._adapter_factory.detect_provider(self._model_name or "") or "unknown",
+                        "model": effective_model,
+                        "provider": self._adapter_factory.detect_provider(effective_model) or "unknown",
                     }
                     if accumulated_reasoning:
                         completion_metadata["reasoning_content"] = accumulated_reasoning
@@ -613,14 +725,25 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                         f"AI response completed: dialog_id={dialog_id}, content_len={len(final_content)}",
                         dialog_id
                     )
+
+                    # 导出完整运行时状态（checkpoint 数据）到独立快照文件
+                    checkpoint_data = self._get_checkpoint_snapshot(dialog_id)
+                    snapshot_path = session_mgr.save_checkpoint_snapshot(checkpoint_data)
+                    if snapshot_path:
+                        self._fire_log_update(
+                            "debug",
+                            f"Checkpoint snapshot saved: {snapshot_path}",
+                            dialog_id
+                        )
             
             # 发送完成事件给调用者
             if accumulated_content:
-                # 使用适配器构建元数据
+                # 使用适配器构建元数据（优先使用从流式响应捕获的实际模型名称）
+                effective_model = actual_model_name or self._model_name or "unknown"
                 completion_metadata = {
                     "reasoning_content": accumulated_reasoning,
-                    "model": self._model_name or "unknown",
-                    "provider": self._adapter_factory.detect_provider(self._model_name or "") or "unknown",
+                    "model": effective_model,
+                    "provider": self._adapter_factory.detect_provider(effective_model) or "unknown",
                     "content_length": len(accumulated_content),
                 }
                 yield AgentEvent(
@@ -665,6 +788,72 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         if name in self._tools:
             del self._tools[name]
             logger.debug(f"[DeepAgentRuntime] Unregistered tool: {name}")
+
+    def _get_checkpoint_snapshot(self, dialog_id: str) -> dict[str, Any]:
+        """获取 LangGraph checkpoint 快照数据
+
+        从 InMemorySaver 中获取完整的运行时状态，包括：
+        - 完整消息列表（含工具调用中间状态）
+        - Pending writes（待写入的中间状态）
+        - Channel values（各通道的当前值）
+
+        Args:
+            dialog_id: 对话 ID（对应 thread_id）
+
+        Returns:
+            包含 checkpoint 数据的字典，如果未找到则返回基础结构
+        """
+        try:
+            if not self._checkpointer:
+                return {"dialog_id": dialog_id, "checkpoint_exists": False}
+
+            config = {"configurable": {"thread_id": dialog_id}}
+            checkpoint_tuple = self._checkpointer.get_tuple(config)
+
+            if not checkpoint_tuple:
+                return {"dialog_id": dialog_id, "checkpoint_exists": False}
+
+            checkpoint = checkpoint_tuple.checkpoint
+            metadata = checkpoint_tuple.metadata if hasattr(checkpoint_tuple, 'metadata') else {}
+            pending_writes = checkpoint_tuple.pending_writes if hasattr(checkpoint_tuple, 'pending_writes') else []
+
+            # 提取消息数据（通常在 "messages" channel）
+            channel_values = checkpoint.get("channel_values", {})
+            messages_data = []
+            if "messages" in channel_values:
+                for msg in channel_values["messages"]:
+                    if hasattr(msg, 'model_dump'):
+                        messages_data.append(msg.model_dump())
+                    elif hasattr(msg, '__dict__'):
+                        messages_data.append(msg.__dict__)
+                    else:
+                        messages_data.append({"content": str(msg)})
+
+            return {
+                "dialog_id": dialog_id,
+                "checkpoint_exists": True,
+                "checkpoint_id": checkpoint.get("id"),
+                "checkpoint_ns": checkpoint.get("checkpoint_ns", ""),
+                "messages_count": len(messages_data),
+                "messages": messages_data[:10] if messages_data else [],  # 限制数量避免过大
+                "channel_values": {
+                    k: str(v)[:500] if not isinstance(v, (int, float, bool, type(None))) else v
+                    for k, v in channel_values.items()
+                    if k != "messages"  # 消息已单独提取
+                },
+                "pending_writes": [
+                    {"task_id": pw[0] if len(pw) > 0 else None,
+                     "channel": pw[1] if len(pw) > 1 else None}
+                    for pw in (pending_writes or [])[:5]  # 限制数量
+                ],
+                "metadata": {
+                    k: str(v)[:200] if not isinstance(v, (int, float, bool, type(None))) else v
+                    for k, v in (metadata or {}).items()
+                },
+            }
+        except Exception as e:
+            logger.debug(f"[DeepAgentRuntime] Failed to get checkpoint snapshot: {e}")
+            return {"dialog_id": dialog_id, "checkpoint_exists": False, "error": str(e)}
 
     async def stop(self, dialog_id: Optional[str] = None) -> None:
         """停止 Agent"""

@@ -11,6 +11,13 @@ from .state_manager import StateManager
 from .provider_manager import ProviderManager, ModelConfig
 from .memory_manager import MemoryManager
 from .skill_manager import SkillManager
+from .model_discovery import (
+    discover_credentials,
+    discover_available_models,
+    test_model_connectivity,
+    ModelConfig as DiscoveredModelConfig,
+    Credential,
+)
 
 __all__ = [
     "DialogManager",
@@ -19,4 +26,9 @@ __all__ = [
     "ProviderManager",
     "MemoryManager",
     "SkillManager",
+    "discover_credentials",
+    "discover_available_models",
+    "test_model_connectivity",
+    "DiscoveredModelConfig",
+    "Credential",
 ]

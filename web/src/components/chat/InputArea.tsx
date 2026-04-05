@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type ClipboardEvent,
   type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { Send, Square, Brain, Zap, Bot, ChevronDown, X } from "lucide-react";
 import { useAgentStore } from "@/agent/agent-store";
@@ -51,6 +52,7 @@ interface ModelInfo {
   id: string;
   label: string;
   provider: string;
+  client_type?: string;
 }
 
 const DEFAULT_MODELS: ModelInfo[] = [
@@ -82,8 +84,9 @@ export function InputArea({
   const [inputText, setInputText] = useState("");
   const [planMode, setPlanMode] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("brief");
-  const [model, setModel] = useState(DEFAULT_MODELS[0].id);
-  const [models, setModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
+  const [model, setModel] = useState<string>("");
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [activeModelLabel, setActiveModelLabel] = useState<string>("Loading...");
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -92,6 +95,8 @@ export function InputArea({
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [thinkMenuOpen, setThinkMenuOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isSwitchingModel, setIsSwitchingModel] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -103,11 +108,47 @@ export function InputArea({
     ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   }, [inputText]);
 
-  // Get model from dialog metadata (backend configuration)
+  // Fetch available models from backend on mount
   useEffect(() => {
-    if (!currentSnapshot?.metadata?.model) return;
+    const fetchModels = async () => {
+      try {
+        const res = await fetch("http://localhost:8001/api/config/models");
+        if (!res.ok) throw new Error("Failed to fetch models");
+        const result = await res.json();
+        if (result.success && result.data?.available_models?.length > 0) {
+          const availableModels = result.data.available_models;
+          setModels(availableModels);
+          // Use the first available model or current active model
+          const currentActiveModel = result.data.model;
+          const modelToUse = availableModels.find((m: ModelInfo) => m.id === currentActiveModel)
+            ? currentActiveModel
+            : availableModels[0].id;
+          setModel(modelToUse);
+        } else {
+          // No models available from backend
+          console.warn("[InputArea] No models available from backend");
+          setModels([]);
+          setModel("");
+        }
+      } catch (err) {
+        console.error("[InputArea] Failed to fetch models:", err);
+        // On error, show empty list - don't fallback to hardcoded defaults
+        setModels([]);
+        setModel("");
+      } finally {
+        setModelsLoading(false);
+      }
+    };
 
-    const modelFromBackend = currentSnapshot.metadata.model;
+    fetchModels();
+  }, []);
+
+  // Get model from dialog's selected_model_id (backend configuration)
+  useEffect(() => {
+    // First try to get from dialog's selected_model_id, then fall back to metadata.model
+    const modelFromBackend = currentSnapshot?.selected_model_id || currentSnapshot?.metadata?.model;
+    if (!modelFromBackend) return;
+
     setModel(modelFromBackend);
 
     const found = models.find((m) => m.id === modelFromBackend);
@@ -122,7 +163,7 @@ export function InputArea({
         .join("-");
       setActiveModelLabel(formatted);
     }
-  }, [currentSnapshot?.metadata?.model]);
+  }, [currentSnapshot?.selected_model_id, currentSnapshot?.metadata?.model, models]);
 
   const filteredCommands = SLASH_COMMANDS.filter((cmd) =>
     cmd.name.startsWith(slashFilter),
@@ -230,9 +271,13 @@ export function InputArea({
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const currentModel = models.find((m) => m.id === model) ?? models[0];
-  const displayLabel = activeModelLabel || currentModel?.label || model;
-  const isSendDisabled = !isStreaming && (!inputText.trim() || isSending);
+  const currentModel = models.find((m) => m.id === model);
+  const displayLabel = modelsLoading
+    ? "加载中..."
+    : isSwitchingModel
+      ? "切换中..."
+      : (currentModel?.label || activeModelLabel || model || "无可用模型");
+  const isSendDisabled = !isStreaming && (!inputText.trim() || isSending || !model || isSwitchingModel);
 
   return (
     <div
@@ -467,18 +512,52 @@ export function InputArea({
         {/* Right: model selector + send */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <div style={{ position: "relative" }}>
+            {modelError && (
+              <div style={{
+                position: 'absolute',
+                bottom: 'calc(100% + 4px)',
+                right: 0,
+                background: 'var(--danger)',
+                color: '#fff',
+                padding: '4px 8px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '12px',
+                whiteSpace: 'nowrap',
+                zIndex: 101,
+              }}>
+                {modelError}
+                <button
+                  onClick={() => setModelError(null)}
+                  style={{
+                    marginLeft: '6px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <ToolBtn
               onClick={() => {
+                if (modelsLoading || models.length === 0 || isSwitchingModel) return;
                 setModelMenuOpen((o) => !o);
                 setThinkMenuOpen(false);
               }}
-              title="选择模型"
+              onMouseDown={(e) => e.stopPropagation()}
+              title={modelsLoading ? "加载中..." : (models.length === 0 ? "无可用模型" : "选择模型")}
             >
               <Zap size={13} />
               <span>{displayLabel}</span>
-              <ChevronDown size={10} />
+              {!modelsLoading && !isSwitchingModel && models.length > 0 && <ChevronDown size={10} />}
+              {isSwitchingModel && (
+                <span style={{ marginLeft: '4px', fontSize: '10px' }}>⏳</span>
+              )}
             </ToolBtn>
-            {modelMenuOpen && (
+            {modelMenuOpen && models.length > 0 && (
               <PopupMenu
                 onClose={() => setModelMenuOpen(false)}
                 align="right"
@@ -487,12 +566,43 @@ export function InputArea({
                   <PopupItem
                     key={m.id}
                     active={model === m.id}
-                    onClick={() => {
-                      setModel(m.id);
-                      setModelMenuOpen(false);
+                    onClick={async (e: React.MouseEvent) => {
+                      e.stopPropagation();
+                      if (m.id === model) {
+                        setModelMenuOpen(false);
+                        return;
+                      }
+
+                      // Call backend API to switch model for this dialog
+                      setIsSwitchingModel(true);
+                      setModelError(null);
+                      try {
+                        const res = await fetch(`http://localhost:8001/api/dialogs/${dialogId}/model`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ model_id: m.id }),
+                        });
+                        if (!res.ok) {
+                          const err = await res.json();
+                          throw new Error(err.error?.message || 'Failed to switch model');
+                        }
+                        setModel(m.id);
+                        setActiveModelLabel(m.label);
+                        setModelMenuOpen(false);
+                      } catch (err: any) {
+                        console.error('[InputArea] Failed to switch model:', err);
+                        setModelError(err.message || 'Failed to switch model');
+                      } finally {
+                        setIsSwitchingModel(false);
+                      }
                     }}
                   >
                     {m.label}
+                    {m.client_type && (
+                      <span style={{ marginLeft: '6px', fontSize: '10px', color: 'var(--text-muted)' }}>
+                        ({m.client_type})
+                      </span>
+                    )}
                   </PopupItem>
                 ))}
               </PopupMenu>
@@ -544,16 +654,19 @@ function ToolBtn({
   children,
   active = false,
   onClick,
+  onMouseDown,
   title,
 }: {
   children: React.ReactNode;
   active?: boolean;
   onClick?: () => void;
+  onMouseDown?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   title?: string;
 }) {
   return (
     <button
       onClick={onClick}
+      onMouseDown={onMouseDown}
       title={title}
       style={{
         display: "flex",
@@ -586,15 +699,22 @@ function PopupMenu({
   onClose: () => void;
   align?: "left" | "right";
 }) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const handler = () => onClose();
+    const handler = (e: MouseEvent) => {
+      // 只有当点击在菜单外部时才关闭
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose]);
 
   return (
     <div
-      onMouseDown={(e) => e.stopPropagation()}
+      ref={menuRef}
       style={{
         position: "absolute",
         bottom: "calc(100% + 6px)",
@@ -620,11 +740,12 @@ function PopupItem({
 }: {
   children: React.ReactNode;
   active?: boolean;
-  onClick?: () => void;
+  onClick?: (e: ReactMouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
       onClick={onClick}
+      onMouseDown={(e) => e.stopPropagation()}
       style={{
         display: "flex",
         alignItems: "center",
