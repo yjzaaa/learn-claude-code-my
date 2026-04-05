@@ -143,6 +143,8 @@ class EventHandlers:
         content = event.content
         message_id = event.message_id
 
+        logger.info(f"[_handle_execute_request] Received: dialog_id={dialog_id}, message_id={message_id}")
+
         # 设置状态
         container.set_status(dialog_id, "thinking")
         container.set_streaming_message(
@@ -174,6 +176,7 @@ class EventHandlers:
             logger.error("[EventHandlers] Runtime not available")
             return
 
+        logger.info(f"[_handle_execute_request] Calling runtime.send_message for dialog={dialog_id}")
         try:
             async for runtime_event in runtime.send_message(
                 dialog_id, content, stream=True, message_id=message_id
