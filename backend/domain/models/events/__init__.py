@@ -38,6 +38,15 @@ from .agent import (
     ServerPushEvent,
 )
 
+from .agent_events import (
+    AgentExecuteRequest,
+    AgentProgressEvent,
+    AgentCompleteEvent,
+    AgentErrorEvent,
+    ToolCallRequest,
+    ToolCallResultEvent,
+)
+
 __all__ = [
     # Base
     "BaseEvent",
@@ -69,4 +78,11 @@ __all__ = [
     "TodoReminderEvent",
     "RoundsLimitEvent",
     "ServerPushEvent",
+    # New Event-Driven Architecture Events
+    "AgentExecuteRequest",
+    "AgentProgressEvent",
+    "AgentCompleteEvent",
+    "AgentErrorEvent",
+    "ToolCallRequest",
+    "ToolCallResultEvent",
 ]

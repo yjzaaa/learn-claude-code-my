@@ -40,14 +40,13 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
     """
 
     def __init__(self, agent_id: str):
+        # 先调用 DeepLoggingMixin 的 __init__ 初始化日志缓冲区
+        DeepLoggingMixin.__init__(self)
         super().__init__(agent_id)
 
         self._agent: Any = None  # deep agent 实例
         self._checkpointer: Any = None
         self._store: Any = None
-
-        # 初始化日志记录器
-        self._init_loggers()
 
         logger.debug(f"[DeepAgentRuntime] Created: {agent_id}")
 

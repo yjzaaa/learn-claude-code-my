@@ -327,6 +327,20 @@ class WSRoundsLimitEvent(TypedDict):
 
 
 # ═══════════════════════════════════════════════════════════
+# REST API Request Body Types (Pydantic Models)
+# ═══════════════════════════════════════════════════════════
+
+class CreateDialogBody(BaseModel):
+    """创建对话请求体"""
+    title: Optional[str] = "New Dialog"
+
+
+class SendMessageBody(BaseModel):
+    """发送消息请求体"""
+    content: str
+
+
+# ═══════════════════════════════════════════════════════════
 # REST API Response Types
 # ═══════════════════════════════════════════════════════════
 

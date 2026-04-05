@@ -8,6 +8,21 @@ HTTP Routes - API 路由
 - hitl: 人工介入管理
 """
 
+# 新路由模块（基于拆分后的 main.py）
+from . import dialogs, messages, agent
+
+# 原有路由模块
 from . import health, dialog, skills, tools, hitl
 
-__all__ = ["health", "dialog", "skills", "tools", "hitl"]
+__all__ = [
+    # 新路由
+    "dialogs",
+    "messages",
+    "agent",
+    # 原有路由
+    "health",
+    "dialog",
+    "skills",
+    "tools",
+    "hitl",
+]
