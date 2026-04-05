@@ -463,8 +463,18 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             self._model_name = selected_model
 
             # 重新创建 agent builder
+            import os
             project_root = Path(__file__).resolve().parent.parent.parent.parent
             skills_dir = project_root / "skills"
+
+            # 创建 backend（与 _do_initialize 保持一致）
+            agent_sandbox = os.getenv("AGENT_SANDBOX", "local").strip().lower()
+            if agent_sandbox == "docker":
+                from .services.docker_sandbox_backend import create_sandbox_backend
+                backend = create_sandbox_backend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+            else:
+                from .services.windows_shell_backend import WindowsShellBackend
+                backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
 
             # 转换工具格式
             from langchain_core.tools import StructuredTool
@@ -492,6 +502,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 .with_model(new_model)
                 .with_tools(adapted_tools)
                 .with_system_prompt(system_prompt)
+                .with_backend(backend)
                 .with_checkpointer(self._checkpointer)
                 .with_store(self._store)
                 .with_skills(self._config.skills or [])
