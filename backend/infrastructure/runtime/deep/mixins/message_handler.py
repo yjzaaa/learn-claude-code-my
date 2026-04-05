@@ -14,13 +14,31 @@ from pydantic import BaseModel
 
 
 class DeepMessageHandlerMixin:
-    """消息处理 Mixin"""
+    """消息处理 Mixin
 
+    注意：此 Mixin 依赖以下其他 Mixin 提供的属性/方法：
+    - DeepModelSwitcherMixin: _ensure_agent_for_dialog, session_manager
+    - DeepInitializerMixin: _merge_system_messages, _init_unified_loggers
+    - UnifiedLoggingMixin: _fire_log_msg, _fire_log_update, _fire_log_tool_result
+    - DeepCheckpointMixin: _get_checkpoint_snapshot
+    """
+
+    # 来自其他 Mixin 的属性
     _agent: Any
     _config: Any
     _model_name: Optional[str]
     _checkpointer: Any
     _adapter_factory: LLMResponseAdapterFactory
+    _session_mgr: Any  # from DeepModelSwitcherMixin
+
+    # 来自其他 Mixin 的方法（运行时注入）
+    _ensure_agent_for_dialog: Any
+    _merge_system_messages: Any
+    _fire_log_msg: Any
+    _fire_log_update: Any
+    _fire_log_tool_result: Any
+    _get_checkpoint_snapshot: Any
+    session_manager: Any
 
     async def send_message(
         self,
@@ -67,7 +85,7 @@ class DeepMessageHandlerMixin:
         actual_model_name = None
 
         # 跟踪工具调用，用于关联 tool_call 和 tool_result
-        pending_tool_calls: dict[str, dict] = {}
+        pending_tool_calls: dict[str, dict[str, Any]] = {}
 
         try:
             async for raw_event in self._agent.astream(

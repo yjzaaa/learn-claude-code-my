@@ -246,7 +246,7 @@ class WSStreamingMessage(TypedDict):
     timestamp: str
     agent_name: str
     reasoning_content: NotRequired[Any]
-    tool_calls: list
+    tool_calls: list[Any]
 
 
 class WSDialogSnapshot(TypedDict):

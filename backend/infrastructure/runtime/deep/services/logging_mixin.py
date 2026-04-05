@@ -23,7 +23,7 @@ class LogEntry:
     message: str
     dialog_id: Optional[str] = None
     timestamp: datetime = field(default_factory=datetime.now)
-    extra: dict = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class AsyncLogBuffer:
@@ -52,7 +52,7 @@ class AsyncLogBuffer:
         self._queue: InMemoryAsyncQueue[LogEntry] = InMemoryAsyncQueue(maxsize=maxsize)
         self._logger = logger.bind(name=name)
         self._running = False
-        self._flush_task: Optional[asyncio.Task] = None
+        self._flush_task: Optional[asyncio.Task[Any]] = None
         self._stats = {
             "buffered": 0,
             "flushed": 0,
@@ -180,7 +180,7 @@ class AsyncLogBuffer:
 
         log_func(f"{entry.message}{extra_info}")
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, Any]:
         """获取缓冲区统计"""
         return {
             "name": self.name,
@@ -281,7 +281,7 @@ class DeepLoggingMixin:
             dialog_id=dialog_id
         )
 
-    async def _alog_update(self, update_type: str, data: dict, dialog_id: str) -> bool:
+    async def _alog_update(self, update_type: str, data: dict[str, Any], dialog_id: str) -> bool:
         """异步记录更新
 
         Args:
@@ -323,7 +323,7 @@ class DeepLoggingMixin:
             key=key
         )
 
-    def get_log_stats(self) -> dict:
+    def get_log_stats(self) -> dict[str, Any]:
         """获取日志统计信息"""
         return {
             "messages": self._msg_log_buffer.get_stats() if self._msg_log_buffer else None,
@@ -361,10 +361,10 @@ class JsonlLogBuffer:
         self.flush_interval = flush_interval
         self.batch_size = batch_size
 
-        self._queues: dict[str, InMemoryAsyncQueue[dict]] = {}
+        self._queues: dict[str, InMemoryAsyncQueue[dict[str, Any]]] = {}
         self._running = False
-        self._flush_task: Optional[asyncio.Task] = None
-        self._stats: dict[str, dict] = {}
+        self._flush_task: Optional[asyncio.Task[Any]] = None
+        self._stats: dict[str, dict[str, Any]] = {}
 
     async def start(self) -> None:
         """启动 JSONL 日志缓冲区"""
@@ -398,7 +398,7 @@ class JsonlLogBuffer:
 
         logger.debug(f"[JsonlLogBuffer] Stopped")
 
-    async def write(self, log_type: str, data: dict) -> bool:
+    async def write(self, log_type: str, data: dict[str, Any]) -> bool:
         """异步写入 JSONL 日志
 
         Args:
@@ -440,13 +440,13 @@ class JsonlLogBuffer:
         for log_type, queue in self._queues.items():
             await self._flush_queue(log_type, queue)
 
-    async def _flush_queue(self, log_type: str, queue: InMemoryAsyncQueue) -> None:
+    async def _flush_queue(self, log_type: str, queue: InMemoryAsyncQueue[dict[str, Any]]) -> None:
         """刷新单个队列到文件"""
         if queue.empty():
             return
 
         log_file = self.log_dir / f"{log_type}.jsonl"
-        batch: list[dict] = []
+        batch: list[dict[str, Any]] = []
 
         # 收集一批数据（最多 batch_size 个）
         # 使用 get_nowait 避免阻塞和复杂的迭代器管理
@@ -475,7 +475,7 @@ class JsonlLogBuffer:
         except Exception as e:
             logger.error(f"[JsonlLogBuffer] Write error for {log_type}: {e}")
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, Any]:
         """获取统计信息"""
         return {
             "log_dir": str(self.log_dir),
@@ -584,7 +584,7 @@ class UnifiedLoggingMixin:
             dialog_id=dialog_id
         )
 
-    async def _alog_update(self, update_type: str, data: dict, dialog_id: str) -> bool:
+    async def _alog_update(self, update_type: str, data: dict[str, Any], dialog_id: str) -> bool:
         """异步记录更新"""
         if not self._update_log_buffer:
             return False
@@ -610,7 +610,7 @@ class UnifiedLoggingMixin:
     # JSONL 日志接口（集中管理所有 jsonl 写入）
     # ═════════════════════════════════════════════════════════════════
 
-    async def _log_event(self, event_type: str, data: dict, dialog_id: Optional[str] = None) -> bool:
+    async def _log_event(self, event_type: str, data: dict[str, Any], dialog_id: Optional[str] = None) -> bool:
         """记录事件到 raw_event.jsonl
 
         替代 deep.py 中的直接文件写入
@@ -743,7 +743,7 @@ class UnifiedLoggingMixin:
         except Exception:
             pass
 
-    def get_log_stats(self) -> dict:
+    def get_log_stats(self) -> dict[str, Any]:
         """获取所有日志统计"""
         return {
             "buffers": {

@@ -76,7 +76,7 @@ class AgentConfig(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     max_iterations: int = 10
-    tools: list = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "AgentConfig":

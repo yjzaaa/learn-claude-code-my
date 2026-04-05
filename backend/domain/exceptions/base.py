@@ -181,7 +181,7 @@ class LimitExceededError(DomainError):
         if current and maximum:
             message = f"{limit_type} limit exceeded: {current}/{maximum}"
 
-        details = {"limit_type": limit_type}
+        details: dict[str, Any] = {"limit_type": limit_type}
         if current is not None:
             details["current"] = current
         if maximum is not None:

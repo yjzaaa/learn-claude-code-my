@@ -15,17 +15,17 @@ class DeepAgentConfig(BaseModel):
     model: str = "claude-sonnet-4-6"
     system: str = ""
     system_prompt: str = ""
-    skills: list = []
-    subagents: list = []
-    interrupt_on: dict = {}
+    skills: list[str] = []
+    subagents: list[str] = []
+    interrupt_on: dict[str, Any] = {}
 
 
 @dataclass
 class ToolCache:
     """工具缓存"""
-    handler: Callable
+    handler: Callable[..., Any]
     description: str
-    parameters_schema: dict
+    parameters_schema: dict[str, Any]
 
 
 @dataclass

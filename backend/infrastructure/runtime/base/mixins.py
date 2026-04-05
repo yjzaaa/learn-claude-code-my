@@ -90,7 +90,7 @@ class ToolMixin:
     """Tool Mixin - 工具管理功能"""
     _tool_mgr: Any = None
 
-    def _adapt_tools(self, tools: dict) -> list:
+    def _adapt_tools(self, tools: dict[str, Any]) -> list[Any]:
         """转换工具格式"""
         return []
 
@@ -110,11 +110,11 @@ class LifecycleMixin:
 class HitlMixin:
     """HITL Mixin - 人机交互功能"""
 
-    def get_skill_edit_proposals(self, dialog_id: str = None) -> list:
+    def get_skill_edit_proposals(self, dialog_id: Optional[str] = None) -> list[Any]:
         """获取待处理的 Skill 编辑提案"""
         return []
 
-    def decide_skill_edit(self, approval_id: str, decision: str, edited_content: str = None) -> Any:
+    def decide_skill_edit(self, approval_id: str, decision: str, edited_content: Optional[str] = None) -> Any:
         """处理 Skill 编辑审核决定"""
         pass
 
@@ -124,7 +124,7 @@ class DialogMixin:
     _dialog_mgr: Any = None
     _session_mgr: Any = None
 
-    async def create_dialog(self, user_input: str, title: str = None) -> str:
+    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
         """创建对话"""
         import uuid
         return str(uuid.uuid4())

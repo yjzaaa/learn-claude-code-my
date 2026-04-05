@@ -19,7 +19,7 @@ class DeepInitializerMixin:
     _config: Optional[DeepAgentConfig]
     _agent_id: str
     _provider_manager: Optional[ProviderManager]
-    _tools: dict
+    _tools: dict[str, Any]
     _checkpointer: Any
     _store: Any
     _agent: Any
@@ -201,7 +201,7 @@ class DeepInitializerMixin:
         await self._stop_unified_loggers()
 
     @staticmethod
-    def _extract_text_content(msg: dict) -> str:
+    def _extract_text_content(msg: dict[str, Any]) -> str:
         """提取文本内容"""
         raw = msg.get("data", {}).get("content", "") if isinstance(msg, dict) else ""
         if isinstance(raw, str):
@@ -220,7 +220,7 @@ class DeepInitializerMixin:
         return str(raw)
 
     @classmethod
-    def _merge_system_messages(cls, messages: list[dict]) -> list[dict]:
+    def _merge_system_messages(cls, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """合并 system 消息"""
         system_parts = []
         others = []
