@@ -29,6 +29,12 @@ export interface ToolCall {
   completed_at?: string;
 }
 
+export interface TokenUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+}
+
 export interface Message {
   id: string;
   role: Role;
@@ -45,6 +51,12 @@ export interface Message {
   // Tool only
   tool_call_id?: string;
   tool_name?: string;
+
+  // LLM metadata (from unified adapter)
+  usage?: TokenUsage;
+  model?: string;
+  provider?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface DialogMetadata {

@@ -33,8 +33,12 @@ class SkillManagerConfig(BaseModel):
     skills_dir: Optional[Path] = None
 
 class ProviderConfig(BaseModel):
-    """Provider 配置"""
-    model: str = "deepseek/deepseek-chat"
+    """Provider 配置
+
+    注意：实际生产代码应优先使用 ProviderManager 获取配置
+    此类主要用于向后兼容和类型定义
+    """
+    model: Optional[str] = None  # None 表示使用 ProviderManager 配置
     api_key: Optional[str] = None
     base_url: Optional[str] = None
 
@@ -62,9 +66,13 @@ class EngineConfig(BaseModel):
         )
 
 class AgentConfig(BaseModel):
-    """Agent 配置"""
+    """Agent 配置
+
+    注意：实际生产代码应优先使用 ProviderManager 获取模型配置
+    此类主要用于向后兼容和类型定义
+    """
     system: str = ""
-    model: str = "deepseek/deepseek-chat"
+    model: Optional[str] = None  # None 表示使用 ProviderManager 配置
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     max_iterations: int = 10
@@ -75,7 +83,7 @@ class AgentConfig(BaseModel):
         """从字典创建配置"""
         return cls(
             system=config.get("system", ""),
-            model=config.get("model", "deepseek/deepseek-chat"),
+            model=config.get("model"),  # None 表示使用 ProviderManager
             api_key=config.get("api_key"),
             base_url=config.get("base_url"),
             max_iterations=config.get("max_iterations", 10),

@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
 } from "react";
 import { Send, Square, Brain, Zap, Bot, ChevronDown, X } from "lucide-react";
+import { useAgentStore } from "@/agent/agent-store";
 
 // ---- Types ----
 
@@ -45,10 +46,19 @@ const SLASH_COMMANDS = [
   { name: "help", description: "查看可用命令" },
 ];
 
-const MODELS = [
-  { id: "claude-opus-4-6", label: "Opus 4.6" },
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+// 可用模型列表（从后端 API 获取）
+interface ModelInfo {
+  id: string;
+  label: string;
+  provider: string;
+}
+
+const DEFAULT_MODELS: ModelInfo[] = [
+  { id: "deepseek-reasoner", label: "DeepSeek R1", provider: "deepseek" },
+  { id: "deepseek-chat", label: "DeepSeek V3", provider: "deepseek" },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet", provider: "anthropic" },
+  { id: "kimi-k2-coding", label: "Kimi K2", provider: "kimi" },
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
 ];
 
 const THINKING_LABELS: Record<ThinkingLevel, string> = {
@@ -60,14 +70,21 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
 // ---- Component ----
 
 export function InputArea({
+  dialogId,
   isStreaming = false,
   onSend,
   onStop,
 }: InputAreaProps) {
+  const currentSnapshot = useAgentStore((s) =>
+    s.currentSnapshot?.id === dialogId ? s.currentSnapshot : null
+  );
+
   const [inputText, setInputText] = useState("");
   const [planMode, setPlanMode] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("brief");
-  const [model, setModel] = useState(MODELS[1].id);
+  const [model, setModel] = useState(DEFAULT_MODELS[0].id);
+  const [models, setModels] = useState<ModelInfo[]>(DEFAULT_MODELS);
+  const [activeModelLabel, setActiveModelLabel] = useState<string>("Loading...");
   const [attachedFiles, setAttachedFiles] = useState<FileAttachment[]>([]);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
@@ -85,6 +102,27 @@ export function InputArea({
     ta.style.height = "auto";
     ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   }, [inputText]);
+
+  // Get model from dialog metadata (backend configuration)
+  useEffect(() => {
+    if (!currentSnapshot?.metadata?.model) return;
+
+    const modelFromBackend = currentSnapshot.metadata.model;
+    setModel(modelFromBackend);
+
+    const found = models.find((m) => m.id === modelFromBackend);
+    if (found) {
+      setActiveModelLabel(found.label);
+    } else {
+      // Format the model name for display
+      const formatted = modelFromBackend
+        .replace(/^[^/]+\//, "")
+        .split("-")
+        .slice(0, 3)
+        .join("-");
+      setActiveModelLabel(formatted);
+    }
+  }, [currentSnapshot?.metadata?.model]);
 
   const filteredCommands = SLASH_COMMANDS.filter((cmd) =>
     cmd.name.startsWith(slashFilter),
@@ -192,7 +230,8 @@ export function InputArea({
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const currentModel = MODELS.find((m) => m.id === model) ?? MODELS[1];
+  const currentModel = models.find((m) => m.id === model) ?? models[0];
+  const displayLabel = activeModelLabel || currentModel?.label || model;
   const isSendDisabled = !isStreaming && (!inputText.trim() || isSending);
 
   return (
@@ -436,7 +475,7 @@ export function InputArea({
               title="选择模型"
             >
               <Zap size={13} />
-              <span>{currentModel.label}</span>
+              <span>{displayLabel}</span>
               <ChevronDown size={10} />
             </ToolBtn>
             {modelMenuOpen && (
@@ -444,7 +483,7 @@ export function InputArea({
                 onClose={() => setModelMenuOpen(false)}
                 align="right"
               >
-                {MODELS.map((m) => (
+                {models.map((m) => (
                   <PopupItem
                     key={m.id}
                     active={model === m.id}

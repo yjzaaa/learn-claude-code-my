@@ -7,6 +7,7 @@ Agent Runtime Factory - 运行时工厂
 from typing import Optional
 from backend.infrastructure.runtime.simple import SimpleRuntime
 from backend.infrastructure.runtime.manager import ManagerAwareRuntime
+from backend.infrastructure.services import ProviderManager
 
 # DeepRuntime 是可选的，需要额外的依赖
 try:
@@ -26,6 +27,7 @@ class AgentRuntimeFactory:
         agent_type: str,
         agent_id: str,
         config: Optional[dict] = None,
+        provider_manager: Optional[ProviderManager] = None,
     ):
         """
         创建 AgentRuntime 实例
@@ -34,6 +36,7 @@ class AgentRuntimeFactory:
             agent_type: 运行时类型 ("simple", "deep")
             agent_id: Agent ID
             config: 配置字典
+            provider_manager: ProviderManager 实例（统一配置来源）
 
         Returns:
             AgentRuntime 实例
@@ -47,7 +50,7 @@ class AgentRuntimeFactory:
                     "DeepRuntime is not available. "
                     "Install with: pip install deepagents langgraph langchain-anthropic"
                 )
-            runtime = DeepRuntime(agent_id=agent_id)
+            runtime = DeepRuntime(agent_id=agent_id, provider_manager=provider_manager)
             return runtime
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")

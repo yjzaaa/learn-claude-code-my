@@ -17,6 +17,7 @@ load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env", overr
 
 from backend.infrastructure.container import container
 from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
+from backend.infrastructure.services import ProviderManager
 from backend.domain.models.config import EngineConfig
 from backend.infrastructure.event_bus import QueuedEventBus
 from backend.infrastructure.agent_queue import AgentTaskQueue
@@ -66,6 +67,11 @@ async def _initialize() -> None:
     # 项目根目录
     project_root = Path(__file__).resolve().parent.parent.parent.parent
 
+    # 创建 ProviderManager（统一配置来源）
+    provider_manager = ProviderManager()
+    model_config = provider_manager.get_model_config()
+    logger.info(f"[App] ProviderManager initialized: model={model_config.model}, provider={model_config.provider}")
+
     # 创建 Runtime
     agent_type = os.getenv("AGENT_TYPE", "simple")
     if agent_type == "deep":
@@ -76,17 +82,19 @@ async def _initialize() -> None:
             agent_type = "simple"
 
     factory = AgentRuntimeFactory()
+
+    # 配置现在主要由 ProviderManager 管理，EngineConfig 作为补充
     config = EngineConfig.from_dict({
         "skills": {"skills_dir": str(project_root / "skills")},
         "provider": {
-            "model": os.getenv("MODEL_ID", "deepseek/deepseek-chat"),
-            "api_key": os.getenv("ANTHROPIC_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY"),
-            "base_url": os.getenv("ANTHROPIC_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
+            "model": model_config.model,  # 从 ProviderManager 获取
+            "api_key": model_config.api_key,
+            "base_url": model_config.base_url,
         },
         "system": "You are a helpful AI assistant...",
     })
 
-    runtime = factory.create(agent_type, "main-agent", config)
+    runtime = factory.create(agent_type, "main-agent", config, provider_manager=provider_manager)
     await runtime.initialize(config)
 
     if hasattr(runtime, 'setup_workspace_tools'):

@@ -4,6 +4,7 @@
 并通过适配器模式包装为 AgentRuntime 接口。
 """
 
+import asyncio
 from typing import AsyncIterator, Any, Optional, Callable
 
 from loguru import logger
@@ -14,6 +15,13 @@ from backend.domain.models.dialog.dialog import Dialog
 from backend.domain.models.shared.config import EngineConfig
 from backend.domain.models.shared import AgentEvent
 from backend.domain.models.events.event_models import UserMessageModel
+from backend.infrastructure.llm_adapter import (
+    LLMResponseAdapterFactory,
+    StreamingParser,
+    UnifiedLLMResponse,
+    TokenUsage,
+)
+from backend.infrastructure.services import ProviderManager
 from .services.config_adapter import DeepAgentConfig
 from .services.logging_mixin import DeepLoggingMixin
 from langchain_anthropic import ChatAnthropic
@@ -39,7 +47,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
     - logs/deep/deep_values.log: 完整状态日志（异步队列）
     """
 
-    def __init__(self, agent_id: str):
+    def __init__(self, agent_id: str, provider_manager: Optional[ProviderManager] = None):
         # 先调用 DeepLoggingMixin 的 __init__ 初始化日志缓冲区
         DeepLoggingMixin.__init__(self)
         super().__init__(agent_id)
@@ -47,6 +55,9 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         self._agent: Any = None  # deep agent 实例
         self._checkpointer: Any = None
         self._store: Any = None
+        self._adapter_factory = LLMResponseAdapterFactory()
+        self._model_name: Optional[str] = None
+        self._provider_manager = provider_manager  # 统一配置来源
 
         logger.debug(f"[DeepAgentRuntime] Created: {agent_id}")
 
@@ -66,6 +77,9 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         import os
         from pathlib import Path
         from dotenv import load_dotenv
+
+        # 初始化统一日志记录器（必须在其他操作之前）
+        await self._init_unified_loggers()
 
         # 安全网：确保加载项目根目录的 .env（覆盖已有环境变量）
         env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
@@ -98,10 +112,14 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                                        if os.path.isdir(os.path.join(skills_dir, d))]
                 skills_value = skills_list
 
-            # 获取模型名称 - 优先从环境变量，然后配置，最后默认值
-            model = os.getenv("MODEL_ID", "").strip()
-            if not model:
-                model = config_dict.get("provider", {}).get("model", "claude-sonnet-4-6")
+            # 获取模型名称 - 统一从 ProviderManager 获取（单一配置来源）
+            if self._provider_manager:
+                model = self._provider_manager.active_model
+            else:
+                # 回退：从环境变量获取（保持向后兼容）
+                model = os.getenv("MODEL_ID", "").strip()
+                if not model:
+                    model = config_dict.get("provider", {}).get("model", "claude-sonnet-4-6")
 
             self._config = DeepAgentConfig(
                 name=config_dict.get("name", self._agent_id),
@@ -164,14 +182,24 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             for name, tool_info in self._tools.items()
         ]
 
-        # 解析模型：字符串模型若无法被 deepagents 自动推断 provider，则手动构造实例
-        model_name = os.getenv("MODEL_ID", "").strip() or "kimi-k2-coding"
-        base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip() or "https://api.kimi.com/coding/"
-        api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+        # 解析模型：从 ProviderManager 获取统一配置（单一配置来源）
+        if self._provider_manager:
+            model_config = self._provider_manager.get_model_config()
+            model_name = model_config.model
+            api_key = model_config.api_key
+            base_url = model_config.base_url or ""
+        else:
+            # 回退：从环境变量获取（保持向后兼容）
+            model_name = os.getenv("MODEL_ID", "").strip() or "claude-sonnet-4-6"
+            api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+            base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip() or "https://api.anthropic.com/v1/"
+
+        self._model_name = model_name  # 存储模型名称供适配器使用
 
         logger.info(
             f"[DeepAgentRuntime] Model config: model_name={model_name}, "
-            f"base_url={base_url}, api_key_set={api_key}"
+            f"base_url={base_url}, api_key_set={'yes' if api_key else 'no'}, "
+            f"provider_manager={'used' if self._provider_manager else 'not used'}"
         )
 
         model = ChatAnthropic(
@@ -360,8 +388,8 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
 
     async def _do_shutdown(self) -> None:
         """子类实现: 特定清理逻辑"""
-        # Deep Agent 无需特殊清理
-        pass
+        # 停止统一日志记录器
+        await self._stop_unified_loggers()
 
     async def send_message(  # type: ignore[override,misc]
         self,
@@ -388,8 +416,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             session = await session_mgr.get_session(dialog_id)
             if session is None:
                 await session_mgr.create_session(dialog_id, title=message[:50])
-            # 添加用户消息到 SessionManager
-            await session_mgr.add_user_message(dialog_id, message)
+            # 注：用户消息已在 messages.py 中添加，这里只获取历史
             # 从 SessionManager 获取对话历史
             history_messages = await session_mgr.get_messages(dialog_id)
             # 转换为 LangChain 消息格式
@@ -423,10 +450,10 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         recursion_limit = int(os.getenv("AGENT_RECURSION_LIMIT", "100").strip())
         config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
 
-        # 记录用户消息到三种日志
-        self._msg_logger.debug("User message: {}", message[:200])
-        self._update_logger.debug("Start conversation: dialog_id={}", dialog_id)
-        self._value_logger.debug("Initial state: dialog_id={}, message_count={}", dialog_id, len(messages))
+        # 记录用户消息（fire-and-forget，不阻塞主流程）
+        self._fire_log_msg("debug", f"User message: {message[:200]}", dialog_id)
+        self._fire_log_update("debug", f"Start conversation: dialog_id={dialog_id}", dialog_id)
+        self._fire_log_value("debug", f"Initial state: dialog_id={dialog_id}, message_count={len(messages)}", dialog_id)
 
         # 用于累积流式内容
         accumulated_content = ""
@@ -435,7 +462,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
 
         try:
             # 使用 stream_mode="messages" 获取 token 级增量数据
-            self._update_logger.info("Starting astream for dialog={}", dialog_id)
+            self._fire_log_update("info", f"Starting astream for dialog={dialog_id}", dialog_id)
             async for raw_event in self._agent.astream(
                 {"messages": messages},
                 config,
@@ -444,13 +471,12 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 import json
                 from datetime import datetime
                 
-                # 记录原始事件到 JSONL（处理不可序列化的对象）
-                try:
-                    with open("logs/deep/raw_event.jsonl", "a", encoding="utf-8") as f:
-                        json_str = json.dumps(raw_event, ensure_ascii=False, default=str)
-                        f.write(json_str + chr(10))
-                except Exception as log_e:
-                    self._update_logger.debug("Failed to log raw event: {}", log_e)
+                # 记录原始事件到 JSONL（fire-and-forget，不阻塞主流程）
+                self._fire_log_event(
+                    "stream_chunk",
+                    {"raw_event": json.loads(json.dumps(raw_event, default=str))},
+                    dialog_id=dialog_id
+                )
 
                 # 处理流式事件并转发给 SessionManager
                 # 提取内容增量
@@ -478,21 +504,13 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                             },
                             metadata={"tool_call_id": tool_call_id}
                         )
-                        try:
-                            from pathlib import Path
-                            _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
-                            _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
-                            with _tool_log_path.open("a", encoding="utf-8") as f:
-                                f.write(json.dumps({
-                                    "timestamp": datetime.now().isoformat(),
-                                    "dialog_id": dialog_id,
-                                    "type": "tool_result",
-                                    "tool_call_id": tool_call_id,
-                                    "tool_name": tool_name,
-                                    "result": str(tool_content)[:2000],
-                                }, ensure_ascii=False, default=str) + "\n")
-                        except Exception:
-                            pass
+                        # 记录工具结果到 JSONL（fire-and-forget，不阻塞主流程）
+                        self._fire_log_tool_result(
+                            tool_name=tool_name,
+                            arguments={"tool_call_id": tool_call_id},
+                            result=str(tool_content),
+                            dialog_id=dialog_id
+                        )
                         continue
 
                     # 仅向前端广播 assistant 的 tool_calls
@@ -521,24 +539,13 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                                         },
                                     },
                                 )
-                                try:
-                                    from pathlib import Path
-                                    _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
-                                    _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
-                                    with _tool_log_path.open("a", encoding="utf-8") as f:
-                                        f.write(json.dumps({
-                                            "timestamp": datetime.now().isoformat(),
-                                            "dialog_id": dialog_id,
-                                            "type": "tool_call",
-                                            "tool_call": {
-                                                "id": tc_id,
-                                                "name": tc_name,
-                                                "arguments": tc_args,
-                                                "status": "pending",
-                                            },
-                                        }, ensure_ascii=False, default=str) + "\n")
-                                except Exception:
-                                    pass
+                                # 记录工具调用到 JSONL（fire-and-forget，不阻塞主流程）
+                                self._fire_log_tool_result(
+                                    tool_name=tc_name,
+                                    arguments=tc_args,
+                                    result={"status": "pending", "tool_call_id": tc_id},
+                                    dialog_id=dialog_id
+                                )
 
                     if hasattr(msg_chunk, 'content') and msg_chunk.content:
                         content = msg_chunk.content
@@ -584,33 +591,51 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             # 流结束，保存完整 AI 响应到 SessionManager
             if session_mgr is not None:
                 final_content = accumulated_content
-                if final_content:
+                # 检查当前状态，避免重复完成
+                session = await session_mgr.get_session(dialog_id)
+                if final_content and session and session.status.value not in ("completed", "closed"):
+                    # 构建包含模型信息的 metadata
+                    completion_metadata = {
+                        "model": self._model_name or "unknown",
+                        "provider": self._adapter_factory.detect_provider(self._model_name or "") or "unknown",
+                    }
+                    if accumulated_reasoning:
+                        completion_metadata["reasoning_content"] = accumulated_reasoning
+
                     await session_mgr.complete_ai_response(
-                        dialog_id, 
-                        ai_message_id, 
+                        dialog_id,
+                        ai_message_id,
                         final_content,
-                        metadata={"reasoning_content": accumulated_reasoning} if accumulated_reasoning else {}
+                        metadata=completion_metadata
                     )
-                    self._update_logger.info(
-                        "AI response completed and saved to session: dialog_id={}, content_len={}",
-                        dialog_id, len(final_content)
+                    self._fire_log_update(
+                        "info",
+                        f"AI response completed: dialog_id={dialog_id}, content_len={len(final_content)}",
+                        dialog_id
                     )
             
             # 发送完成事件给调用者
             if accumulated_content:
+                # 使用适配器构建元数据
+                completion_metadata = {
+                    "reasoning_content": accumulated_reasoning,
+                    "model": self._model_name or "unknown",
+                    "provider": self._adapter_factory.detect_provider(self._model_name or "") or "unknown",
+                    "content_length": len(accumulated_content),
+                }
                 yield AgentEvent(
                     type="text_complete",
                     data=accumulated_content,
-                    metadata={"reasoning_content": accumulated_reasoning} if accumulated_reasoning else {}
+                    metadata=completion_metadata
                 )
 
         except Exception as e:
             import traceback
             error_detail = f"{str(e)}\n{traceback.format_exc()}"
             logger.exception(f"[DeepAgentRuntime] Error in send_message: {e}")
-            self._msg_logger.error("Error: {}", error_detail)
-            self._update_logger.error("Error: {}", str(e))
-            self._value_logger.error("Error: {}", str(e))
+            self._fire_log_msg("error", f"Error: {error_detail}", dialog_id)
+            self._fire_log_update("error", f"Error: {str(e)}", dialog_id)
+            self._fire_log_value("error", f"Error: {str(e)}", dialog_id)
             yield AgentEvent(type="error", data=str(e))
 
     def register_tool(
@@ -649,10 +674,10 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             if hasattr(self._agent, 'stop'):
                 await self._agent.stop()
 
-        # 记录停止日志
-        self._msg_logger.debug("Agent stopped: dialog_id={}", dialog_id or "all")
-        self._update_logger.debug("Agent stopped: dialog_id={}", dialog_id or "all")
-        self._value_logger.debug("Agent stopped: dialog_id={}", dialog_id or "all")
+        # 记录停止日志（fire-and-forget 无阻塞）
+        self._fire_log_msg("debug", f"Agent stopped: dialog_id={dialog_id or 'all'}", dialog_id)
+        self._fire_log_update("debug", f"Agent stopped: dialog_id={dialog_id or 'all'}", dialog_id)
+        self._fire_log_value("debug", f"Agent stopped: dialog_id={dialog_id or 'all'}", dialog_id)
 
         logger.info(f"[DeepAgentRuntime] Stopped: {self._agent_id}")
 

@@ -71,7 +71,7 @@ async def test_deep_agent():
         print(f"错误: 缺少依赖: {e}")
         return
 
-    model_name = os.getenv("MODEL_ID", "kimi-k2-coding")
+    model_name = os.getenv("MODEL_ID", "claude-sonnet-4-6")
     base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.kimi.com/coding/")
     api_key = os.getenv("ANTHROPIC_API_KEY")
 

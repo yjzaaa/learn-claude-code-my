@@ -3,6 +3,8 @@
 提供 Agent 状态查询和控制接口。
 """
 
+from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter
 
 from backend.infrastructure.container import container
@@ -14,6 +16,52 @@ from backend.domain.models.types import (
 )
 
 router = APIRouter()
+
+
+class ModelInfo(BaseModel):
+    """模型信息"""
+    id: str
+    label: str
+    provider: str
+
+
+class ActiveModelResponse(BaseModel):
+    """当前激活模型响应"""
+    model: str
+    provider: str
+    available_models: List[ModelInfo]
+
+
+@router.get("/api/config/models")
+async def get_available_models():
+    """获取可用模型列表和当前激活模型
+
+    Returns:
+        ActiveModelResponse: 当前模型配置和可用模型列表
+    """
+    from backend.infrastructure.services import ProviderManager
+
+    # 获取当前模型配置
+    provider_mgr = ProviderManager()
+    model_config = provider_mgr.get_model_config()
+
+    # 可用模型列表（从 ProviderManager 支持的模型）
+    available_models = [
+        ModelInfo(id="deepseek-reasoner", label="DeepSeek R1", provider="deepseek"),
+        ModelInfo(id="deepseek-chat", label="DeepSeek V3", provider="deepseek"),
+        ModelInfo(id="claude-sonnet-4-6", label="Claude Sonnet", provider="anthropic"),
+        ModelInfo(id="kimi-k2-coding", label="Kimi K2", provider="kimi"),
+        ModelInfo(id="gpt-4o", label="GPT-4o", provider="openai"),
+    ]
+
+    return {
+        "success": True,
+        "data": ActiveModelResponse(
+            model=model_config.model,
+            provider=model_config.provider,
+            available_models=available_models
+        )
+    }
 
 
 @router.get("/api/agent/status")

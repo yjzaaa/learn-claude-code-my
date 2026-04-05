@@ -22,12 +22,21 @@ class OpenAIProvider(BaseProvider):
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        default_model: str = "gpt-4",
+        default_model: Optional[str] = None,
     ):
-        self._model = model or default_model
+        """Initialize OpenAIProvider
+
+        Args:
+            model: 模型名称（优先使用）
+            api_key: API 密钥
+            base_url: 自定义 API 地址
+            default_model: 默认模型名称（当 model 未指定时使用）
+                注意：生产代码应通过 ProviderManager 提供此值，而非硬编码
+        """
+        self._default_model = default_model or "unknown"
+        self._model = model or self._default_model
         self._api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
         self._base_url = base_url
-        self._default_model = default_model
 
         # 延迟导入 openai
         try:

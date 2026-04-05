@@ -8,7 +8,7 @@ Core Managers - 核心管理器
 from .dialog_manager import DialogManager
 from .tool_manager import ToolManager
 from .state_manager import StateManager
-from .provider_manager import ProviderManager
+from .provider_manager import ProviderManager, ModelConfig
 from .memory_manager import MemoryManager
 from .skill_manager import SkillManager
 

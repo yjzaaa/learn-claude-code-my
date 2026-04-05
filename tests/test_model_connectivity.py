@@ -30,6 +30,13 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 import logging
 logging.basicConfig(level=logging.INFO)
 
+# 统一配置来源：ProviderManager（可选导入，失败时回退到环境变量）
+try:
+    from backend.infrastructure.services import ProviderManager
+    _PM_AVAILABLE = True
+except ImportError:
+    _PM_AVAILABLE = False
+
 
 def _default_json(obj):
     """json.dumps 的 default 回调"""
@@ -51,9 +58,19 @@ async def test_model_connectivity():
         print(f"错误: 缺少依赖: {e}")
         return
 
-    model_name = os.getenv("MODEL_ID", "kimi-k2-coding")
-    base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.kimi.com/coding/")
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    # 优先使用 ProviderManager 获取统一配置
+    if _PM_AVAILABLE:
+        provider_mgr = ProviderManager()
+        model_config = provider_mgr.get_model_config()
+        model_name = model_config.model
+        base_url = model_config.base_url or os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1/")
+        api_key = model_config.api_key
+        print(f"[ProviderManager] model={model_name}, provider={model_config.provider}")
+    else:
+        # 回退到环境变量
+        model_name = os.getenv("MODEL_ID", "claude-sonnet-4-6")
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1/")
+        api_key = os.getenv("ANTHROPIC_API_KEY")
 
     print(f"测试模型联通性: model={model_name}")
     print(f"ANTHROPIC_BASE_URL={base_url}")

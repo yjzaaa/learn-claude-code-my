@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -87,10 +88,24 @@ export function MessageItem({ message, isStreaming }: MessageItemProps) {
           overflowWrap: "break-word",
         }}
       >
+        {/* Reasoning content (thinking process) */}
+        {!isUser && message.reasoning_content && (
+          <ReasoningContent content={message.reasoning_content} />
+        )}
+
         {isUser ? (
           <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>
         ) : (
           <MarkdownContent content={content} isStreaming={isStreaming} />
+        )}
+
+        {/* Model info footer for assistant messages */}
+        {!isUser && (message.model || message.provider) && (
+          <ModelInfoFooter
+            model={message.model}
+            provider={message.provider}
+            usage={message.usage}
+          />
         )}
       </div>
     </div>
@@ -292,6 +307,183 @@ function MarkdownContent({
             animation: "hana-blink 1s step-end infinite",
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ---- Model info footer ----
+
+function ModelInfoFooter({
+  model,
+  provider,
+  usage,
+}: {
+  model?: string;
+  provider?: string;
+  usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
+}) {
+  // Format model name for display
+  const modelDisplay = model
+    ? model.replace(/^[^/]+\//, "").split("-").slice(0, 3).join("-")
+    : null;
+
+  const total = usage?.total_tokens ?? ((usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0));
+  const input = usage?.input_tokens;
+  const output = usage?.output_tokens;
+
+  return (
+    <div
+      style={{
+        marginTop: "12px",
+        paddingTop: "8px",
+        borderTop: "1px solid var(--overlay-light)",
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        fontSize: "11px",
+        color: "var(--text-muted)",
+        fontFamily: "var(--font-ui)",
+        flexWrap: "wrap",
+      }}
+    >
+      {/* Model info */}
+      {modelDisplay && (
+        <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <rect x="1" y="4" width="10" height="6" rx="1" stroke="currentColor" strokeWidth="1" />
+            <path d="M3 4V2.5A1.5 1.5 0 0 1 4.5 1h3A1.5 1.5 0 0 1 9 2.5V4" stroke="currentColor" strokeWidth="1" />
+          </svg>
+          {modelDisplay}
+        </span>
+      )}
+
+      {/* Provider */}
+      {provider && (
+        <span
+          style={{
+            textTransform: "uppercase",
+            fontSize: "10px",
+            padding: "1px 4px",
+            background: "var(--overlay-light)",
+            borderRadius: "3px",
+          }}
+        >
+          {provider}
+        </span>
+      )}
+
+      {/* Token usage */}
+      {(input !== undefined || output !== undefined || total > 0) && (
+        <span style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "auto" }}>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1" />
+            <path d="M6 3v3l2 2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+          </svg>
+          {input !== undefined && output !== undefined ? (
+            <>
+              {input.toLocaleString()} → {output.toLocaleString()}
+              <span style={{ opacity: 0.6 }}>({total.toLocaleString()})</span>
+            </>
+          ) : (
+            <>{total.toLocaleString()} tokens</>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---- Reasoning content (thinking process) ----
+
+function ReasoningContent({ content }: { content: string }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  if (!content.trim()) return null;
+
+  return (
+    <div
+      style={{
+        marginBottom: "12px",
+        borderRadius: "var(--radius-sm)",
+        border: "1px solid var(--overlay-medium)",
+        background: "var(--overlay-subtle)",
+        overflow: "hidden",
+      }}
+    >
+      {/* Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          width: "100%",
+          padding: "8px 12px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          fontSize: "12px",
+          color: "var(--text-muted)",
+          fontFamily: "var(--font-ui)",
+          textAlign: "left",
+          transition: "background var(--duration) var(--ease-out)",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "var(--overlay-light)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "transparent";
+        }}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          style={{
+            transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform var(--duration) var(--ease-out)",
+          }}
+        >
+          <path
+            d="M4.5 2.5L8 6L4.5 9.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span>思考过程</span>
+        <span
+          style={{
+            marginLeft: "auto",
+            fontSize: "11px",
+            opacity: 0.7,
+          }}
+        >
+          {isExpanded ? "收起" : "展开"}
+        </span>
+      </button>
+
+      {/* Content */}
+      {isExpanded && (
+        <div
+          style={{
+            padding: "10px 12px",
+            fontSize: "13px",
+            lineHeight: "1.6",
+            color: "var(--text-light)",
+            fontFamily: "var(--font-mono)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            borderTop: "1px solid var(--overlay-medium)",
+            maxHeight: "300px",
+            overflowY: "auto",
+          }}
+        >
+          {content}
+        </div>
       )}
     </div>
   );

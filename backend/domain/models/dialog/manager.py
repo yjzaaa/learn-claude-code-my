@@ -434,14 +434,31 @@ class DialogSessionManager:
         for msg in session.history.messages:
             role = "user" if isinstance(msg, HumanMessage) else "assistant" if isinstance(msg, AIMessage) else "tool"
             msg_id = getattr(msg, 'msg_id', '') or str(id(msg))[:12]
-            messages.append({
+
+            # 从 message metadata 中提取模型信息
+            msg_metadata = getattr(msg, 'additional_kwargs', {}) or {}
+            msg_model = msg_metadata.get('model')
+            msg_provider = msg_metadata.get('provider')
+            msg_reasoning = msg_metadata.get('reasoning_content')
+
+            msg_dict = {
                 "id": msg_id,
                 "role": role,
                 "content": msg.content,
                 "content_type": "text",
                 "status": "completed",
                 "timestamp": session.updated_at.isoformat(),
-            })
+            }
+
+            # 添加模型信息（如果有）
+            if msg_model:
+                msg_dict["model"] = msg_model
+            if msg_provider:
+                msg_dict["provider"] = msg_provider
+            if msg_reasoning:
+                msg_dict["reasoning_content"] = msg_reasoning
+
+            messages.append(msg_dict)
 
         # 构建 streaming_message（如果处于流式状态）
         streaming_message = None
@@ -455,6 +472,17 @@ class DialogSessionManager:
                 "timestamp": session.updated_at.isoformat(),
             }
 
+        # 获取真实模型名称（从 ProviderManager 或环境变量）
+        import os
+        from backend.infrastructure.services.provider_manager import ProviderManager
+        try:
+            pm = ProviderManager()
+            model_config = pm.get_model_config()
+            current_model = model_config.model
+        except Exception:
+            # 回退到环境变量
+            current_model = os.getenv("MODEL_ID", "unknown")
+
         return {
             "id": session.dialog_id,
             "title": session.metadata.title,
@@ -462,7 +490,7 @@ class DialogSessionManager:
             "messages": messages,
             "streaming_message": streaming_message,
             "metadata": {
-                "model": "claude-sonnet-4-6",
+                "model": current_model,
                 "agent_name": "hana",
                 "tool_calls_count": session.metadata.tool_calls_count,
                 "total_tokens": session.metadata.token_count,
