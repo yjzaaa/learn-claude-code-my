@@ -424,71 +424,92 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         Returns:
             如果重新创建了 agent 返回 True，否则返回 False
         """
+        logger.info(f"[_ensure_agent_for_dialog] Checking model for dialog={dialog_id}, current_model={self._model_name}")
+
         if not self._provider_manager:
+            logger.warning("[_ensure_agent_for_dialog] No provider_manager available")
             return False
 
         # 获取对话选择的模型
         try:
             from backend.infrastructure.container import container
-            if container.session_manager:
-                session = container.session_manager.get_session_sync(dialog_id)
-                if session:
-                    selected_model = getattr(session, 'selected_model_id', None)
-                    if selected_model and selected_model != self._model_name:
-                        logger.info(
-                            f"[DeepAgentRuntime] Model changed from {self._model_name} to {selected_model} for dialog {dialog_id}"
-                        )
-                        # 重新创建模型实例
-                        new_model = await self._provider_manager.create_model_instance(selected_model)
-                        self._model_name = selected_model
+            if not container.session_manager:
+                logger.warning("[_ensure_agent_for_dialog] No session_manager in container")
+                return False
 
-                        # 重新创建 agent builder
-                        project_root = Path(__file__).resolve().parent.parent.parent.parent
-                        skills_dir = project_root / "skills"
+            session = container.session_manager.get_session_sync(dialog_id)
+            if not session:
+                logger.warning(f"[_ensure_agent_for_dialog] Session not found for dialog={dialog_id}")
+                return False
 
-                        # 转换工具格式
-                        from langchain_core.tools import StructuredTool
-                        adapted_tools = [
-                            StructuredTool.from_function(
-                                func=tool_info.handler,
-                                name=name,
-                                description=tool_info.description,
-                            )
-                            for name, tool_info in self._tools.items()
-                        ]
+            selected_model = getattr(session, 'selected_model_id', None)
+            logger.info(f"[_ensure_agent_for_dialog] Session found, selected_model={selected_model}, current={self._model_name}")
 
-                        # 重新构建 agent
-                        from .agents import AgentBuilder
-                        base_prompt = self._config.system or self._config.system_prompt or ""
-                        system_prompt = base_prompt + (
-                            "\n\n## Environment\n"
-                            "You run inside a Linux Docker container. "
-                            "Use Linux commands (ls, cat, grep, cd). "
-                        )
+            if not selected_model:
+                logger.info(f"[_ensure_agent_for_dialog] No selected_model for dialog={dialog_id}")
+                return False
 
-                        builder = (
-                            AgentBuilder()
-                            .with_name(self._config.name or self._agent_id)
-                            .with_model(new_model)
-                            .with_tools(adapted_tools)
-                            .with_system_prompt(system_prompt)
-                            .with_checkpointer(self._checkpointer)
-                            .with_store(self._store)
-                            .with_skills(self._config.skills or [])
-                            .with_todo_list()
-                            .with_filesystem()
-                            .with_claude_compression(level="standard", enable_session_memory=True)
-                            .with_prompt_caching()
-                        )
+            if selected_model == self._model_name:
+                logger.info(f"[_ensure_agent_for_dialog] Model unchanged: {self._model_name}")
+                return False
 
-                        if self._config.interrupt_on:
-                            builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
+            # 模型需要切换
+            logger.info(
+                f"[DeepAgentRuntime] Model changed from {self._model_name} to {selected_model} for dialog {dialog_id}"
+            )
+            # 重新创建模型实例
+            new_model = await self._provider_manager.create_model_instance(selected_model)
+            self._model_name = selected_model
 
-                        self._agent = builder.build()
-                        logger.info(f"[DeepAgentRuntime] Rebuilt agent with new model: {selected_model}")
-                        return True
+            # 重新创建 agent builder
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            skills_dir = project_root / "skills"
+
+            # 转换工具格式
+            from langchain_core.tools import StructuredTool
+            adapted_tools = [
+                StructuredTool.from_function(
+                    func=tool_info.handler,
+                    name=name,
+                    description=tool_info.description,
+                )
+                for name, tool_info in self._tools.items()
+            ]
+
+            # 重新构建 agent
+            from .agents import AgentBuilder
+            base_prompt = self._config.system or self._config.system_prompt or ""
+            system_prompt = base_prompt + (
+                "\n\n## Environment\n"
+                "You run inside a Linux Docker container. "
+                "Use Linux commands (ls, cat, grep, cd). "
+            )
+
+            builder = (
+                AgentBuilder()
+                .with_name(self._config.name or self._agent_id)
+                .with_model(new_model)
+                .with_tools(adapted_tools)
+                .with_system_prompt(system_prompt)
+                .with_checkpointer(self._checkpointer)
+                .with_store(self._store)
+                .with_skills(self._config.skills or [])
+                .with_todo_list()
+                .with_filesystem()
+                .with_claude_compression(level="standard", enable_session_memory=True)
+                .with_prompt_caching()
+            )
+
+            if self._config.interrupt_on:
+                builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
+
+            self._agent = builder.build()
+            logger.info(f"[DeepAgentRuntime] Rebuilt agent with new model: {selected_model}")
+            return True
         except Exception as e:
-            logger.debug(f"[DeepAgentRuntime] Failed to check/switch model: {e}")
+            logger.error(f"[DeepAgentRuntime] Failed to check/switch model: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
         return False
 
