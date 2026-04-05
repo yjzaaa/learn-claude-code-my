@@ -391,8 +391,10 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             messages = [user_msg.model_dump() if isinstance(user_msg, BaseModel) else {"role": "user", "content": message}]
             ai_message_id = message_id or f"msg_{id(message)}"
 
-        # 配置 thread_id 用于持久化，同时提高 recursion_limit 以避免复杂 agent 循环超限
-        config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": 100}
+        # 配置 thread_id 用于持久化，同时支持通过环境变量调整 recursion_limit
+        import os
+        recursion_limit = int(os.getenv("AGENT_RECURSION_LIMIT", "100").strip())
+        config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
 
         # 记录用户消息到三种日志
         self._msg_logger.debug("User message: {}", message[:200])

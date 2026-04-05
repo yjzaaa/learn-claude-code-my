@@ -17,7 +17,8 @@ from typing import Any, Set, Optional, Dict
 
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -313,6 +314,71 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Hana Agent API", version="1.0.0", lifespan=lifespan)
+
+
+# ── Global exception handlers ─────────────────────────────────────────────────
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    logger.warning("[HTTPException] %s %s -> %s: %s", request.method, request.url.path, exc.status_code, exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": {"code": f"http_{exc.status_code}", "message": exc.detail}},
+    )
+
+
+@app.exception_handler(ValueError)
+async def _value_error_handler(request: Request, exc: ValueError):
+    logger.warning("[ValueError] %s %s -> %s", request.method, request.url.path, str(exc))
+    return JSONResponse(
+        status_code=400,
+        content={"success": False, "error": {"code": "bad_request", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(RuntimeError)
+async def _runtime_error_handler(request: Request, exc: RuntimeError):
+    logger.error("[RuntimeError] %s %s -> %s", request.method, request.url.path, str(exc))
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "runtime_error", "message": str(exc)}},
+    )
+
+
+# LangGraph recursion limit
+GraphRecursionError = None
+try:
+    from langgraph.errors import GraphRecursionError as _GraphRecursionError
+    GraphRecursionError = _GraphRecursionError
+except Exception:
+    pass
+
+if GraphRecursionError is not None:
+    @app.exception_handler(GraphRecursionError)
+    async def _recursion_limit_handler(request: Request, exc):  # type: ignore[no-untyped-def]
+        logger.error("[GraphRecursionError] %s %s -> %s", request.method, request.url.path, str(exc))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": {
+                    "code": "agent_recursion_limit",
+                    "message": (
+                        "Agent reached the maximum thinking steps. "
+                        "Please simplify your request or increase AGENT_RECURSION_LIMIT."
+                    ),
+                },
+            },
+        )
+
+
+@app.exception_handler(Exception)
+async def _generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("[UnhandledException] %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": {"code": "internal_error", "message": "Internal server error"}},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
