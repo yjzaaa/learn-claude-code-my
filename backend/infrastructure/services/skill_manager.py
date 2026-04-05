@@ -14,11 +14,11 @@ import json
 import logging
 import sys
 
-from backend.runtime.event_bus import EventBus
-from backend.domain.models import Skill, SkillDefinition
-from backend.domain.models.config import SkillManagerConfig
-from backend.domain.models.api import SkillStats
-from backend.domain.models.tool import ActiveToolInfo
+from backend.infrastructure.runtime.event_bus import EventBus
+from backend.domain.models.agent.skill import Skill, SkillDefinition
+from backend.domain.models.shared.config import SkillManagerConfig
+from backend.domain.models.api.stats import SkillStats
+from backend.domain.models.agent.tool import ActiveToolInfo
 from backend.infrastructure.tools import ToolRegistry
 
 if TYPE_CHECKING:
@@ -42,9 +42,9 @@ class SkillManager:
     
     def __init__(
         self,
-        event_bus: EventBus | None = None,
-        tool_manager: 'ToolManager' | None = None,
-        config: SkillManagerConfig | None = None
+        event_bus: Optional[EventBus] = None,
+        tool_manager: Optional[ToolManager] = None,
+        config: Optional[SkillManagerConfig] = None
     ):
         self._event_bus = event_bus
         self._tool_mgr = tool_manager
@@ -63,8 +63,8 @@ class SkillManager:
         self,
         skill_id: str,
         definition: SkillDefinition,
-        tools: list[dict[str, Any]] | None = None,
-        handler: Callable | None = None
+        tools: Optional[list[dict[str, Any]]] = None,
+        handler: Optional[Callable] = None
     ) -> Skill:
         """
         注册技能
@@ -107,7 +107,7 @@ class SkillManager:
         logger.info(f"[SkillManager] Registered skill: {skill_id}")
         return skill
     
-    def load_skill_from_directory(self, skill_path: str) -> Skill | None:
+    def load_skill_from_directory(self, skill_path: str) -> Optional[Skill]:
         """
         从目录加载技能。支持 SKILL.md 格式（含 YAML front-matter）和旧版 skill.json。
 
@@ -124,7 +124,7 @@ class SkillManager:
             return None
 
         # 查找 SKILL.md：先找当前目录，再找一级子目录（兼容 finance/finance/ 结构）
-        skill_md_path: Path | None = None
+        skill_md_path: Optional[Path] = None
         actual_path: Path = path
         if (path / "SKILL.md").exists():
             skill_md_path = path / "SKILL.md"
@@ -222,7 +222,7 @@ class SkillManager:
         logger.info(f"[SkillManager] Unloaded skill: {skill_id}")
         return True
     
-    def get_skill(self, skill_id: str) -> Skill | None:
+    def get_skill(self, skill_id: str) -> Optional[Skill]:
         """
         获取技能
         
@@ -259,7 +259,7 @@ class SkillManager:
         loader = SkillScriptLoader(self._tool_mgr)
         loader.load_scripts(skill)
 
-    def get_skill_prompt(self, skill_id: str) -> str | None:
+    def get_skill_prompt(self, skill_id: str) -> Optional[str]:
         """
         获取技能的系统提示词，首次调用时触发脚本懒加载。
 

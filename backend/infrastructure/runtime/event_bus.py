@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 from backend.domain.models.events import BaseEvent, EventPriority
-from backend.domain.models.types import EventBusStatsDict
+from backend.domain.models.shared.types import EventBusStatsDict
 
 logger = logging.getLogger(__name__)
 

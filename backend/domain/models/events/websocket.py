@@ -65,6 +65,7 @@ class WSStreamDeltaEvent(BaseModel):
     message_id: str
     delta: WSDeltaContent
     timestamp: int
+    sequence: int = 0  # 序列号，用于确保消息唯一性
 
 
 class WSErrorDetail(BaseModel):

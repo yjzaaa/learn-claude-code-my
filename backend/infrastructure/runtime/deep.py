@@ -10,10 +10,10 @@ from loguru import logger
 from pydantic import BaseModel
 
 from backend.infrastructure.runtime.runtime import AbstractAgentRuntime, ToolCache
-from backend.domain.models import Dialog
-from backend.domain.models.config import EngineConfig
+from backend.domain.models.dialog.dialog import Dialog
+from backend.domain.models.shared.config import EngineConfig
 from backend.domain.models.shared import AgentEvent
-from backend.domain.models.event_models import UserMessageModel
+from backend.domain.models.events.event_models import UserMessageModel
 from .services.config_adapter import DeepAgentConfig
 from .services.logging_mixin import DeepLoggingMixin
 from langchain_anthropic import ChatAnthropic
@@ -122,7 +122,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         try:
             from langgraph.checkpoint.memory import MemorySaver
             from langgraph.store.memory import InMemoryStore
-            from .services.windows_shell_backend import WindowsShellBackend
+            from .services.docker_sandbox_backend import create_sandbox_backend
         except ImportError as e:
             raise ImportError(
                 "Required packages are missing for DeepAgentRuntime. "
@@ -132,20 +132,38 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         # 加载技能脚本中的工具
         self._load_skill_scripts()
 
-        # 转换工具格式
-        adapted_tools = self.adapt_tools(self._tools)
-
         # 配置 checkpointer 和 store
         self._checkpointer = MemorySaver()
         self._store = InMemoryStore()
 
         # 配置 backend - 使用 skills 目录作为根目录
         # 使用 virtual_mode=True 让 /finance/SKILL.md 映射到 skills/finance/SKILL.md
-        # 使用 WindowsShellBackend 处理 Windows 编码问题
-        # inherit_env=True 确保继承系统 PATH 环境变量
+        # 默认通过 AGENT_SANDBOX=docker 启用 Docker Sandbox；未启用或 Docker 不可用时自动降级到 LocalShellBackend
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         skills_dir = project_root / "skills"
-        backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+        agent_sandbox = os.getenv("AGENT_SANDBOX", "local").strip().lower()
+        if agent_sandbox == "docker":
+            backend = create_sandbox_backend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+            logger.info(f"[DeepAgentRuntime] Using sandbox backend for skills_dir={skills_dir}")
+        else:
+            from .services.windows_shell_backend import WindowsShellBackend
+            backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+            logger.info(f"[DeepAgentRuntime] Using local shell backend for skills_dir={skills_dir}")
+
+        # 若使用 Docker Sandbox，将依赖特定运行环境的工具代理到容器中执行
+        if agent_sandbox == "docker":
+            self._proxy_sandbox_tools(backend)
+
+        # 转换工具格式（必须在 backend 创建及代理包装之后）
+        from langchain_core.tools import StructuredTool
+        adapted_tools = [
+            StructuredTool.from_function(
+                func=tool_info.handler,
+                name=name,
+                description=tool_info.description,
+            )
+            for name, tool_info in self._tools.items()
+        ]
 
         # 解析模型：字符串模型若无法被 deepagents 自动推断 provider，则手动构造实例
         model_name = os.getenv("MODEL_ID", "").strip() or "kimi-k2-coding"
@@ -164,9 +182,21 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
             temperature=0.7,
         )
 
-        # 构建系统提示词，添加文件路径和Windows命令使用说明
+        # 构建系统提示词，告知 LLM 它在容器环境中，应自治解决依赖与路径问题
         base_prompt = self._config.system or self._config.system_prompt or ""
-        path_hint = """\n\n## File System Path Guide\nThe filesystem is rooted at the 'skills' folder.\n\n**For file tools (read_file, glob, ls, grep):** Use absolute-style paths with leading slash, e.g., '/finance/SKILL.md' or '/code-review/SKILL.md'.\n\n**For shell commands (execute):** Use relative paths WITHOUT leading slash, e.g., 'finance/scripts/sql_query.py' or 'cd finance && dir'.\n\n## Windows Shell Commands\nThis system runs on Windows. Use Windows-style commands:\n- Use 'dir' instead of 'ls'\n- Use 'cd' with backslashes (e.g., 'cd finance\\scripts')\n- Use 'type' instead of 'cat' to display file contents\n- Use 'findstr' instead of 'grep'\n- Use 'move' instead of 'mv'\n- Use 'copy' instead of 'cp'\n- Use 'del' instead of 'rm'\n- For Python scripts: use 'py script.py' (preferred) or find python path first with 'where python' or 'where py'\n- To use the project's virtual environment: run 'py' or '.venv\Scripts\python.exe' (located at project root, one level above skills folder)\n\n## IMPORTANT: SQL Query Best Practices\nWhen executing SQL queries:\n1. **ALWAYS use the 'run_sql_query' tool directly** instead of shell commands\n2. **NEVER use shell syntax like $(type file) or backticks** - Windows doesn't support this\n3. **Pass SQL as a direct string parameter** to the run_sql_query tool\n4. **For complex multi-line SQL**: Either:\n   - Use the run_sql_query tool with the complete SQL string\n   - Or read the SQL from a file using read_file, then pass it to run_sql_query\n5. **DO NOT use**: 'python finance/scripts/sql_query.py "SELECT ..."' - this is error-prone\n6. **DO use**: Call 'run_sql_query' tool with sql parameter directly"""
+        path_hint = (
+            "\n\n## Environment\n"
+            "You run inside a Linux Docker container. "
+            "Use Linux commands (ls, cat, grep, cd). "
+            "Python is `python` or `python3`. Node/npm are available. "
+            "File tools use absolute paths under `/workspace/skills` (e.g. `/finance/SKILL.md`). "
+            "Shell commands use relative paths (e.g. `cd finance/scripts`).\n\n"
+            "## Self-Healing\n"
+            "If any Python package is missing, fix it yourself with `execute('pip install <package>')` then retry. "
+            "Same for Node: `execute('npm install <package>')`. Installed packages persist in this container.\n\n"
+            "## SQL\n"
+            "Always use the `run_sql_query` tool directly with the SQL string."
+        )
         system_prompt = base_prompt + path_hint if base_prompt else path_hint
 
         # 使用新的灵活 AgentBuilder 创建 Agent
@@ -187,8 +217,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                 level="standard",
                 enable_session_memory=True,  # 启用 Backend 存储
             )
-            # 可选：启用压缩中间件（默认关闭）
-            # .with_summarization(trigger=("fraction", 0.85), keep=("fraction", 0.10))
             .with_prompt_caching()
         )
 
@@ -275,33 +303,38 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
 
         logger.info("[DeepAgentRuntime] Loaded %d skill tools", tool_count)
 
-    def adapt_tools(self, tools: dict[str, ToolCache]) -> list:
+    def _proxy_sandbox_tools(self, backend: Any) -> None:
+        """将需要特定运行环境的工具代理到 sandbox 容器中执行。
+
+        这样自定义 Python 工具（如 run_sql_query）不再受限于宿主机 .venv-new
+        的依赖环境，而是在容器内统一执行。
         """
-        将我们的工具格式转换为 LangChain Tool 格式
+        import base64
+        import json
 
-        Args:
-            tools: 我们的工具字典 {name: ToolCache}
+        if "run_sql_query" in self._tools:
+            original = self._tools["run_sql_query"]
 
-        Returns:
-            LangChain Tool 列表
-        """
-        from langchain_core.tools import StructuredTool
+            def proxy_run_sql_query(sql: str, limit: int = 200) -> str:
+                # 使用 base64 内嵌 Python 脚本，彻底避免 Windows + Docker + shlex 引号地狱
+                payload = json.dumps({"sql": sql, "limit": limit})
+                b64 = base64.b64encode(payload.encode()).decode()
+                cmd = (
+                    f"python -c \"import base64, json, sys; "
+                    f"p=json.loads(base64.b64decode('{b64}').decode()); "
+                    f"sys.path.insert(0, 'finance/scripts'); "
+                    f"from sql_query import run_sql_query; "
+                    f"print(run_sql_query(**p))\""
+                )
+                result = backend.execute(cmd)
+                return result.output
 
-        adapted = []
-
-        for name, tool_info in tools.items():
-            handler = tool_info.handler
-            description = tool_info.description
-
-            # 创建 LangChain Tool
-            adapted_tool = StructuredTool.from_function(
-                func=handler,
-                name=name,
-                description=description,
+            self._tools["run_sql_query"] = ToolCache(
+                handler=proxy_run_sql_query,
+                description=original.description,
+                parameters_schema=original.parameters_schema,
             )
-            adapted.append(adapted_tool)
-
-        return adapted
+            logger.info("[DeepAgentRuntime] Proxied run_sql_query to sandbox")
 
     async def _do_shutdown(self) -> None:
         """子类实现: 特定清理逻辑"""
@@ -313,7 +346,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: str | None = None,
+        message_id: Optional[str] = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         发送消息，返回流式事件
@@ -416,6 +449,21 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                             },
                             metadata={"tool_call_id": tool_call_id}
                         )
+                        try:
+                            from pathlib import Path
+                            _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
+                            _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
+                            with _tool_log_path.open("a", encoding="utf-8") as f:
+                                f.write(json.dumps({
+                                    "timestamp": datetime.now().isoformat(),
+                                    "dialog_id": dialog_id,
+                                    "type": "tool_result",
+                                    "tool_call_id": tool_call_id,
+                                    "tool_name": tool_name,
+                                    "result": str(tool_content)[:2000],
+                                }, ensure_ascii=False, default=str) + "\n")
+                        except Exception:
+                            pass
                         continue
 
                     # 仅向前端广播 assistant 的 tool_calls
@@ -444,6 +492,24 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                                         },
                                     },
                                 )
+                                try:
+                                    from pathlib import Path
+                                    _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
+                                    _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
+                                    with _tool_log_path.open("a", encoding="utf-8") as f:
+                                        f.write(json.dumps({
+                                            "timestamp": datetime.now().isoformat(),
+                                            "dialog_id": dialog_id,
+                                            "type": "tool_call",
+                                            "tool_call": {
+                                                "id": tc_id,
+                                                "name": tc_name,
+                                                "arguments": tc_args,
+                                                "status": "pending",
+                                            },
+                                        }, ensure_ascii=False, default=str) + "\n")
+                                except Exception:
+                                    pass
 
                     if hasattr(msg_chunk, 'content') and msg_chunk.content:
                         content = msg_chunk.content
@@ -485,97 +551,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig], DeepLoggingMixin):
                         data=delta_reasoning,
                         metadata={"accumulated_length": len(accumulated_reasoning)}
                     )
-
-                # # stream_mode=["messages"] 返回元组 (stream_mode, (AIMessageChunk, metadata))
-                # # 注意：LangGraph 返回的是嵌套元组结构
-                # if isinstance(raw_event, tuple) and len(raw_event) == 2:
-                #     stream_mode, inner_data = raw_event
-
-                #     # 处理嵌套元组: (AIMessageChunk, metadata_dict)
-                #     if isinstance(inner_data, tuple) and len(inner_data) == 2:
-                #         message_chunk, metadata = inner_data
-                #         self._update_logger.debug("Unpacked nested tuple: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
-                #     else:
-                #         # 直接的 AIMessageChunk (非嵌套格式)
-                #         message_chunk = inner_data
-                #         metadata = {}
-                #         self._update_logger.debug("Direct chunk: stream_mode={}, chunk_type={}", stream_mode, type(message_chunk).__name__)
-
-                #     self._update_logger.debug("Got message chunk: mode={}, type={}, content={}", stream_mode, type(message_chunk).__name__, repr(getattr(message_chunk, 'content', ''))[:200])
-
-                #     # 检测新消息开始（通过 message id）
-                #     current_msg_id = getattr(message_chunk, 'id', None)
-                #     if current_msg_id and current_msg_id != last_message_id:
-                #         if last_message_id is not None:
-                #             # 新消息开始，重置累积内容
-                #             self._update_logger.debug("New message detected, resetting accumulated_content. old_msg={}, new_msg={}", last_message_id, current_msg_id)
-                #             accumulated_content = ""
-                #         last_message_id = current_msg_id
-                # else:
-                #     self._update_logger.warning("Unexpected event format: {}", type(raw_event))
-                #     continue
-
-                # # 处理 ToolMessage - 记录到 JSONL 文件但不渲染到前端
-                # if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
-                #     tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
-                #     tool_content = getattr(message_chunk, 'content', '')
-                #     tool_name = getattr(message_chunk, 'name', 'unknown')
-
-                #     # 写入工具结果到 JSONL 日志
-                #     import json
-                #     from datetime import datetime
-                #     log_entry = {
-                #         "timestamp": datetime.now().isoformat(),
-                #         "dialog_id": dialog_id,
-                #         "tool_call_id": tool_call_id,
-                #         "tool_name": tool_name,
-                #         "content": tool_content[:2000] if isinstance(tool_content, str) else str(tool_content)[:2000]  # 限制长度
-                #     }
-                #     with open("logs/deep/tool_results.jsonl", "a", encoding="utf-8") as f:
-                #         json_str = json.dumps(log_entry, ensure_ascii=False)
-                #         f.write(json_str + chr(10))
-
-                #     self._update_logger.debug("Tool result logged to JSONL: tool_call_id={}", tool_call_id)
-                #     continue
-
-                # # 处理消息块，直接生成 text_delta 事件
-                # if hasattr(message_chunk, 'content') and message_chunk.content:
-                #     content = message_chunk.content
-                #     # 处理 content 是列表的情况 (Anthropic 格式)
-                #     if isinstance(content, list):
-                #         text_parts = []
-                #         for block in content:
-                #             if isinstance(block, dict) and block.get('type') == 'text':
-                #                 text_parts.append(block.get('text', ''))
-                #             elif isinstance(block, str):
-                #                 text_parts.append(block)
-                #         content = ''.join(text_parts)
-
-                #     if content:
-                #         accumulated_content += content
-                #         self._log_message_chunk(message_chunk, dialog_id, accumulated_content)
-                #         yield AgentEvent(
-                #             type="text_delta",
-                #             data=content,
-                #             metadata={"accumulated_length": len(accumulated_content)}
-                #         )
-
-                # 检查工具调用 - 不发送 tool_start 事件到前端
-                #                 if hasattr(message_chunk, 'additional_kwargs') and message_chunk.additional_kwargs:
-                #                     tool_calls = message_chunk.additional_kwargs.get('tool_calls')
-                #                     if tool_calls:
-                #                         self._update_logger.info("Tool calls detected: {}", tool_calls)
-                #                         yield AgentEvent(type="tool_start", data={"tool_calls": tool_calls})
-                # 
-                # 检查是否是 ToolMessage (工具执行结果)
-                # if hasattr(message_chunk, 'type') and message_chunk.type == 'tool':
-                #     tool_call_id = getattr(message_chunk, 'tool_call_id', 'unknown')
-                #     tool_content = getattr(message_chunk, 'content', '')
-                    # self._update_logger.info("Tool result received: tool_call_id={}", tool_call_id)
-                    # yield AgentEvent(type="tool_end", data={
-                    #     "tool_call_id": tool_call_id,
-                    #     "content": tool_content
-                    # })
 
             # 流结束，保存完整 AI 响应到 SessionManager
             if session_mgr is not None:

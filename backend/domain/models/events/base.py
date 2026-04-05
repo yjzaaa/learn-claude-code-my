@@ -26,19 +26,17 @@ class EventPriority(IntEnum):
 
 
 @dataclass_json
-@dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class BaseEvent:
     """事件基类"""
-    priority: EventPriority = EventPriority.NORMAL
     timestamp: datetime = field(default_factory=datetime.now)
+    priority: EventPriority = field(default=EventPriority.NORMAL)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def event_type(self) -> str:
         """事件类型名称"""
         return self.__class__.__name__
-    
 
 
 # ═══════════════════════════════════════════════════════════
@@ -46,53 +44,51 @@ class BaseEvent:
 # ═══════════════════════════════════════════════════════════
 
 @dataclass_json
-@dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class DialogCreated(BaseEvent):
     """对话创建事件"""
-    dialog_id: str
-    user_input: str
-    priority: EventPriority = EventPriority.NORMAL
+    dialog_id: str = field(default="")
+    user_input: str = field(default="")
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class MessageReceived(BaseEvent):
     """消息接收事件"""
-    dialog_id: str
-    message_id: str
-    content: str
-    priority: EventPriority = EventPriority.HIGH
+    dialog_id: str = field(default="")
+    message_id: str = field(default="")
+    content: str = field(default="")
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class StreamDelta(BaseEvent):
     """流式输出增量事件"""
-    dialog_id: str
-    delta: str
-    is_reasoning: bool = False
-    priority: EventPriority = EventPriority.HIGH
+    dialog_id: str = field(default="")
+    delta: str = field(default="")
+    is_reasoning: bool = field(default=False)
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class MessageCompleted(BaseEvent):
     """消息完成事件"""
-    dialog_id: str
-    message_id: str
-    content: str
-    token_count: int = 0
-    priority: EventPriority = EventPriority.NORMAL
+    dialog_id: str = field(default="")
+    message_id: str = field(default="")
+    content: str = field(default="")
+    token_count: int = field(default=0)
+    priority: EventPriority = field(default=EventPriority.NORMAL)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class DialogClosed(BaseEvent):
     """对话关闭事件"""
-    dialog_id: str
-    reason: str = "completed"
-    priority: EventPriority = EventPriority.NORMAL
+    dialog_id: str = field(default="")
+    reason: str = field(default="completed")
+    priority: EventPriority = field(default=EventPriority.NORMAL)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -100,14 +96,14 @@ class DialogClosed(BaseEvent):
 # ═══════════════════════════════════════════════════════════
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class ToolCallStarted(BaseEvent):
     """工具调用开始事件"""
-    dialog_id: str
-    tool_call_id: str
-    tool_name: str
+    dialog_id: str = field(default="")
+    tool_call_id: str = field(default="")
+    tool_name: str = field(default="")
     arguments: Dict[str, Any] = field(default_factory=dict)
-    priority: EventPriority = EventPriority.HIGH
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 # 别名，用于兼容 simple_runtime.py
@@ -115,26 +111,26 @@ ToolStartData = ToolCallStarted
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class ToolCallCompleted(BaseEvent):
     """工具调用完成事件"""
-    dialog_id: str
-    tool_call_id: str
-    tool_name: str
-    result: str = ""
-    duration_ms: int = 0
-    priority: EventPriority = EventPriority.HIGH
+    dialog_id: str = field(default="")
+    tool_call_id: str = field(default="")
+    tool_name: str = field(default="")
+    result: str = field(default="")
+    duration_ms: int = field(default=0)
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class ToolCallFailed(BaseEvent):
     """工具调用失败事件"""
-    dialog_id: str
-    tool_call_id: str
-    tool_name: str
-    error: str = ""
-    priority: EventPriority = EventPriority.HIGH
+    dialog_id: str = field(default="")
+    tool_call_id: str = field(default="")
+    tool_name: str = field(default="")
+    error: str = field(default="")
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -142,39 +138,39 @@ class ToolCallFailed(BaseEvent):
 # ═══════════════════════════════════════════════════════════
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class SystemStarted(BaseEvent):
     """系统启动事件"""
-    version: str = "0.1.0"
-    priority: EventPriority = EventPriority.CRITICAL
+    version: str = field(default="0.1.0")
+    priority: EventPriority = field(default=EventPriority.CRITICAL)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class SystemStopped(BaseEvent):
     """系统停止事件"""
-    reason: str = "shutdown"
-    priority: EventPriority = EventPriority.CRITICAL
+    reason: str = field(default="shutdown")
+    priority: EventPriority = field(default=EventPriority.CRITICAL)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class ErrorOccurred(BaseEvent):
     """错误事件"""
-    error_type: str = ""
-    error_message: str = ""
-    dialog_id: Optional[str] = None
-    stack_trace: Optional[str] = None
-    priority: EventPriority = EventPriority.CRITICAL
+    error_type: str = field(default="")
+    error_message: str = field(default="")
+    dialog_id: Optional[str] = field(default=None)
+    stack_trace: Optional[str] = field(default=None)
+    priority: EventPriority = field(default=EventPriority.CRITICAL)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class AgentRoundsLimitReached(BaseEvent):
     """Agent 轮次上限事件"""
-    dialog_id: str = ""
-    rounds: int = 0
-    priority: EventPriority = EventPriority.HIGH
+    dialog_id: str = field(default="")
+    rounds: int = field(default=0)
+    priority: EventPriority = field(default=EventPriority.HIGH)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -182,18 +178,18 @@ class AgentRoundsLimitReached(BaseEvent):
 # ═══════════════════════════════════════════════════════════
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class SkillLoaded(BaseEvent):
     """技能加载事件"""
-    skill_id: str
-    name: str
-    tool_count: int = 0
-    priority: EventPriority = EventPriority.NORMAL
+    skill_id: str = field(default="")
+    name: str = field(default="")
+    tool_count: int = field(default=0)
+    priority: EventPriority = field(default=EventPriority.NORMAL)
 
 
 @dataclass_json
-@dataclass(kw_only=True)
+@dataclass
 class SkillUnloaded(BaseEvent):
     """技能卸载事件"""
-    skill_id: str
-    priority: EventPriority = EventPriority.NORMAL
+    skill_id: str = field(default="")
+    priority: EventPriority = field(default=EventPriority.NORMAL)

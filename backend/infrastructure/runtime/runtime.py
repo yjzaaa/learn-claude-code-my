@@ -6,7 +6,7 @@ AbstractAgentRuntime - Runtime 抽象基类
 """
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Any, Callable, AsyncIterator, Optional
+from typing import Generic, TypeVar, Any, Callable, AsyncIterator, Optional, Dict, List, Union
 from datetime import datetime
 import uuid
 
@@ -32,13 +32,13 @@ class ToolCache(BaseModel):
 
     handler: Any = None
     description: str = ""
-    parameters_schema: dict[str, Any] = Field(default_factory=dict)
+    parameters_schema: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
 
 
-class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
+class AbstractAgentRuntime(Generic[ConfigT], ABC):
     """
     Agent Runtime 抽象基类
 
@@ -70,8 +70,8 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
             agent_id: 运行时唯一标识
         """
         self._agent_id = agent_id
-        self._config: ConfigT | None = None
-        self._tools: dict[str, ToolCache] = {}
+        self._config: Optional[ConfigT] = None
+        self._tools: Dict[str, ToolCache] = {}
 
         logger.debug(f"[{self.__class__.__name__}] Created: {agent_id}")
 
@@ -102,7 +102,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
         """
         pass
 
-    def _validate_config(self, config: ConfigT | dict[str, Any]) -> ConfigT:
+    def _validate_config(self, config: Union[ConfigT, Dict[str, Any]]) -> ConfigT:
         """
         验证并转换配置
 
@@ -121,7 +121,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
             )
         return config
 
-    async def initialize(self, config: ConfigT | dict[str, Any]) -> None:  # type: ignore[override]
+    async def initialize(self, config: Union[ConfigT, Dict[str, Any]]) -> None:  # type: ignore[override]
         """
         初始化 Runtime - 模板方法
 
@@ -203,7 +203,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
         """
         pass
 
-    async def create_dialog(self, user_input: str, title: str | None = None) -> str:
+    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
         """
         创建新对话（仅通过 DialogSessionManager）
 
@@ -255,7 +255,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
             updated_at=session.updated_at,
         )
 
-    def list_dialogs(self) -> list[Dialog]:
+    def list_dialogs(self) -> List[Dialog]:
         """
         列出所有对话（通过 DialogSessionManager）
 
@@ -281,7 +281,7 @@ class AbstractAgentRuntime(AgentRuntime, Generic[ConfigT], ABC):
         name: str,
         handler: Callable[..., Any],
         description: str,
-        parameters_schema: Optional[dict[str, Any]] = None
+        parameters_schema: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         注册工具

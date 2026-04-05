@@ -47,6 +47,7 @@ export interface StreamDeltaEvent {
     reasoning?: string;
   };
   timestamp: number;
+  sequence?: number;  // 序列号，用于区分同一毫秒内的多条消息
 }
 
 export interface StatusChangeEvent {

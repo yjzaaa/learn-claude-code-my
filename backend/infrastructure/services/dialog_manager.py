@@ -11,14 +11,14 @@ from typing import TYPE_CHECKING, AsyncIterator, Any, Optional
 from datetime import datetime
 import logging
 
-from backend.domain.models import Dialog, Message
-from backend.domain.models.events import (
+from backend.domain.models.dialog.dialog import Dialog, Message
+from backend.domain.models.events.base import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, DialogClosed
 )
-from backend.domain.models.config import DialogConfig
-from backend.domain.models.types import MessageDict
-from backend.runtime.event_bus import EventBus
+from backend.domain.models.shared.config import DialogConfig
+from backend.domain.models.shared.types import MessageDict
+from backend.infrastructure.runtime.event_bus import EventBus
 
 if TYPE_CHECKING:
     from backend.infrastructure.services.state_manager import StateManager

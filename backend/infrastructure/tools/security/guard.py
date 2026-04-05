@@ -4,17 +4,17 @@ Security Guards - 安全守卫
 路径安全和命令安全检查。
 """
 from pathlib import Path
-from typing import Callable
+from typing import Optional, Callable
 import subprocess
 
 
 class DefaultCommandGuard:
     """默认命令安全策略。"""
 
-    def __init__(self, blocked_tokens: list[str] | None = None):
+    def __init__(self, blocked_tokens: Optional[list[str]] = None):
         self.blocked_tokens = blocked_tokens or ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
 
-    def is_allowed(self, command: str) -> tuple[bool, str | None]:
+    def is_allowed(self, command: str) -> tuple[bool, Optional[str]]:
         """返回命令是否允许执行及拒绝原因。"""
         for token in self.blocked_tokens:
             if token in command:

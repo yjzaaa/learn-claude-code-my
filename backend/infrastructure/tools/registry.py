@@ -5,7 +5,7 @@ Tool Registry - 工具注册表
 """
 
 from typing import Callable, Optional, List
-from backend.domain.models.types import ToolSpec, JSONSchema, OpenAIToolSchema, OpenAIFunctionSchema
+from backend.domain.models.shared.types import ToolSpec, JSONSchema, OpenAIToolSchema, OpenAIFunctionSchema
 
 
 class ToolRegistry:

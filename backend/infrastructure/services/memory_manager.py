@@ -10,10 +10,10 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
-from backend.runtime.event_bus import EventBus
-from backend.domain.models.config import MemoryConfig
+from backend.infrastructure.runtime.event_bus import EventBus
+from backend.domain.models.shared.config import MemoryConfig
 from backend.domain.models.api import MemoryStats
-from backend.domain.models.types import MessageDict
+from backend.domain.models.shared.types import MessageDict
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ class MemoryManager:
 
     def __init__(
         self,
-        event_bus: EventBus | None = None,
-        config: MemoryConfig | None = None,
+        event_bus: Optional[EventBus] = None,
+        config: Optional[MemoryConfig] = None,
         memory_file: str = "memory.md",
     ):
         self._config = config or MemoryConfig()
@@ -58,7 +58,7 @@ class MemoryManager:
         dialog_id: str,
         messages: list[MessageDict],
         provider: Any = None,
-    ) -> str | None:
+    ) -> Optional[str]:
         """
         总结一次对话并追加到 memory.md。
 

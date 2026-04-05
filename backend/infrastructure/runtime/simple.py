@@ -11,14 +11,14 @@ from loguru import logger
 
 from backend.infrastructure.runtime.manager import ManagerAwareRuntime
 from backend.domain.models.dialog import DialogSessionManager
-from backend.domain.models.config import EngineConfig
+from backend.domain.models.shared.config import EngineConfig
 from backend.domain.models.api import MessageDTO, ToolCallDTO, ToolCallFunctionDTO
 from backend.domain.models import ToolCall
-from backend.domain.models.types import MessageDict, ToolCallDict
+from backend.domain.models.shared.types import MessageDict, ToolCallDict
 from backend.domain.models.events import ErrorOccurred, AgentRoundsLimitReached, ToolStartData
 from backend.infrastructure.plugins import PluginManager, CompactPlugin
 from backend.infrastructure.tools import WorkspaceOps
-from backend.domain.models.agent_events import AgentEvent
+from backend.domain.models.events.agent import AgentEvent
 
 
 class SimpleRuntime(ManagerAwareRuntime):
@@ -74,12 +74,34 @@ class SimpleRuntime(ManagerAwareRuntime):
         self._emit_system_stopped()
         self._shutdown_event_bus()
 
+    async def _load_state(self) -> None:
+        """加载状态（可扩展）"""
+        pass
+
+    async def _save_state(self) -> None:
+        """保存状态（可扩展）"""
+        pass
+
+    def _emit_system_started(self) -> None:
+        """发射系统启动事件"""
+        from backend.domain.models.events import SystemStarted
+        self._event_bus.emit(SystemStarted())
+
+    def _emit_system_stopped(self) -> None:
+        """发射系统停止事件"""
+        from backend.domain.models.events import SystemStopped
+        self._event_bus.emit(SystemStopped())
+
+    def _shutdown_event_bus(self) -> None:
+        """关闭事件总线"""
+        self._event_bus.shutdown()
+
     async def send_message(  # type: ignore[override]
         self,
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: str | None = None,
+        message_id: Optional[str] = None,
     ) -> AsyncIterator[AgentEvent]:
         """发送消息，返回流式事件（使用 SessionManager 管理状态）"""
 
@@ -190,6 +212,25 @@ class SimpleRuntime(ManagerAwareRuntime):
                             },
                         },
                     )
+                    try:
+                        from datetime import datetime, timezone
+                        from pathlib import Path
+                        _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
+                        _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
+                        with _tool_log_path.open("a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "dialog_id": dialog_id,
+                                "type": "tool_call",
+                                "tool_call": {
+                                    "id": tc.get("id", "call_0"),
+                                    "name": tc["name"],
+                                    "arguments": tc["arguments"] if isinstance(tc["arguments"], dict) else {},
+                                    "status": "pending",
+                                },
+                            }, ensure_ascii=False, default=str) + "\n")
+                    except Exception:
+                        pass
 
                     result = await self._tool_mgr.execute(dialog_id, tool_call)
 
@@ -208,6 +249,22 @@ class SimpleRuntime(ManagerAwareRuntime):
                         },
                         metadata={"tool_call_id": tc.get("id", "call_0")}
                     )
+                    try:
+                        from datetime import datetime, timezone
+                        from pathlib import Path
+                        _tool_log_path = Path(r"D:\learn-claude-code-my\logs\deep\tool_results.jsonl")
+                        _tool_log_path.parent.mkdir(parents=True, exist_ok=True)
+                        with _tool_log_path.open("a", encoding="utf-8") as f:
+                            f.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "dialog_id": dialog_id,
+                                "type": "tool_result",
+                                "tool_call_id": tc.get("id", "call_0"),
+                                "tool_name": tc["name"],
+                                "result": str(result)[:4000],
+                            }, ensure_ascii=False, default=str) + "\n")
+                    except Exception:
+                        pass
 
             # 使用 SessionManager 保存完整 AI 回复
             logger.info(f"[SimpleRuntime] Saving AI response for {dialog_id}, text_len={len(assistant_text)}, _session_mgr={self._session_mgr is not None}")
@@ -267,7 +324,7 @@ class SimpleRuntime(ManagerAwareRuntime):
         parameters_schema: Optional[dict[str, Any]] = None
     ) -> None:
         """注册工具（注册到 ToolManager）"""
-        from backend.domain.models.types import JSONSchema
+        from backend.domain.models.shared.types import JSONSchema
         from backend.infrastructure.runtime.runtime import ToolCache
 
         json_schema: Optional[JSONSchema] = None

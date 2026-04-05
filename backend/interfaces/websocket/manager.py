@@ -13,7 +13,7 @@ from loguru import logger
 from langchain_core.messages import BaseMessage, message_to_dict
 from pydantic import BaseModel
 
-from backend.domain.models.websocket_models import (
+from backend.domain.models.events.websocket import (
     WSSnapshotEvent,
     WSDialogSnapshot,
     WSDialogMetadata,

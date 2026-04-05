@@ -5,17 +5,17 @@ Tool Manager - 工具管理器
 与 core.tools.ToolRegistry 集成。
 """
 
-from typing import Callable
+from typing import Optional, Callable
 import asyncio
 import logging
 
 from backend.infrastructure.tools import ToolRegistry, WorkspaceOps
-from backend.domain.models import ToolCall
-from backend.domain.models.events import ToolCallStarted, ToolCallCompleted, ToolCallFailed
-from backend.domain.models.config import ToolManagerConfig
-from backend.domain.models.tool import ToolInfo
-from backend.domain.models.types import JSONSchema, OpenAIToolSchema, ToolSpec
-from backend.runtime.event_bus import EventBus
+from backend.domain.models.agent.tool_call import ToolCall
+from backend.domain.models.events.base import ToolCallStarted, ToolCallCompleted, ToolCallFailed
+from backend.domain.models.shared.config import ToolManagerConfig
+from backend.domain.models.agent.tool import ToolInfo
+from backend.domain.models.shared.types import JSONSchema, OpenAIToolSchema, ToolSpec
+from backend.infrastructure.runtime.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ class ToolManager:
     def __init__(
         self,
         event_bus: EventBus,
-        workspace_ops: WorkspaceOps | None = None,
-        config: ToolManagerConfig | None = None
+        workspace_ops: Optional[WorkspaceOps] = None,
+        config: Optional[ToolManagerConfig] = None
     ):
         self._event_bus = event_bus
         self._config = config or ToolManagerConfig()
@@ -67,7 +67,7 @@ class ToolManager:
         name: str,
         handler: Callable,
         description: str,
-        parameters: JSONSchema | None = None
+        parameters: Optional[JSONSchema] = None
     ):
         """
         注册工具
@@ -93,7 +93,7 @@ class ToolManager:
         """
         return self._registry.unregister(name)
     
-    def get_tool(self, name: str) -> ToolSpec | None:
+    def get_tool(self, name: str) -> Optional[ToolSpec]:
         """
         获取工具信息
         

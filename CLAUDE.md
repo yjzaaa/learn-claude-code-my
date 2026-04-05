@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A "nano Claude Code-like agent" built as a learning project. 12 progressive sessions (s01–s12) each add one mechanism on top of a minimal agent loop. The repo also ships a full-stack reference implementation (`main.py` + `core/` + `web/`) as the final integrated form.
+A "nano Claude Code-like agent" built as a learning project. 12 progressive sessions (s01–s12) each add one mechanism on top of a minimal agent loop. The repo also ships a full-stack reference implementation (`main.py` + `backend/` + `web/`) as the final integrated form.
 
 **Stack:**
 - **Backend:** Python FastAPI + uvicorn, Pydantic v2, LiteLLM provider
@@ -69,27 +69,43 @@ Key routes:
 - `POST /api/dialogs/{id}/messages` — send message (spawns background agent task)
 - `WebSocket /ws/{client_id}` — real-time event stream
 
-### Core Engine (`core/engine.py`)
+### Backend Architecture (`backend/`)
 
-`AgentEngine` is a Facade delegating to six managers:
+The backend follows **Clean Architecture** with 4 distinct layers:
+
+```
+┌─────────────────────────────────────────┐
+│  Interfaces Layer (HTTP, WebSocket)    │
+├─────────────────────────────────────────┤
+│  Application Layer (Use Cases, DTOs)   │
+├─────────────────────────────────────────┤
+│  Domain Layer (Entities, Events)       │
+├─────────────────────────────────────────┤
+│  Infrastructure Layer (Persistence)    │
+└─────────────────────────────────────────┘
+```
+
+Key managers (infrastructure layer):
 
 | Manager | File | Responsibility |
 |---------|------|---------------|
-| DialogManager | `core/managers/dialog_manager.py` | CRUD for Dialog/Message |
-| ToolManager | `core/managers/tool_manager.py` | Tool registry & execution |
-| StateManager | `core/managers/state_manager.py` | Dialog status tracking |
-| ProviderManager | `core/managers/provider_manager.py` | LLM provider abstraction |
-| MemoryManager | `core/managers/memory_manager.py` | Context/memory |
-| SkillManager | `core/managers/skill_manager.py` | Dynamic skill loading |
+| DialogManager | `backend/infrastructure/services/dialog_manager.py` | CRUD for Dialog/Message |
+| ToolManager | `backend/infrastructure/services/tool_manager.py` | Tool registry & execution |
+| StateManager | `backend/infrastructure/services/state_manager.py` | Dialog status tracking |
+| ProviderManager | `backend/infrastructure/services/provider_manager.py` | LLM provider abstraction |
+| MemoryManager | `backend/infrastructure/services/memory_manager.py` | Context/memory |
+| SkillManager | `backend/infrastructure/services/skill_manager.py` | Dynamic skill loading |
 
-All managers communicate via `runtime/event_bus.py`.
+All managers communicate via `backend/infrastructure/runtime/event_bus.py`.
 
-### Dialog Session Manager (`core/session/`)
+See `backend/ARCHITECTURE.md` for detailed architecture documentation.
+
+### Dialog Session Manager (`backend/domain/models/dialog/`)
 
 Centralized dialog lifecycle management using LangChain's `InMemoryChatMessageHistory`:
 
 ```python
-from core.session import DialogSessionManager, SessionStatus
+from backend.domain.models.dialog import DialogSessionManager, SessionStatus
 
 mgr = DialogSessionManager()
 
@@ -116,11 +132,11 @@ await mgr.complete_ai_response("dlg_001", "msg_001", "Hi there!")
 - **Cleanup**: TTL (30min) + LRU eviction when max sessions reached
 
 **Files:**
-- `core/session/manager.py` — `DialogSessionManager` class
-- `core/session/models.py` — `DialogSession`, `SessionStatus`, `SessionEvent`
-- `core/session/exceptions.py` — `SessionNotFoundError`, `InvalidTransitionError`
+- `backend/domain/models/dialog/manager.py` — `DialogSessionManager` class
+- `backend/domain/models/dialog/session.py` — `DialogSession`, `SessionStatus`
+- `backend/domain/models/dialog/exceptions.py` — `SessionNotFoundError`, `InvalidTransitionError`
 
-### Agent Loop (`core/agent/`)
+### Agent Loop (`backend/infrastructure/runtime/`)
 
 Minimal loop pattern every session builds upon:
 
@@ -132,20 +148,21 @@ while True:
     messages.append_results(results)
 ```
 
-### Pydantic Models (`core/models/`)
+### Pydantic Models (`backend/domain/models/`)
 
 All data uses Pydantic — no raw dicts. Key files:
-- `dialog.py` — Dialog, Message
-- `domain.py` — Skill, domain entities
-- `events.py` — SystemStarted, SystemStopped, ErrorOccurred
-- `dto.py` — DecisionResult, TodoStateDTO
-- `config.py` — EngineConfig
+- `backend/domain/models/dialog/dialog.py` — Dialog
+- `backend/domain/models/dialog/session.py` — DialogSession
+- `backend/domain/models/agent/skill.py` — Skill, SkillDefinition
+- `backend/domain/models/events/base.py` — SystemStarted, SystemStopped, ErrorOccurred
+- `backend/domain/models/api/responses.py` — DecisionResult, TodoStateDTO
+- `backend/domain/models/shared/config.py` — EngineConfig
 
-### HITL & Plugins (`core/hitl/`, `core/plugins/`)
+### HITL & Plugins (`backend/infrastructure/`)
 
-- `hitl/todo.py` — todo list management hook
-- `hitl/skill_edit.py` — skill editing HITL flow
-- `plugins/compact_plugin.py` — context window compression
+- `backend/infrastructure/services/state_manager.py` — todo list management hook
+- `backend/application/services/skill_edit.py` — skill editing HITL flow
+- `backend/infrastructure/plugins/compact_plugin.py` — context window compression
 
 ### Skills (`skills/`)
 

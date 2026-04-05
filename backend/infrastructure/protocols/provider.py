@@ -6,8 +6,8 @@ Base Provider - Provider 抽象基类
 
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, List, Optional
-from ..types import StreamChunk
-from ..models.types import MessageDict
+from backend.domain.models.shared import StreamChunk
+from backend.domain.models.shared.types import MessageDict
 
 
 class BaseProvider(ABC):

@@ -10,9 +10,9 @@ from typing import Any, Dict, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.application.engine import AgentEngine
-from backend.domain.models.types import WSStreamDeltaMessage, WSDialogCreatedMessage, WSEventMessage
-from backend.runtime.event_bus import EventBus
-from backend.runtime.events import (
+from backend.domain.models.shared.types import WSStreamDeltaMessage, WSDialogCreatedMessage, WSEventMessage
+from backend.infrastructure.runtime.event_bus import EventBus
+from backend.domain.models.events import (
     DialogCreated, MessageReceived, StreamDelta,
     MessageCompleted, ToolCallStarted, ToolCallCompleted
 )

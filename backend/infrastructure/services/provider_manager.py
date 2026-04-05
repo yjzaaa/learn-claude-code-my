@@ -7,8 +7,21 @@ Provider Manager - Provider 管理器
 from typing import Any, Optional, Dict
 import logging
 
-from backend.infrastructure.providers import BaseProvider, LiteLLMProvider
-from backend.domain.models.config import ProviderConfig
+from backend.infrastructure.providers import BaseProvider
+from backend.domain.models.shared.config import ProviderConfig
+
+# 尝试导入 Provider 实现
+try:
+    from backend.infrastructure.providers.litellm import LiteLLMProvider, _LITELLM_AVAILABLE
+    LITELLM_AVAILABLE = _LITELLM_AVAILABLE
+except ImportError:
+    LITELLM_AVAILABLE = False
+
+try:
+    from backend.infrastructure.providers.openai_provider import OpenAIProvider
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +36,10 @@ class ProviderManager:
     - 提供默认 Provider
     """
     
-    def __init__(self, config: ProviderConfig | None = None):
+    def __init__(self, config: Optional[ProviderConfig] = None):
         self._config = config or ProviderConfig()
         self._providers: dict[str, BaseProvider] = {}
-        self._default_provider: BaseProvider | None = None
+        self._default_provider: Optional[BaseProvider] = None
 
         # 初始化默认 Provider
         self._init_default_provider()
@@ -54,12 +67,23 @@ class ProviderManager:
                 model = self._config.model or 'claude-sonnet-4-6'
 
         if api_key:
-            self._default_provider = LiteLLMProvider(
-                model=model,
-                api_key=api_key,
-                base_url=base_url
-            )
-            logger.info(f"[ProviderManager] Created default provider: {model}")
+            # 优先使用 LiteLLM，如果不可用则使用 OpenAI
+            if LITELLM_AVAILABLE:
+                self._default_provider = LiteLLMProvider(
+                    model=model,
+                    api_key=api_key,
+                    base_url=base_url
+                )
+                logger.info(f"[ProviderManager] Created default provider with LiteLLM: {model}")
+            elif OPENAI_AVAILABLE:
+                self._default_provider = OpenAIProvider(
+                    model=model,
+                    api_key=api_key,
+                    base_url=base_url
+                )
+                logger.info(f"[ProviderManager] Created default provider with OpenAI: {model}")
+            else:
+                logger.error("[ProviderManager] No provider backend available (litellm or openai)")
         else:
             logger.warning("[ProviderManager] No API key found, provider not initialized")
     
@@ -74,7 +98,7 @@ class ProviderManager:
         self._providers[name] = provider
         logger.info(f"[ProviderManager] Registered provider: {name}")
     
-    def get(self, name: str | None = None) -> BaseProvider | None:
+    def get(self, name: Optional[str] = None) -> Optional[BaseProvider]:
         """
         获取 Provider
         
@@ -89,7 +113,7 @@ class ProviderManager:
         return self._providers.get(name)
     
     @property
-    def default(self) -> BaseProvider | None:
+    def default(self) -> Optional[BaseProvider]:
         """默认 Provider"""
         return self._default_provider
     

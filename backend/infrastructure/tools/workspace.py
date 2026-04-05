@@ -9,7 +9,7 @@ import subprocess
 import os
 import re
 from pathlib import Path
-from typing import Any, Callable, Literal, overload
+from typing import Optional, Any, Callable, Literal, overload, Union
 
 from .security.guard import DefaultCommandGuard
 from .file.operations import read_text_safe
@@ -25,8 +25,8 @@ class WorkspaceOps:
     def __init__(
         self,
         workdir: Path,
-        command_guard: DefaultCommandGuard | None = None,
-        shell_runner: Callable[..., subprocess.CompletedProcess] | None = None,
+        command_guard: Optional[DefaultCommandGuard] = None,
+        shell_runner: Optional[Callable[..., subprocess.CompletedProcess]] = None,
         auto_build_tools: bool = True,
     ):
         """初始化工作目录上下文。"""
@@ -62,7 +62,7 @@ class WorkspaceOps:
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
-    def _split_list_value(raw_value: str | None) -> list[str]:
+    def _split_list_value(raw_value: Optional[str]) -> list[str]:
         if not raw_value:
             return []
         return [item.strip() for item in re.split(r"[;,]", raw_value) if item.strip()]
@@ -290,7 +290,7 @@ class WorkspaceOps:
         rel_parts = path.relative_to(skills_root).parts
         return "scripts" in rel_parts
 
-    def _validate_bash_script_command(self, command: str) -> tuple[bool, str | None]:
+    def _validate_bash_script_command(self, command: str) -> tuple[bool, Optional[str]]:
         """Allow approved script execution and selected inline commands."""
         if re.search(r"\bpython(?:\.exe)?\s+-c\b", command, flags=re.IGNORECASE):
             if self.allow_inline_python:
@@ -357,7 +357,7 @@ class WorkspaceOps:
         except subprocess.TimeoutExpired:
             return f"Error: Timeout ({timeout}s)"
 
-    def run_read(self, path: str, limit: int | None = None) -> str:
+    def run_read(self, path: str, limit: Optional[int] = None) -> str:
         """读取文件内容，可选按行数限制并提示剩余行数。"""
         try:
             file_path = self.safe_path(path)
@@ -439,7 +439,7 @@ class WorkspaceOps:
                 name="read_file",
                 description="Read file contents, except paths blocked by READ_TOOL_BLACKLIST (default: .env).",
             )
-            def read_file(path: str, limit: int | None = None) -> str:
+            def read_file(path: str, limit: Optional[int] = None) -> str:
                 return self.run_read(path, limit)
 
             tools.append(read_file)
@@ -470,7 +470,7 @@ class WorkspaceOps:
     def get_tools(self, *, as_dict: Literal[False] = ...) -> list[Callable[..., Any]]: ...
     @overload
     def get_tools(self, *, as_dict: Literal[True]) -> dict[str, Callable[..., Any]]: ...
-    def get_tools(self, *, as_dict: bool = False) -> list[Callable[..., Any]] | dict[str, Callable[..., Any]]:
+    def get_tools(self, *, as_dict: bool = False) -> Union[list[Callable[..., Any]], dict[str, Callable[..., Any]]]:
         """返回当前 WorkspaceOps 暴露的工具。
 
         - `as_dict=False`：返回工具函数列表。

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
-from backend.domain.models.tool import ToolExecutionResult
+from backend.domain.models.agent.tool import ToolExecutionResult
 
 router = APIRouter(tags=["tools"])
 

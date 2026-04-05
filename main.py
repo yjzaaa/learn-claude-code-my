@@ -93,7 +93,14 @@ _ws_clients: Set[WebSocket] = set()
 async def _broadcast(event: Any) -> None:
     if not _ws_clients:
         return
-    text = json.dumps(event, default=str)
+    # 处理 Pydantic BaseModel
+    if hasattr(event, 'model_dump'):
+        event_dict = event.model_dump(by_alias=True)
+    elif hasattr(event, 'dict'):  # Pydantic v1
+        event_dict = event.dict(by_alias=True)
+    else:
+        event_dict = event
+    text = json.dumps(event_dict, default=str, ensure_ascii=False)
     dead: Set[WebSocket] = set()
     for ws in list(_ws_clients):
         try:
@@ -205,6 +212,7 @@ async def _run_agent(dialog_id: str, content: str, message_id: str) -> None:
 
         accumulated = ""
         first_chunk = True
+        delta_sequence = 0  # Delta 序列计数器
 
         try:
             async for event in runtime.send_message(dialog_id, content, stream=True, message_id=msg_id):
@@ -229,12 +237,14 @@ async def _run_agent(dialog_id: str, content: str, message_id: str) -> None:
                     if sm is not None:
                         sm["content"] = accumulated
 
+                    delta_sequence += 1
                     await _broadcast(WSStreamDeltaEvent(
                         type="stream:delta",
                         dialog_id=dialog_id,
                         message_id=msg_id,
                         delta=WSDeltaContent(content=chunk, reasoning=""),
                         timestamp=_ts(),
+                        sequence=delta_sequence,
                     ))
                 # elif event.type in ("tool_call", "agent:tool_call"):
                 #     await _broadcast({

@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from backend.domain.models.config import StateConfig
+from backend.domain.models.shared.config import StateConfig
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ class StateManager:
 
     def __init__(
         self,
-        config: StateConfig | None = None,
-        state_dir: Path | None = None
+        config: Optional[StateConfig] = None,
+        state_dir: Optional[Path] = None
     ):
         # 支持 Pydantic BaseModel 和 dataclass
         if config is None:
@@ -47,7 +47,7 @@ class StateManager:
         self._state_dir = state_dir
 
         # 当前 Provider 名称
-        self._current_provider: str | None = None
+        self._current_provider: Optional[str] = None
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -89,7 +89,7 @@ class StateManager:
         """设置当前 Provider"""
         self._current_provider = provider_name
     
-    def get_current_provider(self) -> str | None:
+    def get_current_provider(self) -> Optional[str]:
         """获取当前 Provider"""
         return self._current_provider
     

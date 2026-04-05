@@ -5,17 +5,17 @@ AgentEngine - Agent 核心引擎 (Facade)
 所有外部交互都通过此类，内部委托给各 Manager。
 """
 
-from typing import Any
+from typing import Any, Optional
 import logging
 
-from backend.runtime.event_bus import EventBus
+from backend.infrastructure.runtime.event_bus import EventBus
 from backend.infrastructure.services.dialog_manager import DialogManager
 from backend.infrastructure.services.tool_manager import ToolManager
 from backend.infrastructure.services.state_manager import StateManager
 from backend.infrastructure.services.provider_manager import ProviderManager
 from backend.infrastructure.services.memory_manager import MemoryManager
 from backend.infrastructure.services.skill_manager import SkillManager
-from backend.domain.models.config import EngineConfig
+from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.plugins import PluginManager, CompactPlugin
 from backend.infrastructure.runtime.mixins import (
     EventMixin,
@@ -61,7 +61,7 @@ class AgentEngine(
         await engine.shutdown()
     """
 
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: Optional[dict[str, Any]] = None):
         """
         初始化引擎
 

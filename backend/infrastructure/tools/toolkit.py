@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import inspect
 import types
-from typing import Any, Callable, get_args, get_origin
+from typing import Optional, Any, Callable, get_args, get_origin
 
-from backend.domain.models.types import (
+from backend.domain.models.shared.types import (
     ToolSpec,
     OpenAIFunctionSchema,
     OpenAIToolSchema,
@@ -95,9 +95,9 @@ def _summary_from_docstring(func: Callable[..., Any]) -> str:
 def tool(
     _func: Callable[..., Any] | None = None,
     *,
-    name: str | None = None,
-    description: str | None = None,
-    parameters: dict[str, Any] | None = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    parameters: Optional[dict[str, Any]] = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
     """将普通函数标记为工具（OpenAI 格式）。
 
@@ -163,7 +163,7 @@ def build_tools(functions: list[Callable[..., Any]]) -> list[MergedToolItem]:
     names: set[str] = set()
 
     for func in functions:
-        spec: ToolSpec | None = getattr(func, "__tool_spec__", None)
+        spec: Optional[ToolSpec] = getattr(func, "__tool_spec__", None)
         if not spec:
             raise ToolDefinitionError(
                 f"Function '{func.__name__}' is not a tool. Add @tool decorator first."

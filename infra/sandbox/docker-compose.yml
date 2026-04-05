@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: finance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: cost_allocation
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_cost_allocation.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cost_allocation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  sandbox:
+    build:
+      context: ../..
+      dockerfile: infra/sandbox/Dockerfile
+    image: deep-agent-sandbox:latest
+    container_name: deep-agent-sandbox
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    volumes:
+      - ../../skills:/workspace/skills
+    working_dir: /workspace/skills
+    command: ["sleep", "infinity"]
+
+volumes:
+  postgres_data:

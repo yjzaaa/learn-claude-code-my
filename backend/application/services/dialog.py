@@ -14,7 +14,7 @@ DialogService - 对话应用服务
 from typing import AsyncIterator, Optional
 from datetime import datetime
 
-from backend.domain.models import Dialog
+from backend.domain.models.dialog.dialog import Dialog
 from backend.application.dto.responses import (
     CreateDialogResult,
     SendMessageResult,

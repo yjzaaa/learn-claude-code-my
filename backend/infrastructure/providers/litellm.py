@@ -8,9 +8,17 @@ import os
 from typing import AsyncIterator, List, Optional
 
 from httpx import stream
-from .base import BaseProvider
-from ..types import StreamChunk
-from ..models.types import MessageDict, StreamToolCallDict
+from backend.infrastructure.protocols.provider import BaseProvider
+from backend.domain.models.shared import StreamChunk
+from backend.domain.models.shared.types import MessageDict, StreamToolCallDict
+
+# 在模块级别检查 litellm 是否可用
+try:
+    import litellm
+    _LITELLM_AVAILABLE = True
+except ImportError:
+    _LITELLM_AVAILABLE = False
+    litellm = None
 
 
 class LiteLLMProvider(BaseProvider):
@@ -31,19 +39,16 @@ class LiteLLMProvider(BaseProvider):
         base_url: Optional[str] = None,
         default_model: str = "deepseek/deepseek-chat",
     ):
+        if not _LITELLM_AVAILABLE:
+            raise ImportError(
+                "litellm is required. Install with: pip install litellm"
+            )
+
         self._model = model
         self._api_key = api_key
         self._base_url = base_url
         self._default_model = default_model
-        
-        # 延迟导入 lite_llm
-        try:
-            import litellm
-            self._litellm = litellm
-        except ImportError:
-            raise ImportError(
-                "litellm is required. Install with: pip install litellm"
-            )
+        self._litellm = litellm
     
     @property
     def default_model(self) -> str:

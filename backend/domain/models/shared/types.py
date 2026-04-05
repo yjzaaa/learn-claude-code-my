@@ -4,7 +4,7 @@ Types - 统一类型定义
 集中管理所有 TypedDict 和类型别名定义。
 """
 
-from typing import Any, Callable, TypedDict
+from typing import Optional, Any, Callable, TypedDict
 from typing_extensions import NotRequired
 from pydantic import BaseModel, Field
 
@@ -255,7 +255,7 @@ class WSDialogSnapshot(TypedDict):
     title: str
     status: str
     messages: list[WSMessageItem]
-    streaming_message: NotRequired[Any]   # WSStreamingMessage | None
+    streaming_message: NotRequired[Any]   # Optional[WSStreamingMessage]
     metadata: WSDialogMetadata
     created_at: str
     updated_at: str

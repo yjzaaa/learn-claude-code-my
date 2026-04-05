@@ -96,7 +96,10 @@ export const useAgentStore = create<AgentStoreState>((set, get) => ({
 
       case "stream:delta": {
         const e = event as StreamDeltaEvent;
-        const key = dedupeKey(e.message_id, e.timestamp);
+        // 使用序列号或内容+时间戳去重，避免同一毫秒内的消息被丢弃
+        const key = e.sequence !== undefined
+          ? `${e.message_id}::${e.sequence}`
+          : `${e.message_id}::${e.timestamp}::${e.delta.content}`;
         if (seenDeltas.has(key)) return;
         seenDeltas.add(key);
 

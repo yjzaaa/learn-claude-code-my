@@ -11,7 +11,7 @@ from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
 
-from backend.domain.models import Dialog
+from backend.domain.models.dialog.dialog import Dialog
 from backend.application.dto.responses import MemorySummary
 
 
