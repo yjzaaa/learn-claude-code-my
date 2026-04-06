@@ -1,0 +1,9 @@
+{
+  "id": "1",
+  "subject": "Implement OpenSpec change langchain-skill-engine-middleware: BM25+Embedding skil",
+  "description": "Implement OpenSpec change langchain-skill-engine-middleware: BM25+Embedding skill ranking, two-phase execution, quality tracking,",
+  "status": "pending",
+  "owner": null,
+  "result": null,
+  "created_at": "2026-04-06T15:57:45.373Z"
+}

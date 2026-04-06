@@ -1,0 +1,50 @@
+{
+  "name": "implement-openspec-change-lang",
+  "task": "Implement OpenSpec change langchain-skill-engine-middleware: BM25+Embedding skil; .skill_id sidecar",
+  "agent_type": "claude",
+  "worker_launch_mode": "interactive",
+  "policy": {
+    "display_mode": "split_pane",
+    "worker_launch_mode": "interactive",
+    "dispatch_mode": "hook_preferred_with_fallback",
+    "dispatch_ack_timeout_ms": 15000
+  },
+  "governance": {
+    "delegation_only": false,
+    "plan_approval_required": false,
+    "nested_teams_allowed": false,
+    "one_team_per_leader_session": true,
+    "cleanup_requires_all_workers_inactive": true
+  },
+  "worker_count": 2,
+  "max_workers": 20,
+  "workers": [
+    {
+      "name": "worker-1",
+      "index": 1,
+      "role": "architect",
+      "assigned_tasks": [],
+      "working_dir": "D:\\learn-claude-code-my",
+      "pane_id": "%3"
+    },
+    {
+      "name": "worker-2",
+      "index": 2,
+      "role": "executor",
+      "assigned_tasks": [],
+      "working_dir": "D:\\learn-claude-code-my",
+      "pane_id": "%4"
+    }
+  ],
+  "created_at": "2026-04-06T15:57:47.802Z",
+  "tmux_session": "omc-team-implement-openspec-change-lang-mnndjf9o:0",
+  "tmux_window_owned": true,
+  "next_task_id": 3,
+  "leader_cwd": "D:\\learn-claude-code-my",
+  "team_state_root": "D:\\learn-claude-code-my\\.omc\\state\\team\\implement-openspec-change-lang",
+  "leader_pane_id": "%1",
+  "hud_pane_id": null,
+  "resize_hook_name": null,
+  "resize_hook_target": null,
+  "workspace_mode": "single"
+}

@@ -17,6 +17,7 @@ from .model_discovery import (
 )
 from .provider_manager import ModelConfig, ProviderManager
 from .skill_manager import SkillManager
+from .skill_ranker import RankedSkill, SkillRanker
 from .state_manager import StateManager
 from .tool_manager import ToolManager
 
@@ -27,6 +28,8 @@ __all__ = [
     "ProviderManager",
     "MemoryManager",
     "SkillManager",
+    "SkillRanker",
+    "RankedSkill",
     "discover_credentials",
     "discover_available_models",
     "DiscoveredModelConfig",

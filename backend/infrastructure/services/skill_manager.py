@@ -17,6 +17,7 @@ from backend.domain.models.agent.tool import ActiveToolInfo
 from backend.domain.models.api.stats import SkillStats
 from backend.domain.models.shared.config import SkillManagerConfig
 from backend.infrastructure.logging import get_logger
+from backend.infrastructure.services.skill_id_sidecar import _read_or_create_skill_id
 
 if TYPE_CHECKING:
     from backend.infrastructure.event_bus import EventBus
@@ -135,9 +136,16 @@ class SkillManager:
             try:
                 content = skill_md_path.read_text(encoding="utf-8")
                 metadata, _ = self._parse_skill_md(content)
-                skill_id = metadata.get("name") or path.name
+                skill_name = metadata.get("name") or path.name
+
+                # 使用 sidecar 读取或创建 skill_id
+                skill_id, is_new = _read_or_create_skill_id(
+                    skill_dir=actual_path,
+                    name=skill_name,
+                )
+
                 definition = SkillDefinition(
-                    name=metadata.get("name", path.name),
+                    name=skill_name,
                     description=metadata.get("description", ""),
                     version=metadata.get("version", "1.0.0"),
                     author=metadata.get("author"),
@@ -145,7 +153,11 @@ class SkillManager:
                 )
                 skill = self.register_skill(skill_id=skill_id, definition=definition)
                 skill.path = str(actual_path)
-                logger.info(f"[SkillManager] Loaded skill '{skill_id}' from {skill_md_path}")
+
+                if is_new:
+                    logger.info(f"[SkillManager] Loaded skill '{skill_id}' (new) from {skill_md_path}")
+                else:
+                    logger.info(f"[SkillManager] Loaded skill '{skill_id}' (existing) from {skill_md_path}")
                 return skill
             except Exception as e:
                 logger.exception(

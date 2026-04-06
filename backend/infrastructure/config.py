@@ -178,6 +178,57 @@ class SandboxConfig(BaseModel):
     mode: str = "docker"
 
 
+class SkillEmbeddingConfig(BaseModel):
+    """Skill Embedding 配置"""
+
+    enabled: bool = True
+    model: str = "openai/text-embedding-3-small"
+    max_chars: int = 12_000
+    cache_dir: str = ".skill_embedding_cache"
+    cache_file: str = "skill_embeddings_v1.pkl"
+
+
+class SkillTwoPhaseConfig(BaseModel):
+    """Skill 两阶段执行配置"""
+
+    enabled: bool = True
+    cleanup_workspace: bool = True
+    full_iterations_on_fallback: bool = True
+
+
+class SkillEvolutionConfig(BaseModel):
+    """Skill 进化配置"""
+
+    enabled: bool = False
+    auto_fix: bool = False
+    auto_derive: bool = False
+    min_executions_for_analysis: int = 5
+
+
+class SkillQualityConfig(BaseModel):
+    """Skill 质量追踪配置"""
+
+    enabled: bool = True
+    data_file: str = "skill_quality.jsonl"
+    filter_problematic: bool = True
+    never_completed_threshold: int = 2
+    fallback_ratio_threshold: float = 0.5
+    min_applied_for_filter: int = 2
+
+
+class SkillConfig(BaseModel):
+    """Skill Engine 总配置"""
+
+    enabled: bool = True
+    max_select: int = 2
+    prefilter_threshold: int = 10
+    bm25_candidates_multiplier: int = 3
+    embedding: SkillEmbeddingConfig = Field(default_factory=SkillEmbeddingConfig)
+    two_phase: SkillTwoPhaseConfig = Field(default_factory=SkillTwoPhaseConfig)
+    evolution: SkillEvolutionConfig = Field(default_factory=SkillEvolutionConfig)
+    quality: SkillQualityConfig = Field(default_factory=SkillQualityConfig)
+
+
 class ConfigSchema(BaseModel):
     """配置 Schema - 与 config.yaml 结构完全映射"""
 
@@ -193,6 +244,7 @@ class ConfigSchema(BaseModel):
     skill_edit: SkillEditConfig = Field(default_factory=SkillEditConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
+    skill: SkillConfig = Field(default_factory=SkillConfig)
 
 
 # ==================== 配置加载器 ====================
@@ -276,6 +328,10 @@ class Config:
     @property
     def sandbox(self) -> SandboxConfig:
         return self._config.sandbox
+
+    @property
+    def skill(self) -> SkillConfig:
+        return self._config.skill
 
 
 # 全局配置实例
