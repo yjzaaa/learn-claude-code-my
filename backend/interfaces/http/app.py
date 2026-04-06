@@ -3,26 +3,25 @@
 创建和配置 FastAPI 应用，整合所有路由和中间件。
 """
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from dotenv import load_dotenv
 
 # 加载环境变量
 load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env", override=True)
 
+from backend.domain.models.config import EngineConfig
+from backend.infrastructure.agent_queue import AgentTaskQueue
 from backend.infrastructure.config import config
 from backend.infrastructure.container import container
+from backend.infrastructure.event_bus import QueuedEventBus
+from backend.infrastructure.event_bus.handlers import EventHandlers
 from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 from backend.infrastructure.services import ProviderManager
-from backend.domain.models.config import EngineConfig
-from backend.infrastructure.event_bus import QueuedEventBus
-from backend.infrastructure.agent_queue import AgentTaskQueue
-from backend.infrastructure.event_bus.handlers import EventHandlers
 
 
 def create_app() -> FastAPI:
@@ -37,11 +36,7 @@ def create_app() -> FastAPI:
         # 清理
         await _shutdown()
 
-    app = FastAPI(
-        title="Hana Agent API",
-        version="1.0.0",
-        lifespan=lifespan
-    )
+    app = FastAPI(title="Hana Agent API", version="1.0.0", lifespan=lifespan)
 
     # CORS 中间件
     app.add_middleware(
@@ -68,6 +63,7 @@ async def _initialize() -> None:
     # 初始化记忆数据库
     try:
         from backend.infrastructure.persistence.memory.database import init_memory_database
+
         await init_memory_database()
     except Exception as e:
         logger.warning(f"[App] Memory database initialization failed: {e}")
@@ -79,7 +75,9 @@ async def _initialize() -> None:
     # 创建 ProviderManager（统一配置来源）
     provider_manager = ProviderManager()
     model_config = provider_manager.get_model_config()
-    logger.info(f"[App] ProviderManager initialized: model={model_config.model}, provider={model_config.provider}")
+    logger.info(
+        f"[App] ProviderManager initialized: model={model_config.model}, provider={model_config.provider}"
+    )
 
     # 创建 Runtime
     agent_type = config.agent.type
@@ -93,26 +91,31 @@ async def _initialize() -> None:
     factory = AgentRuntimeFactory()
 
     # 配置现在主要由 ProviderManager 管理，EngineConfig 作为补充
-    engine_config = EngineConfig.from_dict({
-        "skills": {"skills_dir": str(project_root / "skills")},
-        "provider": {
-            "model": model_config.model,  # 从 ProviderManager 获取
-            "api_key": model_config.api_key,
-            "base_url": model_config.base_url,
-        },
-        "system": "You are a helpful AI assistant...",
-    })
+    engine_config = EngineConfig.from_dict(
+        {
+            "skills": {"skills_dir": str(project_root / "skills")},
+            "provider": {
+                "model": model_config.model,  # 从 ProviderManager 获取
+                "api_key": model_config.api_key,
+                "base_url": model_config.base_url,
+            },
+            "system": "You are a helpful AI assistant...",
+        }
+    )
 
-    runtime = factory.create(agent_type, "main-agent", engine_config, provider_manager=provider_manager)
+    runtime = factory.create(
+        agent_type, "main-agent", engine_config, provider_manager=provider_manager
+    )
     await runtime.initialize(engine_config)
 
-    if hasattr(runtime, 'setup_workspace_tools'):
+    if hasattr(runtime, "setup_workspace_tools"):
         runtime.setup_workspace_tools(project_root)
 
     # Session Manager
     from backend.domain.models.dialog import DialogSessionManager
+
     session_manager = DialogSessionManager(max_sessions=100, session_ttl_seconds=1800)
-    if hasattr(runtime, 'set_session_manager'):
+    if hasattr(runtime, "set_session_manager"):
         runtime.set_session_manager(session_manager)
 
     # AsyncQueue 组件
@@ -152,6 +155,7 @@ async def _shutdown() -> None:
 
     # 关闭 WebSocket 缓冲区
     from backend.interfaces.websocket.broadcast import cleanup_client
+
     for client_id in list(container.state.client_buffers.keys()):
         await cleanup_client(client_id)
 
@@ -165,9 +169,9 @@ async def _shutdown() -> None:
 
 def _register_routes(app: FastAPI) -> None:
     """注册路由"""
-    from backend.interfaces.http.routes import dialogs, messages, agent
-    from backend.interfaces.http.memory_routes import router as memory_router
     from backend.interfaces.http.commands import memory_commands
+    from backend.interfaces.http.memory_routes import router as memory_router
+    from backend.interfaces.http.routes import agent, dialogs, messages
 
     app.include_router(dialogs.router)
     app.include_router(messages.router)
@@ -176,9 +180,9 @@ def _register_routes(app: FastAPI) -> None:
     app.include_router(memory_commands.router, prefix="/api")
 
     # WebSocket
-    from backend.interfaces.websocket.handler import handle_websocket
-
     from fastapi import WebSocket
+
+    from backend.interfaces.websocket.handler import handle_websocket
 
     @app.websocket("/ws/{client_id}")
     async def ws_endpoint(websocket: WebSocket, client_id: str):
@@ -195,8 +199,5 @@ def _register_exception_handlers(app: FastAPI) -> None:
         logger.exception("[Exception] Unhandled error: %s", exc)
         return JSONResponse(
             status_code=500,
-            content={
-                "success": False,
-                "error": {"code": "internal_error", "message": str(exc)}
-            }
+            content={"success": False, "error": {"code": "internal_error", "message": str(exc)}},
         )

@@ -5,7 +5,6 @@ Memory Repository Interface - 记忆仓库接口
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
 
 from backend.domain.models.memory import Memory
 from backend.domain.models.memory.types import MemoryType
@@ -35,7 +34,7 @@ class IMemoryRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_by_id(self, memory_id: str, user_id: str) -> Optional[Memory]:
+    async def find_by_id(self, memory_id: str, user_id: str) -> Memory | None:
         """根据ID查找记忆
 
         Args:
@@ -51,11 +50,11 @@ class IMemoryRepository(ABC):
     async def list_by_user(
         self,
         user_id: str,
-        project_path: Optional[str] = None,
-        memory_type: Optional[MemoryType] = None,
+        project_path: str | None = None,
+        memory_type: MemoryType | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """列出用户的记忆
 
         Args:
@@ -75,9 +74,9 @@ class IMemoryRepository(ABC):
         self,
         user_id: str,
         query: str,
-        project_path: Optional[str] = None,
+        project_path: str | None = None,
         limit: int = 5,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """搜索记忆
 
         Args:

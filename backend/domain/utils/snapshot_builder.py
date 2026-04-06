@@ -3,10 +3,9 @@
 统一构建对话快照的逻辑，消除 manager.py 和 dialog_service.py 中的重复代码。
 """
 
-from typing import Optional, Dict, Any, List
-from datetime import datetime
+from typing import Any
 
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from backend.domain.utils.time_utils import iso_timestamp_now
 
@@ -25,7 +24,7 @@ class SnapshotBuilder:
     DEFAULT_AGENT_NAME = "hana"
 
     @staticmethod
-    def build_from_session(session) -> Optional[Dict[str, Any]]:
+    def build_from_session(session) -> dict[str, Any] | None:
         """从 DialogSession 构建前端快照
 
         Args:
@@ -55,11 +54,11 @@ class SnapshotBuilder:
             },
             "created_at": session.created_at.isoformat(),
             "updated_at": session.updated_at.isoformat(),
-            "selected_model_id": getattr(session, 'selected_model_id', None),
+            "selected_model_id": getattr(session, "selected_model_id", None),
         }
 
     @staticmethod
-    def _build_messages(session) -> List[Dict[str, Any]]:
+    def _build_messages(session) -> list[dict[str, Any]]:
         """构建消息列表
 
         Args:
@@ -71,13 +70,13 @@ class SnapshotBuilder:
         messages = []
         for msg in session.history.messages:
             role = SnapshotBuilder._get_message_role(msg)
-            msg_id = getattr(msg, 'msg_id', '') or str(id(msg))[:12]
+            msg_id = getattr(msg, "msg_id", "") or str(id(msg))[:12]
 
             # 从 message metadata 中提取模型信息
-            msg_metadata = getattr(msg, 'additional_kwargs', {}) or {}
-            msg_model = msg_metadata.get('model')
-            msg_provider = msg_metadata.get('provider')
-            msg_reasoning = msg_metadata.get('reasoning_content')
+            msg_metadata = getattr(msg, "additional_kwargs", {}) or {}
+            msg_model = msg_metadata.get("model")
+            msg_provider = msg_metadata.get("provider")
+            msg_reasoning = msg_metadata.get("reasoning_content")
 
             msg_dict = {
                 "id": msg_id,
@@ -101,7 +100,7 @@ class SnapshotBuilder:
         return messages
 
     @staticmethod
-    def _build_streaming_message(session) -> Optional[Dict[str, Any]]:
+    def _build_streaming_message(session) -> dict[str, Any] | None:
         """构建流式消息（如果处于流式状态）
 
         Args:
@@ -134,12 +133,11 @@ class SnapshotBuilder:
         """
         if isinstance(msg, HumanMessage):
             return "user"
-        elif isinstance(msg, AIMessage):
+        if isinstance(msg, AIMessage):
             return "assistant"
-        elif isinstance(msg, ToolMessage):
+        if isinstance(msg, ToolMessage):
             return "tool"
-        else:
-            return "unknown"
+        return "unknown"
 
     @staticmethod
     def _get_current_model() -> str:
@@ -150,16 +148,18 @@ class SnapshotBuilder:
         """
         try:
             from backend.infrastructure.services.provider_manager import ProviderManager
+
             pm = ProviderManager()
             model_config = pm.get_model_config()
             return model_config.model
         except Exception:
             # 回退到配置
             from backend.infrastructure.config import config
+
             return config.model.id
 
     @staticmethod
-    def transform_message_for_ws(msg_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def transform_message_for_ws(msg_dict: dict[str, Any]) -> dict[str, Any]:
         """将内部消息格式转换为 WebSocket 消息格式
 
         Args:
@@ -179,7 +179,7 @@ class SnapshotBuilder:
 
 
 # 向后兼容的便捷函数
-def build_dialog_snapshot(session) -> Optional[Dict[str, Any]]:
+def build_dialog_snapshot(session) -> dict[str, Any] | None:
     """构建对话快照（向后兼容）
 
     使用方式:

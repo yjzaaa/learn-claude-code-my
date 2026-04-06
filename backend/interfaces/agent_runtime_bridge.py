@@ -7,10 +7,8 @@ Agent Runtime Bridge - AgentRuntime 管理（简化版）
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
-from backend.infrastructure.container import container
 from backend.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,7 +31,9 @@ class AgentRuntimeBridge:
     def set_runtime(self, runtime: Any) -> None:
         """设置 Runtime 实例"""
         self._runtime = runtime
-        logger.info("[AgentRuntimeBridge] Runtime injected: %s", getattr(runtime, 'runtime_id', 'unknown'))
+        logger.info(
+            "[AgentRuntimeBridge] Runtime injected: %s", getattr(runtime, "runtime_id", "unknown")
+        )
 
     async def initialize_runtime(self, config: dict[str, Any] | None = None) -> Any:
         """初始化 Runtime"""

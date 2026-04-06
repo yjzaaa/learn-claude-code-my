@@ -220,7 +220,9 @@ class EventHandlers:
 
                     # 发射进度事件
                     if self.event_bus:
-                        logger.debug(f"[_handle_execute_request] Emitting AgentProgressEvent, dialog_id={dialog_id}")
+                        logger.debug(
+                            f"[_handle_execute_request] Emitting AgentProgressEvent, dialog_id={dialog_id}"
+                        )
                         await self.event_bus.emit(
                             AgentProgressEvent(
                                 dialog_id=dialog_id,
@@ -278,12 +280,14 @@ class EventHandlers:
                     logger.debug(f"[_handle_execute_request] Tool call: {tool_data}")
                     from backend.interfaces.websocket.broadcast import broadcast
 
-                    await broadcast({
-                        "type": "tool:call",
-                        "dialog_id": dialog_id,
-                        "data": tool_data,
-                        "timestamp": timestamp_ms(),
-                    })
+                    await broadcast(
+                        {
+                            "type": "tool:call",
+                            "dialog_id": dialog_id,
+                            "data": tool_data,
+                            "timestamp": timestamp_ms(),
+                        }
+                    )
 
                 elif runtime_event.type == "tool_result":
                     # 工具结果事件 - 广播到前端
@@ -291,12 +295,14 @@ class EventHandlers:
                     logger.debug(f"[_handle_execute_request] Tool result: {result_data}")
                     from backend.interfaces.websocket.broadcast import broadcast
 
-                    await broadcast({
-                        "type": "tool:result",
-                        "dialog_id": dialog_id,
-                        "data": result_data,
-                        "timestamp": timestamp_ms(),
-                    })
+                    await broadcast(
+                        {
+                            "type": "tool:result",
+                            "dialog_id": dialog_id,
+                            "data": result_data,
+                            "timestamp": timestamp_ms(),
+                        }
+                    )
 
                 elif runtime_event.type == "error":
                     error_msg = str(runtime_event.data)

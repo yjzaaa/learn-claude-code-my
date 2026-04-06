@@ -391,7 +391,7 @@ export type AppState = DeepImmutable<{
   mainLoopModel: ModelSetting
   mainLoopModelForSession: ModelSetting
   statusLineText: string | undefined
-  
+
   // UI 状态
   expandedView: 'none' | 'tasks' | 'teammates'
   isBriefOnly: boolean
@@ -399,14 +399,14 @@ export type AppState = DeepImmutable<{
   coordinatorTaskIndex: number
   viewSelectionMode: 'none' | 'selecting-agent' | 'viewing-agent'
   footerSelection: FooterItem | null
-  
+
   // 工具权限
   toolPermissionContext: ToolPermissionContext
-  
+
   // Agent/助手
   agent: string | undefined
   kairosEnabled: boolean
-  
+
   // 远程/Bridge
   remoteSessionUrl: string | undefined
   remoteConnectionStatus: 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -415,7 +415,7 @@ export type AppState = DeepImmutable<{
   replBridgeConnected: boolean
   replBridgeSessionActive: boolean
   // ... 更多 bridge 状态
-  
+
   // MCP
   mcp: {
     clients: MCPServerConnection[]
@@ -424,7 +424,7 @@ export type AppState = DeepImmutable<{
     resources: Record<string, ServerResource[]>
     pluginReconnectKey: number
   }
-  
+
   // 插件
   plugins: {
     enabled: LoadedPlugin[]
@@ -433,13 +433,13 @@ export type AppState = DeepImmutable<{
     errors: PluginError[]
     installationStatus: { ... }
   }
-  
+
   // 任务
   tasks: { [taskId: string]: TaskState }
   agentNameRegistry: Map<string, AgentId>
   foregroundedTaskId?: string
   viewingAgentTaskId?: string
-  
+
   // 其他...
 }>
 ```
@@ -460,7 +460,7 @@ export function createStore<T>(
 ): Store<T> {
   let state = initialState
   const listeners = new Set<() => void>()
-  
+
   return {
     getState: () => state,
     setState: (updater) => {

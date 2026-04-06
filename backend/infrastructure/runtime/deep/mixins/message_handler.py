@@ -4,7 +4,6 @@
 """
 
 import json
-import os
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
@@ -225,7 +224,10 @@ class DeepMessageHandlerMixin:
 
         messages = self._merge_system_messages(messages)
         recursion_limit = config.agent.recursion_limit
-        agent_config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
+        agent_config = {
+            "configurable": {"thread_id": dialog_id},
+            "recursion_limit": recursion_limit,
+        }
 
         self._fire_log_msg("debug", f"User message: {message[:200]}", dialog_id)
 

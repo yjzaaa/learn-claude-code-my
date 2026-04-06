@@ -10,20 +10,27 @@ import dataclasses
 import difflib
 import time
 import uuid
-from pathlib import Path
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
+from pathlib import Path
 from threading import RLock
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 from loguru import logger
 
-from backend.domain.models.api import SkillEditPendingEvent, SkillEditResolvedEvent, DecisionResult, SkillEditProposalDTO
+from backend.domain.models.api import (
+    DecisionResult,
+    SkillEditPendingEvent,
+    SkillEditProposalDTO,
+    SkillEditResolvedEvent,
+)
 from backend.infrastructure.config import config
 
 
 @dataclass
 class SkillEditProposal:
     """Skill 编辑提案"""
+
     approval_id: str
     dialog_id: str
     path: str
@@ -34,7 +41,7 @@ class SkillEditProposal:
     trigger_mode: str
     status: str  # pending | accepted | rejected | edited_accepted
     created_at: float
-    resolved_at: Optional[float] = None
+    resolved_at: float | None = None
 
     def to_dto(self) -> SkillEditProposalDTO:
         return SkillEditProposalDTO(
@@ -70,6 +77,7 @@ class SkillEditHITLStore:
         self._lock = RLock()
         self._proposals: dict[str, SkillEditProposal] = {}
         self._broadcaster: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
+
     def register_broadcaster(
         self, broadcaster: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
     ) -> None:
@@ -82,6 +90,7 @@ class SkillEditHITLStore:
             return
         try:
             import asyncio
+
             loop = asyncio.get_running_loop()
             loop.create_task(self._broadcaster(event))
         except RuntimeError:
@@ -144,19 +153,19 @@ class SkillEditHITLStore:
             self._proposals[approval_id] = proposal
 
         self._emit(
-            dataclasses.asdict(SkillEditPendingEvent(
-                dialog_id=dialog_id,
-                approval=proposal.to_dict(),
-                timestamp=time.time(),
-            ))
+            dataclasses.asdict(
+                SkillEditPendingEvent(
+                    dialog_id=dialog_id,
+                    approval=proposal.to_dict(),
+                    timestamp=time.time(),
+                )
+            )
         )
 
         logger.info(f"[SkillEditHITL] Created proposal {approval_id} for {path}")
         return proposal
 
-    def list_pending(
-        self, dialog_id: Optional[str] = None
-    ) -> list[dict[str, Any]]:
+    def list_pending(self, dialog_id: str | None = None) -> list[dict[str, Any]]:
         """列出待处理的提案"""
         with self._lock:
             proposals = [p for p in self._proposals.values() if p.status == "pending"]
@@ -165,7 +174,7 @@ class SkillEditHITLStore:
             proposals.sort(key=lambda p: p.created_at, reverse=True)
             return [p.to_dict() for p in proposals]
 
-    def get_proposal(self, approval_id: str) -> Optional[SkillEditProposal]:
+    def get_proposal(self, approval_id: str) -> SkillEditProposal | None:
         """获取提案"""
         return self._proposals.get(approval_id)
 
@@ -173,7 +182,7 @@ class SkillEditHITLStore:
         self,
         approval_id: str,
         decision: str,
-        edited_content: Optional[str] = None,
+        edited_content: str | None = None,
     ) -> DecisionResult:
         """
         处理审核决定
@@ -229,12 +238,14 @@ class SkillEditHITLStore:
         proposal.resolved_at = time.time()
 
         self._emit(
-            dataclasses.asdict(SkillEditResolvedEvent(
-                dialog_id=proposal.dialog_id,
-                approval_id=proposal.approval_id,
-                result=proposal.status,
-                timestamp=time.time(),
-            ))
+            dataclasses.asdict(
+                SkillEditResolvedEvent(
+                    dialog_id=proposal.dialog_id,
+                    approval_id=proposal.approval_id,
+                    result=proposal.status,
+                    timestamp=time.time(),
+                )
+            )
         )
 
         return DecisionResult(success=True, message="ok", data=proposal.to_dict())

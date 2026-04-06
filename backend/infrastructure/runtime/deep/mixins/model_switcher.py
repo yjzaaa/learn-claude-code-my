@@ -119,8 +119,7 @@ class DeepModelSwitcherMixin:
                     "Use Linux commands (ls, cat, grep, cd). "
                 )
                 skill_sources = [
-                    f"/workspace/skills/{skill}/"
-                    for skill in (self._config.skills or [])
+                    f"/workspace/skills/{skill}/" for skill in (self._config.skills or [])
                 ]
                 self._agent_context = AgentBuildContext(
                     agent_id=self._agent_id,
@@ -136,9 +135,7 @@ class DeepModelSwitcherMixin:
                     interrupt_on=self._config.interrupt_on,
                 )
 
-            self._agent = AgentFactory.rebuild_for_model_switch(
-                self._agent_context, new_model
-            )
+            self._agent = AgentFactory.rebuild_for_model_switch(self._agent_context, new_model)
             logger.info(f"[DeepAgentRuntime] Rebuilt agent with new model: {selected_model}")
             return True
         except Exception as e:

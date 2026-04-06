@@ -302,9 +302,9 @@ export function memoryAge(mtimeMs: number): string {
 
 **超过1天的记忆会附加警告**:
 ```
-This memory is 47 days old. 
-Memories are point-in-time observations, not live state — 
-claims about code behavior or file:line citations may be outdated. 
+This memory is 47 days old.
+Memories are point-in-time observations, not live state —
+claims about code behavior or file:line citations may be outdated.
 Verify against current code before asserting as fact.
 ```
 
@@ -509,5 +509,5 @@ free-code 的记忆系统是一个设计精巧的多层次架构：
 
 ---
 
-*分析日期: 2026-04-06*  
+*分析日期: 2026-04-06*
 *分析文件: free-code src/memdir/ 及相关服务*

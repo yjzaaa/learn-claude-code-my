@@ -5,7 +5,7 @@ Memory Events - 记忆相关领域事件
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Any
 
 from backend.domain.models.events.base import BaseEvent, EventPriority
 from backend.domain.models.memory.types import MemoryType
@@ -18,12 +18,13 @@ class MemoryCreatedEvent(BaseEvent):
 
     当新记忆被创建时触发。
     """
+
     memory_id: str = field(default="")
     user_id: str = field(default="")
     project_path: str = field(default="")
     memory_type: MemoryType = field(default=MemoryType.USER)
     name: str = field(default="")
-    source_dialog_id: Optional[str] = field(default=None)
+    source_dialog_id: str | None = field(default=None)
     priority: EventPriority = field(default=EventPriority.NORMAL)
 
 
@@ -35,6 +36,7 @@ class MemoryExtractedEvent(BaseEvent):
     当从对话中提取出新记忆时触发。
     这是 MemoryCreatedEvent 的前置事件，表示提取动作发生。
     """
+
     memory_id: str = field(default="")
     user_id: str = field(default="")
     project_path: str = field(default="")
@@ -42,7 +44,7 @@ class MemoryExtractedEvent(BaseEvent):
     name: str = field(default="")
     source_dialog_id: str = field(default="")
     extraction_confidence: float = field(default=1.0)
-    raw_extraction: Dict[str, Any] = field(default_factory=dict)
+    raw_extraction: dict[str, Any] = field(default_factory=dict)
     priority: EventPriority = field(default=EventPriority.NORMAL)
 
 
@@ -54,6 +56,7 @@ class MemoryRetrievedEvent(BaseEvent):
     当记忆被检索并用于增强提示词时触发。
     用于跟踪记忆的使用情况和效果。
     """
+
     memory_id: str = field(default="")
     user_id: str = field(default="")
     project_path: str = field(default="")
@@ -70,6 +73,7 @@ class MemoryUpdatedEvent(BaseEvent):
 
     当记忆内容被更新时触发。
     """
+
     memory_id: str = field(default="")
     user_id: str = field(default="")
     project_path: str = field(default="")
@@ -85,6 +89,7 @@ class MemoryDeletedEvent(BaseEvent):
 
     当记忆被删除时触发。
     """
+
     memory_id: str = field(default="")
     user_id: str = field(default="")
     project_path: str = field(default="")

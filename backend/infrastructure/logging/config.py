@@ -9,12 +9,12 @@ Deep Agent 专用日志：
 - deep_values.log: stream_mode="values" 的完整状态日志
 """
 
-import sys
-import os
 import logging
+import sys
 import warnings
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -54,15 +54,13 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level, record.getMessage()
-        )
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
 # Deep Agent 专用 loggers（异步队列写入）
-deep_msg_logger: Optional['Logger'] = None
-deep_update_logger: Optional['Logger'] = None
-deep_value_logger: Optional['Logger'] = None
+deep_msg_logger: Optional["Logger"] = None
+deep_update_logger: Optional["Logger"] = None
+deep_value_logger: Optional["Logger"] = None
 
 
 def _create_deep_logger(log_type: str, filename: str) -> Optional["Logger"]:
@@ -86,6 +84,7 @@ def _create_deep_logger(log_type: str, filename: str) -> Optional["Logger"]:
     def make_filter(t: str):
         def _filter(record):
             return record["extra"].get("deep_log_type") == t
+
         return _filter
 
     # 添加文件处理器（异步队列，enqueue=True）
@@ -140,7 +139,7 @@ def setup_deep_loggers():
     )
 
 
-def get_deep_msg_logger() -> 'Logger':
+def get_deep_msg_logger() -> "Logger":
     """获取 messages 模式 logger"""
     global deep_msg_logger
     if deep_msg_logger is None:
@@ -215,7 +214,7 @@ class WarningRedirectHandler:
             with open(self._log_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
                 f.flush()
-        except Exception as e:
+        except Exception:
             # 如果写入失败，使用原始方式（但这种情况应该很少）
             if self._original_showwarning:
                 self._original_showwarning(message, category, filename, lineno, file, line)
@@ -300,7 +299,14 @@ def setup_logging():
 
 # 导出配置好的 logger
 __all__ = [
-    "logger", "setup_logging", "InterceptHandler", "WarningRedirectHandler",
-    "deep_msg_logger", "deep_update_logger", "deep_value_logger",
-    "get_deep_msg_logger", "get_deep_update_logger", "get_deep_value_logger",
+    "logger",
+    "setup_logging",
+    "InterceptHandler",
+    "WarningRedirectHandler",
+    "deep_msg_logger",
+    "deep_update_logger",
+    "deep_value_logger",
+    "get_deep_msg_logger",
+    "get_deep_update_logger",
+    "get_deep_value_logger",
 ]

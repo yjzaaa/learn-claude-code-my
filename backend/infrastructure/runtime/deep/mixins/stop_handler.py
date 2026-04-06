@@ -3,7 +3,8 @@
 从 deep_legacy.py 提取的停止逻辑。
 """
 
-from typing import Any, Optional
+from typing import Any
+
 from loguru import logger
 
 
@@ -46,7 +47,7 @@ class DeepStopHandlerMixin:
         """
         self._stop_requested.pop(dialog_id, None)
 
-    async def stop(self, dialog_id: Optional[str] = None) -> None:
+    async def stop(self, dialog_id: str | None = None) -> None:
         """停止 Agent
 
         Args:
@@ -55,6 +56,6 @@ class DeepStopHandlerMixin:
         if dialog_id:
             self.request_stop(dialog_id)
 
-        if self._agent is not None and hasattr(self._agent, 'stop'):
+        if self._agent is not None and hasattr(self._agent, "stop"):
             await self._agent.stop()
         logger.info(f"[DeepAgentRuntime] Stopped: {self._agent_id}")

@@ -6,14 +6,14 @@
 
 from fastapi import APIRouter, HTTPException
 
-from backend.infrastructure.container import container
-from backend.infrastructure.logging import get_logger
+from backend.domain.models.events.agent_events import AgentExecuteRequest
+from backend.domain.models.types import APISendMessageData, SendMessageBody
 from backend.domain.services.dialog_service import (
     DialogService,
     generate_message_id,
 )
-from backend.domain.models.types import SendMessageBody, APISendMessageData
-from backend.domain.models.events.agent_events import AgentExecuteRequest
+from backend.infrastructure.container import container
+from backend.infrastructure.logging import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -45,6 +45,7 @@ async def send_message(dialog_id: str, body: SendMessageBody):
     #   3. 发送 subscribe 消息
     # 如果 2/3 慢于 EventBus 处理，前端会错过消息
     import asyncio
+
     await asyncio.sleep(0.3)  # 300ms 足够 WebSocket 建立连接
 
     # 发射执行请求事件（事件驱动）
@@ -57,13 +58,10 @@ async def send_message(dialog_id: str, body: SendMessageBody):
                 content=body.content,
                 message_id=msg_id,
             ),
-            timeout=5.0
+            timeout=5.0,
         )
     else:
         logger.error("[SendMessage] EventBus not available")
         raise HTTPException(status_code=503, detail="Service unavailable")
 
-    return {
-        "success": True,
-        "data": APISendMessageData(message_id=msg_id, status="queued")
-    }
+    return {"success": True, "data": APISendMessageData(message_id=msg_id, status="queued")}

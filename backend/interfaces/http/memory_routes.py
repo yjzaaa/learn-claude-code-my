@@ -6,13 +6,11 @@ Memory HTTP API - 记忆系统 HTTP 接口
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List
 
-from backend.domain.models.memory.types import MemoryType
-from backend.domain.models.memory.memory import Memory
 from backend.application.services.memory_service import MemoryService
-from backend.infrastructure.persistence.memory.postgres_repo import PostgresMemoryRepository
+from backend.domain.models.memory.types import MemoryType
 from backend.infrastructure.persistence.memory.database import AsyncSessionLocal
+from backend.infrastructure.persistence.memory.postgres_repo import PostgresMemoryRepository
 
 # 创建路由
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -21,6 +19,7 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 # DTOs
 class CreateMemoryRequest(BaseModel):
     """创建记忆请求"""
+
     user_id: str
     project_path: str = ""
     type: MemoryType
@@ -31,6 +30,7 @@ class CreateMemoryRequest(BaseModel):
 
 class MemoryResponse(BaseModel):
     """记忆响应"""
+
     id: str
     user_id: str
     project_path: str
@@ -44,6 +44,7 @@ class MemoryResponse(BaseModel):
 
 class SearchMemoryRequest(BaseModel):
     """搜索记忆请求"""
+
     user_id: str
     project_path: str = ""
     query: str = ""
@@ -82,7 +83,7 @@ async def create_memory(request: CreateMemoryRequest):
     )
 
 
-@router.post("/search", response_model=List[MemoryResponse])
+@router.post("/search", response_model=list[MemoryResponse])
 async def search_memories(request: SearchMemoryRequest):
     """搜索记忆"""
     service = get_memory_service()
@@ -110,7 +111,7 @@ async def search_memories(request: SearchMemoryRequest):
     ]
 
 
-@router.get("/list/{user_id}", response_model=List[MemoryResponse])
+@router.get("/list/{user_id}", response_model=list[MemoryResponse])
 async def list_memories(user_id: str, project_path: str = "", limit: int = 20):
     """列出用户的所有记忆"""
     service = get_memory_service()
@@ -152,8 +153,4 @@ async def delete_memory(memory_id: str, user_id: str):
 @router.get("/health")
 async def memory_health():
     """检查记忆系统健康状态"""
-    return {
-        "status": "ok",
-        "storage": "postgresql",
-        "database": "agent_memory"
-    }
+    return {"status": "ok", "storage": "postgresql", "database": "agent_memory"}

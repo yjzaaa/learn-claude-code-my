@@ -3,24 +3,27 @@ Dialog - 对话实体
 
 对话管理和消息列表的领域模型。
 """
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+
 import uuid
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Any
+
 from langchain_core.messages import BaseMessage, message_to_dict, messages_from_dict
+from pydantic import BaseModel, Field
+
 from backend.domain.models.message.adapter import LegacyMessageAdapter
-from backend.domain.models.message.message import Message
 
 
 class DialogOutput(BaseModel):
     """对话输出模型"""
+
     id: str
-    title: Optional[str] = None
-    messages: List[Dict[str, Any]]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    title: str | None = None
+    messages: list[dict[str, Any]]
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
-    selected_model_id: Optional[str] = None  # 对话选择的模型
+    selected_model_id: str | None = None  # 对话选择的模型
 
 
 class Dialog:
@@ -33,27 +36,28 @@ class Dialog:
 
     def __init__(
         self,
-        id: Optional[str] = None,
-        title: Optional[str] = None,
-        messages: Optional[List[BaseMessage]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        created_at: Optional[datetime] = None,
-        updated_at: Optional[datetime] = None,
-        selected_model_id: Optional[str] = None,
+        id: str | None = None,
+        title: str | None = None,
+        messages: list[BaseMessage] | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        selected_model_id: str | None = None,
     ):
         self.id: str = id or f"dlg_{uuid.uuid4().hex[:16]}"
-        self.title: Optional[str] = title
-        self.messages: List[BaseMessage] = messages or []
-        self.metadata: Dict[str, Any] = metadata or {}
+        self.title: str | None = title
+        self.messages: list[BaseMessage] = messages or []
+        self.metadata: dict[str, Any] = metadata or {}
         self.created_at: datetime = created_at or datetime.now()
         self.updated_at: datetime = updated_at or datetime.now()
-        self.selected_model_id: Optional[str] = selected_model_id  # 对话选择的模型
+        self.selected_model_id: str | None = selected_model_id  # 对话选择的模型
 
     @classmethod
-    def create(cls, title: Optional[str] = None) -> "Dialog":
+    def create(cls, title: str | None = None) -> "Dialog":
         """创建新对话"""
         # 从配置获取默认模型
         from backend.infrastructure.config import config
+
         default_model = config.model.id
         return cls(title=title, selected_model_id=default_model or None)
 
@@ -61,6 +65,7 @@ class Dialog:
     def from_user_input(cls, user_input: str) -> "Dialog":
         """从用户输入创建对话"""
         from backend.infrastructure.config import config
+
         default_model = config.model.id
         dialog = cls.create(title=user_input[:50])
         dialog.selected_model_id = default_model or None
@@ -75,6 +80,7 @@ class Dialog:
     def add_human_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加用户消息"""
         from backend.domain.models.message.messages import create_human
+
         msg = create_human(content, **kwargs)
         self.add_message(msg)
         return msg
@@ -82,6 +88,7 @@ class Dialog:
     def add_ai_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加助手消息"""
         from backend.domain.models.message.messages import create_ai
+
         msg = create_ai(content, **kwargs)
         self.add_message(msg)
         return msg
@@ -89,24 +96,24 @@ class Dialog:
     def add_system_message(self, content: str, **kwargs) -> "BaseMessage":
         """添加系统消息"""
         from backend.domain.models.message.messages import create_system
+
         msg = create_system(content, **kwargs)
         self.add_message(msg)
         return msg
 
-    def add_tool_message(
-        self, content: str, tool_call_id: str, **kwargs
-    ) -> "BaseMessage":
+    def add_tool_message(self, content: str, tool_call_id: str, **kwargs) -> "BaseMessage":
         """添加工具消息"""
         from backend.domain.models.message.messages import create_tool
+
         msg = create_tool(content, tool_call_id, **kwargs)
         self.add_message(msg)
         return msg
 
-    def get_messages_for_llm(self) -> List[Dict[str, Any]]:
+    def get_messages_for_llm(self) -> list[dict[str, Any]]:
         """获取 LLM 格式的消息列表"""
         return [message_to_dict(m) for m in self.messages]
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将对话序列化为字典"""
         output = DialogOutput(
             id=self.id,
@@ -120,15 +127,13 @@ class Dialog:
         return output.model_dump()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Dialog":
+    def from_dict(cls, data: dict[str, Any]) -> "Dialog":
         """从字典恢复对话"""
         messages_data = data.get("messages", [])
 
         # 检测并转换旧格式
         if messages_data and LegacyMessageAdapter.is_legacy_format(messages_data[0]):
-            messages_data = LegacyMessageAdapter.convert_list_legacy_to_langchain(
-                messages_data
-            )
+            messages_data = LegacyMessageAdapter.convert_list_legacy_to_langchain(messages_data)
 
         messages = messages_from_dict(messages_data)
 
@@ -147,7 +152,7 @@ class Dialog:
         )
 
     @property
-    def last_message(self) -> Optional[BaseMessage]:
+    def last_message(self) -> BaseMessage | None:
         """最后一条消息"""
         return self.messages[-1] if self.messages else None
 
@@ -168,7 +173,7 @@ class Dialog:
         self.messages.clear()
         self.updated_at = datetime.now()
 
-    def get_message_by_index(self, index: int) -> Optional[BaseMessage]:
+    def get_message_by_index(self, index: int) -> BaseMessage | None:
         """通过索引获取消息"""
         if 0 <= index < len(self.messages):
             return self.messages[index]

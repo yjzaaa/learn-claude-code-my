@@ -33,16 +33,16 @@ export interface Tool {
   name: string                    // 工具名称
   description(): string           // 工具描述（动态生成）
   prompt(): string | undefined    // 使用提示
-  
+
   // 执行控制
   call(params: string, context: ToolUseContext): Promise<ToolResult>
   isEnabled(): boolean
   isReadOnly(): boolean
   isConcurrencySafe(): boolean
-  
+
   // 权限控制
   checkPermissions(params: string, context: ToolUseContext): Promise<PermissionCheckResult>
-  
+
   // UI 渲染
   render?(params: string, context: ToolUseContext): React.ReactNode
   renderResult?(params: string, result: ToolResult, context: ToolUseContext): React.ReactNode
@@ -121,17 +121,17 @@ export interface Tool {
 // 示例：BashTool 的权限检查
 async checkPermissions(params: string, context: ToolUseContext) {
   const parsed = parseBashParams(params)
-  
+
   // 检查危险命令
   if (isDangerousCommand(parsed.command)) {
     return { type: 'ask', message: 'This command may be dangerous. Proceed?' }
   }
-  
+
   // 检查只读模式
   if (context.readOnly) {
     return { type: 'deny', reason: 'Cannot execute commands in read-only mode' }
   }
-  
+
   return { type: 'allow' }
 }
 ```
@@ -182,19 +182,19 @@ export function getCommands(options: GetCommandsOptions): Promise<Command[]>
 核心类型位于 `src/types/command.ts`：
 
 ```typescript
-export type Command = CommandBase & 
+export type Command = CommandBase &
   (PromptCommand | LocalCommand | LocalJSXCommand)
 
 export interface CommandBase {
   name: string
   description: string
   aliases?: string[]
-  
+
   // 可用性控制
   availability?: CommandAvailability[]  // 'claude-ai' | 'console'
   isEnabled?: () => boolean
   isHidden?: boolean
-  
+
   // 执行控制
   immediate?: boolean        // 立即执行（不等待停止点）
   isSensitive?: boolean      // 参数是否脱敏
@@ -215,15 +215,15 @@ export type PromptCommand = {
   allowedTools?: string[]      // 限制可用工具
   model?: string               // 指定模型
   source: SettingSource | 'builtin' | 'mcp' | 'plugin'
-  
+
   // 执行上下文
   context?: 'inline' | 'fork'
   agent?: string               // fork 时的 Agent 类型
   effort?: EffortValue
-  
+
   // 路径匹配（技能可见性）
   paths?: string[]
-  
+
   getPromptForCommand(args: string, context: ToolUseContext): Promise<ContentBlockParam[]>
 }
 ```
@@ -317,13 +317,13 @@ export const SkillTool = buildTool({
   name: 'Skill',
   async call(params, context) {
     const command = findCommand(params.name)
-    
+
     if (command.type === 'prompt') {
       // 执行 PromptCommand
       const blocks = await command.getPromptForCommand(args, context)
       return { type: 'tool_result', content: blocks }
     }
-    
+
     // 执行 Local/LocalJSX Command
     const module = await command.load()
     return module.call(args, context)
@@ -338,15 +338,15 @@ export interface ToolUseContext {
   // 对话相关
   messages: Message[]
   setMessages: (updater: (prev: Message[]) => Message[]) => void
-  
+
   // 工具控制
   allowTool: CanUseToolFn
   denyTool: (toolName: string) => void
-  
+
   // 状态访问
   readOnly: boolean
   isRemote: boolean
-  
+
   // 回调函数
   onDone?: LocalJSXCommandOnDone
   onChangeDynamicMcpConfig?: (config: Record<string, ScopedMcpServerConfig>) => void
@@ -364,7 +364,7 @@ export interface ToolUseContext {
 export async function getMcpTools(config: McpConfig): Promise<Tool[]> {
   const client = await connectMcpServer(config)
   const tools = await client.listTools()
-  
+
   return tools.map(mcpTool => ({
     name: mcpTool.name,
     async call(params) {
@@ -380,8 +380,8 @@ export async function getMcpTools(config: McpConfig): Promise<Tool[]> {
 // 插件命令加载
 export async function loadPluginCommands(): Promise<Command[]> {
   const plugins = await discoverPlugins()
-  
-  return plugins.flatMap(plugin => 
+
+  return plugins.flatMap(plugin =>
     plugin.manifest.commands.map(cmd => ({
       ...cmd,
       source: 'plugin',
@@ -436,7 +436,7 @@ const InteractiveCommand: LocalJSXCommand = {
     return {
       call: async (onDone, context, args) => {
         return (
-          <InteractiveForm 
+          <InteractiveForm
             onSubmit={(result) => onDone(result)}
           />
         )

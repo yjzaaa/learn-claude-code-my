@@ -5,20 +5,19 @@ Auth Routes - 认证路由
 """
 
 from datetime import timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from backend.infrastructure.persistence.auth.database import AsyncSessionLocal
 from backend.infrastructure.persistence.auth.user_repository import UserRepository
 from backend.interfaces.http.auth.jwt_utils import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
     create_access_token,
     decode_token,
     get_password_hash,
     verify_password,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -46,12 +45,10 @@ class TokenResponse(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-    created_at: Optional[str]
+    created_at: str | None
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> dict:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """获取当前用户（依赖注入）"""
     token = credentials.credentials
     payload = decode_token(token)

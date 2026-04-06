@@ -6,7 +6,6 @@ Memory Entity - 记忆实体
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import Field
 
@@ -38,7 +37,7 @@ class Memory(Entity):
     name: str = Field(..., description="记忆名称/标题")
     description: str = Field(default="", description="简短描述")
     content: str = Field(..., description="记忆详细内容")
-    source_dialog_id: Optional[str] = Field(default=None, description="来源对话ID")
+    source_dialog_id: str | None = Field(default=None, description="来源对话ID")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="提取置信度")
 
     def update_content(self, new_content: str) -> None:
@@ -49,7 +48,6 @@ class Memory(Entity):
     @property
     def age_days(self) -> int:
         """计算记忆年龄（天数）"""
-        from datetime import datetime
 
         delta = datetime.now() - self.updated_at
         return max(0, delta.days)

@@ -58,20 +58,16 @@ class MemoryMetadata(BaseModel):
         """获取新鲜度文本"""
         if self.age_days == 0:
             return "today"
-        elif self.age_days == 1:
+        if self.age_days == 1:
             return "yesterday"
-        else:
-            return f"{self.age_days} days ago"
+        return f"{self.age_days} days ago"
 
     @property
     def freshness_warning(self) -> str:
         """获取新鲜度警告（如果过期）"""
         if self.is_fresh:
             return ""
-        return (
-            f"⚠️ This memory is {self.freshness_text} old. "
-            "Claims may be outdated."
-        )
+        return f"⚠️ This memory is {self.freshness_text} old. " "Claims may be outdated."
 
     class Config:
         extra = "allow"

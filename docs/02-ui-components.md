@@ -2,8 +2,8 @@
 
 ## 项目概述
 
-**项目**: claude-code-source-snapshot v2.1.87  
-**UI 框架**: Ink 6.8.0 + React 19.2.4  
+**项目**: claude-code-source-snapshot v2.1.87
+**UI 框架**: Ink 6.8.0 + React 19.2.4
 **运行时**: Bun 1.3.11
 
 ---
@@ -423,7 +423,7 @@ export async function createRoot(options?: RenderOptions): Promise<Root> {
 **showDialog** - 通用对话框显示：
 ```typescript
 export function showDialog<T = void>(
-  root: Root, 
+  root: Root,
   renderer: (done: (result: T) => void) => React.ReactNode
 ): Promise<T>
 ```
@@ -431,7 +431,7 @@ export function showDialog<T = void>(
 **showSetupDialog** - 设置对话框（包装 AppStateProvider + KeybindingSetup）：
 ```typescript
 export function showSetupDialog<T = void>(
-  root: Root, 
+  root: Root,
   renderer: (done: (result: T) => void) => React.ReactNode,
   options?: { onChangeAppState?: typeof onChangeAppState }
 ): Promise<T>
@@ -440,7 +440,7 @@ export function showSetupDialog<T = void>(
 **renderAndRun** - 渲染并运行主 UI：
 ```typescript
 export async function renderAndRun(
-  root: Root, 
+  root: Root,
   element: React.ReactNode
 ): Promise<void>
 ```
@@ -448,14 +448,14 @@ export async function renderAndRun(
 **exitWithError** / **exitWithMessage** - 错误退出：
 ```typescript
 export async function exitWithError(
-  root: Root, 
-  message: string, 
+  root: Root,
+  message: string,
   beforeExit?: () => Promise<void>
 ): Promise<never>
 
 export async function exitWithMessage(
-  root: Root, 
-  message: string, 
+  root: Root,
+  message: string,
   options?: { color?: TextProps['color']; exitCode?: number; beforeExit?: () => Promise<void> }
 ): Promise<never>
 ```

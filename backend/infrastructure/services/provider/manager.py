@@ -4,14 +4,12 @@
 这是主要入口，保持向后兼容。
 """
 
-import os
 from typing import Any
 
 from backend.domain.models.shared.config import ProviderConfig
+from backend.infrastructure.config import config
 from backend.infrastructure.logging import get_logger
 from backend.infrastructure.providers import BaseProvider
-
-from backend.infrastructure.config import config
 
 from .discovery import discover_available_models
 from .factory import create_model_instance

@@ -6,11 +6,9 @@ MemoryExtractor - 记忆提取服务
 """
 
 import json
-from typing import Dict, List, Optional
 
 from backend.domain.models.memory import Memory
 from backend.domain.models.memory.types import MemoryType
-
 
 # 记忆提取的 JSON Schema 定义
 MEMORY_EXTRACTION_SCHEMA = {
@@ -24,26 +22,26 @@ MEMORY_EXTRACTION_SCHEMA = {
                     "type": {
                         "type": "string",
                         "enum": ["user", "feedback", "project", "reference"],
-                        "description": "记忆类型: user=用户信息, feedback=反馈指导, project=项目上下文, reference=外部引用"
+                        "description": "记忆类型: user=用户信息, feedback=反馈指导, project=项目上下文, reference=外部引用",
                     },
                     "name": {
                         "type": "string",
-                        "description": "记忆名称/标题，简洁描述这条记忆的核心内容"
+                        "description": "记忆名称/标题，简洁描述这条记忆的核心内容",
                     },
                     "description": {
                         "type": "string",
-                        "description": "简短描述（单行），补充说明记忆的上下文"
+                        "description": "简短描述（单行），补充说明记忆的上下文",
                     },
                     "content": {
                         "type": "string",
-                        "description": "记忆的详细内容，包含所有重要信息"
-                    }
+                        "description": "记忆的详细内容，包含所有重要信息",
+                    },
                 },
-                "required": ["type", "name", "content"]
-            }
+                "required": ["type", "name", "content"],
+            },
         }
     },
-    "required": ["memories"]
+    "required": ["memories"],
 }
 
 # 记忆提取系统提示词
@@ -104,10 +102,10 @@ class MemoryExtractor:
 
     async def extract_from_conversation(
         self,
-        messages: List[Dict],
+        messages: list[dict],
         user_id: str = "",
         project_path: str = "",
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """从对话中提取记忆
 
         使用 LLM 分析对话内容，识别并提取有价值的记忆信息。
@@ -157,17 +155,17 @@ Extract memories according to the schema. Return valid JSON."""
                         content=mem_data["content"],
                     )
                     memories.append(memory)
-                except (ValueError, KeyError) as e:
+                except (ValueError, KeyError):
                     # 跳过无效的记忆数据
                     continue
 
             return memories
 
-        except Exception as e:
+        except Exception:
             # 提取失败时返回空列表
             return []
 
-    def _format_messages(self, messages: List[Dict]) -> str:
+    def _format_messages(self, messages: list[dict]) -> str:
         """格式化消息列表为文本
 
         Args:
@@ -202,8 +200,8 @@ Extract memories according to the schema. Return valid JSON."""
     async def _call_llm_with_schema(
         self,
         prompt: str,
-        schema: Dict,
-    ) -> Optional[Dict]:
+        schema: dict,
+    ) -> dict | None:
         """调用 LLM 并返回结构化 JSON 输出
 
         Args:

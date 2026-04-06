@@ -115,9 +115,7 @@ class MemoryMiddleware(AgentMiddleware):
             # 注入到消息列表
             new_messages = self._inject_memory_prompt(messages, memory_prompt)
 
-            logger.info(
-                f"[MemoryMiddleware] Injected {len(memories)} memories into prompt"
-            )
+            logger.info(f"[MemoryMiddleware] Injected {len(memories)} memories into prompt")
             return {"messages": new_messages}
 
         except Exception as e:

@@ -5,7 +5,7 @@ WebSocket Interface - WebSocket 接口
 广播统一由 EventHandlers 通过 EventBus 处理。
 """
 
-from .server import WebSocketServer
 from .broadcast import broadcast
+from .server import WebSocketServer
 
 __all__ = ["WebSocketServer", "broadcast"]

@@ -5,7 +5,6 @@ LangChain Provider - 基于纯 LangChain 的 Provider 实现
 不使用 LiteLLM，直接使用 LangChain 原生客户端
 """
 
-import os
 from collections.abc import AsyncIterator
 from typing import Any
 

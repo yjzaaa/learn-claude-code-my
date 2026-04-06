@@ -4,7 +4,6 @@
 """
 
 import json
-import os
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 

@@ -5,7 +5,7 @@ Postgres Memory Repository - PostgreSQL 记忆仓库实现
 所有查询必须带 user_id 过滤以确保多用户数据隔离。
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -73,8 +73,7 @@ class PostgresMemoryRepository(IMemoryRepository):
         async with self._session_factory() as session:
             result = await session.execute(
                 select(MemoryModel).where(
-                    MemoryModel.id == memory_id,
-                    MemoryModel.user_id == user_id
+                    MemoryModel.id == memory_id, MemoryModel.user_id == user_id
                 )
             )
             model = result.scalar_one_or_none()
@@ -101,9 +100,11 @@ class PostgresMemoryRepository(IMemoryRepository):
             记忆实体列表，按创建时间倒序
         """
         async with self._session_factory() as session:
-            query = select(MemoryModel).where(
-                MemoryModel.user_id == user_id
-            ).order_by(MemoryModel.created_at.desc())
+            query = (
+                select(MemoryModel)
+                .where(MemoryModel.user_id == user_id)
+                .order_by(MemoryModel.created_at.desc())
+            )
 
             if project_path is not None:
                 query = query.where(MemoryModel.project_path == project_path)
@@ -140,20 +141,22 @@ class PostgresMemoryRepository(IMemoryRepository):
         search_pattern = f"%{query}%"
 
         async with self._session_factory() as session:
-            sql = select(MemoryModel).where(
-                MemoryModel.user_id == user_id,
-                text(
-                    "(name ILIKE :pattern OR description ILIKE :pattern OR content ILIKE :pattern)"
+            sql = (
+                select(MemoryModel)
+                .where(
+                    MemoryModel.user_id == user_id,
+                    text(
+                        "(name ILIKE :pattern OR description ILIKE :pattern OR content ILIKE :pattern)"
+                    ),
                 )
-            ).order_by(MemoryModel.created_at.desc()).limit(limit)
+                .order_by(MemoryModel.created_at.desc())
+                .limit(limit)
+            )
 
             if project_path is not None:
                 sql = sql.where(MemoryModel.project_path == project_path)
 
-            result = await session.execute(
-                sql,
-                {"pattern": search_pattern}
-            )
+            result = await session.execute(sql, {"pattern": search_pattern})
             models = result.scalars().all()
             return [m.to_entity() for m in models]
 
@@ -170,8 +173,7 @@ class PostgresMemoryRepository(IMemoryRepository):
         async with self._session_factory() as session:
             result = await session.execute(
                 select(MemoryModel).where(
-                    MemoryModel.id == memory_id,
-                    MemoryModel.user_id == user_id
+                    MemoryModel.id == memory_id, MemoryModel.user_id == user_id
                 )
             )
             model = result.scalar_one_or_none()
@@ -194,8 +196,7 @@ class PostgresMemoryRepository(IMemoryRepository):
         async with self._session_factory() as session:
             result = await session.execute(
                 select(MemoryModel).where(
-                    MemoryModel.id == memory_id,
-                    MemoryModel.user_id == user_id
+                    MemoryModel.id == memory_id, MemoryModel.user_id == user_id
                 )
             )
             return result.scalar_one_or_none() is not None
@@ -216,9 +217,8 @@ class PostgresMemoryRepository(IMemoryRepository):
         """
         async with self._session_factory() as session:
             from sqlalchemy import func
-            query = select(func.count(MemoryModel.id)).where(
-                MemoryModel.user_id == user_id
-            )
+
+            query = select(func.count(MemoryModel.id)).where(MemoryModel.user_id == user_id)
             if project_path is not None:
                 query = query.where(MemoryModel.project_path == project_path)
             result = await session.execute(query)

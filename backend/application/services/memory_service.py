@@ -5,9 +5,6 @@ MemoryService - 记忆应用服务
 提供记忆的创建、检索、搜索和提示词构建功能。
 """
 
-from datetime import datetime
-from typing import List, Optional
-
 from backend.domain.models.memory import Memory
 from backend.domain.models.memory.types import MemoryType
 from backend.domain.repositories.memory_repository import IMemoryRepository
@@ -73,7 +70,7 @@ class MemoryService:
         project_path: str,
         query: str,
         limit: int = 5,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """获取相关记忆
 
         如果 query 为空，返回最近 limit 条记忆。
@@ -102,7 +99,7 @@ class MemoryService:
             limit=limit,
         )
 
-    def build_memory_prompt(self, memories: List[Memory]) -> str:
+    def build_memory_prompt(self, memories: list[Memory]) -> str:
         """构建记忆提示词
 
         将记忆列表格式化为 XML 格式的提示词，包含新鲜度警告。
@@ -137,7 +134,7 @@ class MemoryService:
                 f'<memory type="{memory.type.value}" '
                 f'name="{memory.name}" '
                 f'age="{age_text}"'
-                f'{freshness_warning}>'
+                f"{freshness_warning}>"
             )
             lines.append(memory.content)
             lines.append("</memory>")
@@ -149,10 +146,10 @@ class MemoryService:
     async def list_memories(
         self,
         user_id: str,
-        project_path: Optional[str] = None,
-        memory_type: Optional[MemoryType] = None,
+        project_path: str | None = None,
+        memory_type: MemoryType | None = None,
         limit: int = 20,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         """列出记忆
 
         Args:
@@ -175,7 +172,7 @@ class MemoryService:
         self,
         memory_id: str,
         user_id: str,
-    ) -> Optional[Memory]:
+    ) -> Memory | None:
         """获取单个记忆
 
         Args:
@@ -214,7 +211,6 @@ class MemoryService:
         """
         if age_days == 0:
             return "today"
-        elif age_days == 1:
+        if age_days == 1:
             return "yesterday"
-        else:
-            return f"{age_days} days ago"
+        return f"{age_days} days ago"

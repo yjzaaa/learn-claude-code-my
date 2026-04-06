@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import dataclasses
 import time
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from threading import RLock
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any
 
 from loguru import logger
 
-from backend.domain.models.api import TodoUpdatedEvent, TodoReminderEvent, TodoStateDTO
+from backend.domain.models.api import TodoReminderEvent, TodoStateDTO, TodoUpdatedEvent
 from backend.domain.models.shared.types import TodoItemDict
 from backend.infrastructure.config import config
 
@@ -22,6 +23,7 @@ from backend.infrastructure.config import config
 @dataclass
 class TodoItem:
     """单个任务项"""
+
     id: str
     text: str
     status: str  # pending | in_progress | completed
@@ -30,7 +32,7 @@ class TodoItem:
         return TodoItemDict(id=self.id, text=self.text, status=self.status)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TodoItem":
+    def from_dict(cls, data: dict[str, Any]) -> TodoItem:
         return cls(
             id=str(data["id"]),
             text=str(data["text"]),
@@ -41,6 +43,7 @@ class TodoItem:
 @dataclass
 class TodoState:
     """对话级别的 Todo 状态"""
+
     dialog_id: str
     items: list[TodoItem] = field(default_factory=list)
     rounds_since_todo: int = 0
@@ -82,6 +85,7 @@ class TodoStore:
             return
         try:
             import asyncio
+
             loop = asyncio.get_running_loop()
             loop.create_task(self._broadcaster(event))
         except RuntimeError:
@@ -121,9 +125,7 @@ class TodoStore:
 
         return True, ""
 
-    def _normalize_items(
-        self, items: list[dict[str, Any]]
-    ) -> tuple[list[TodoItemDict], bool]:
+    def _normalize_items(self, items: list[dict[str, Any]]) -> tuple[list[TodoItemDict], bool]:
         """对任务列表做容错归一化"""
         normalized: list[TodoItemDict] = []
         for i, item in enumerate(items):
@@ -135,11 +137,13 @@ class TodoStore:
             status = str(item.get("status", "pending"))
             if status not in self.VALID_STATUSES:
                 status = "pending"
-            normalized.append(TodoItemDict(
-                id=str(item.get("id", str(i + 1))),
-                text=text,
-                status=status,
-            ))
+            normalized.append(
+                TodoItemDict(
+                    id=str(item.get("id", str(i + 1))),
+                    text=text,
+                    status=status,
+                )
+            )
 
         truncated = False
         if len(normalized) > self.MAX_ITEMS:
@@ -165,9 +169,7 @@ class TodoStore:
                 self._states[dialog_id] = TodoState(dialog_id=dialog_id)
             return self._states[dialog_id]
 
-    def update_todos(
-        self, dialog_id: str, items: list[dict[str, Any]]
-    ) -> tuple[bool, str]:
+    def update_todos(self, dialog_id: str, items: list[dict[str, Any]]) -> tuple[bool, str]:
         """
         更新对话的任务列表
 
@@ -197,12 +199,14 @@ class TodoStore:
 
         # 广播更新事件
         self._emit(
-            dataclasses.asdict(TodoUpdatedEvent(
-                dialog_id=dialog_id,
-                todos=[item.to_dict() for item in state.items],
-                rounds_since_todo=state.rounds_since_todo,
-                timestamp=time.time(),
-            ))
+            dataclasses.asdict(
+                TodoUpdatedEvent(
+                    dialog_id=dialog_id,
+                    todos=[item.to_dict() for item in state.items],
+                    rounds_since_todo=state.rounds_since_todo,
+                    timestamp=time.time(),
+                )
+            )
         )
 
         logger.debug(f"[TodoStore] Updated {len(items)} todos for {dialog_id}")
@@ -250,11 +254,13 @@ class TodoStore:
     def _emit_reminder(self, dialog_id: str, rounds_since_todo: int) -> None:
         """发送 reminder 事件"""
         self._emit(
-            dataclasses.asdict(TodoReminderEvent(
-                dialog_id=dialog_id,
-                rounds_since_todo=rounds_since_todo,
-                timestamp=time.time(),
-            ))
+            dataclasses.asdict(
+                TodoReminderEvent(
+                    dialog_id=dialog_id,
+                    rounds_since_todo=rounds_since_todo,
+                    timestamp=time.time(),
+                )
+            )
         )
         logger.debug(f"[TodoStore] Sent reminder for {dialog_id}")
 

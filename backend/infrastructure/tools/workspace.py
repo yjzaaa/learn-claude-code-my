@@ -5,14 +5,14 @@ Workspace Operations - 工作区操作
 从原始 agents/base/basetool.py 迁移而来。
 """
 
-import subprocess
 import os
 import re
+import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Any, Callable, Literal, overload, Union
+from typing import Any, Literal, overload
 
 from .security.guard import DefaultCommandGuard
-from .file.operations import read_text_safe
 
 
 class WorkspaceOps:
@@ -25,8 +25,8 @@ class WorkspaceOps:
     def __init__(
         self,
         workdir: Path,
-        command_guard: Optional[DefaultCommandGuard] = None,
-        shell_runner: Optional[Callable[..., subprocess.CompletedProcess]] = None,
+        command_guard: DefaultCommandGuard | None = None,
+        shell_runner: Callable[..., subprocess.CompletedProcess] | None = None,
         auto_build_tools: bool = True,
     ):
         """初始化工作目录上下文。"""
@@ -38,8 +38,12 @@ class WorkspaceOps:
         self.bash_script_scopes, self.allow_skills_scripts_pattern = self._build_bash_script_scopes(
             self.bash_script_whitelist
         )
-        self.write_tool_whitelist = self._resolve_path_whitelist("WRITE_TOOL_WHITELIST", ".workspace;skills")
-        self.edit_tool_whitelist = self._resolve_path_whitelist("EDIT_TOOL_WHITELIST", ".workspace;skills")
+        self.write_tool_whitelist = self._resolve_path_whitelist(
+            "WRITE_TOOL_WHITELIST", ".workspace;skills"
+        )
+        self.edit_tool_whitelist = self._resolve_path_whitelist(
+            "EDIT_TOOL_WHITELIST", ".workspace;skills"
+        )
         self.read_tool_blacklist = self._resolve_path_whitelist("READ_TOOL_BLACKLIST", ".env")
         self.write_scopes = self._build_simple_scopes(self.write_tool_whitelist)
         self.edit_scopes = self._build_simple_scopes(self.edit_tool_whitelist)
@@ -56,13 +60,13 @@ class WorkspaceOps:
     def _resolve_bool_flag(self, env_key: str, default: bool) -> bool:
         env_value = os.environ.get(env_key)
         dotenv_value = self._dotenv_values.get(env_key)
-        raw = (env_value if env_value is not None else dotenv_value)
+        raw = env_value if env_value is not None else dotenv_value
         if raw is None:
             return default
         return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     @staticmethod
-    def _split_list_value(raw_value: Optional[str]) -> list[str]:
+    def _split_list_value(raw_value: str | None) -> list[str]:
         if not raw_value:
             return []
         return [item.strip() for item in re.split(r"[;,]", raw_value) if item.strip()]
@@ -98,7 +102,11 @@ class WorkspaceOps:
                 continue
 
             candidate = Path(normalized)
-            resolved = candidate.resolve() if candidate.is_absolute() else (self.workdir / candidate).resolve()
+            resolved = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (self.workdir / candidate).resolve()
+            )
             if not resolved.is_relative_to(self.workdir):
                 continue
 
@@ -127,7 +135,11 @@ class WorkspaceOps:
                 continue
 
             candidate = Path(normalized)
-            resolved = candidate.resolve() if candidate.is_absolute() else (self.workdir / candidate).resolve()
+            resolved = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (self.workdir / candidate).resolve()
+            )
 
             # Keep whitelist bounded to current workspace.
             if not resolved.is_relative_to(self.workdir):
@@ -199,8 +211,7 @@ class WorkspaceOps:
 
             # Remove optional surrounding quotes.
             if len(value) >= 2 and (
-                (value[0] == '"' and value[-1] == '"')
-                or (value[0] == "'" and value[-1] == "'")
+                (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")
             ):
                 value = value[1:-1]
 
@@ -266,7 +277,11 @@ class WorkspaceOps:
                 continue
 
             candidate = Path(token)
-            resolved = candidate.resolve() if candidate.is_absolute() else (self.workdir / candidate).resolve()
+            resolved = (
+                candidate.resolve()
+                if candidate.is_absolute()
+                else (self.workdir / candidate).resolve()
+            )
             paths.append(resolved)
 
         return paths
@@ -290,12 +305,15 @@ class WorkspaceOps:
         rel_parts = path.relative_to(skills_root).parts
         return "scripts" in rel_parts
 
-    def _validate_bash_script_command(self, command: str) -> tuple[bool, Optional[str]]:
+    def _validate_bash_script_command(self, command: str) -> tuple[bool, str | None]:
         """Allow approved script execution and selected inline commands."""
         if re.search(r"\bpython(?:\.exe)?\s+-c\b", command, flags=re.IGNORECASE):
             if self.allow_inline_python:
                 return True, None
-            return False, "Inline python (-c) is not allowed; run a script from BASH_SCRIPT_WHITELIST."
+            return (
+                False,
+                "Inline python (-c) is not allowed; run a script from BASH_SCRIPT_WHITELIST.",
+            )
         if re.search(r"\bpowershell(?:\.exe)?\s+-Command\b", command, flags=re.IGNORECASE):
             return True, None
 
@@ -341,7 +359,11 @@ class WorkspaceOps:
             venv_scripts = self.workdir / ".venv" / "Scripts"
             if venv_scripts.exists():
                 current_path = env.get("PATH", "")
-                env["PATH"] = f"{venv_scripts}{os.pathsep}{current_path}" if current_path else str(venv_scripts)
+                env["PATH"] = (
+                    f"{venv_scripts}{os.pathsep}{current_path}"
+                    if current_path
+                    else str(venv_scripts)
+                )
 
             result = self.shell_runner(
                 ["powershell.exe", "-NoProfile", "-Command", command],
@@ -357,7 +379,7 @@ class WorkspaceOps:
         except subprocess.TimeoutExpired:
             return f"Error: Command timed out after {timeout}s. For long-running commands, consider running in background or increasing timeout."
 
-    def run_read(self, path: str, limit: Optional[int] = None) -> str:
+    def run_read(self, path: str, limit: int | None = None) -> str:
         """读取文件内容，可选按行数限制并提示剩余行数。"""
         try:
             file_path = self.safe_path(path)
@@ -425,6 +447,7 @@ class WorkspaceOps:
         tools: list[Callable[..., Any]] = []
 
         if include_bash:
+
             @tool(
                 name="bash",
                 description="Run a command in Windows PowerShell only. Script files from BASH_SCRIPT_WHITELIST are executable (default: .workspace;skills/**/scripts). Inline Python (-c) is allowed by default. Inline PowerShell (-Command) is allowed.",
@@ -435,16 +458,18 @@ class WorkspaceOps:
             tools.append(bash)
 
         if include_read:
+
             @tool(
                 name="read_file",
                 description="Read file contents, except paths blocked by READ_TOOL_BLACKLIST (default: .env).",
             )
-            def read_file(path: str, limit: Optional[int] = None) -> str:
+            def read_file(path: str, limit: int | None = None) -> str:
                 return self.run_read(path, limit)
 
             tools.append(read_file)
 
         if include_write:
+
             @tool(
                 name="write_file",
                 description="Write content to files allowed by WRITE_TOOL_WHITELIST (default: .workspace); relative paths are auto-prefixed to the first whitelist path.",
@@ -455,6 +480,7 @@ class WorkspaceOps:
             tools.append(write_file)
 
         if include_edit:
+
             @tool(
                 name="edit_file",
                 description="Replace exact text in files allowed by EDIT_TOOL_WHITELIST (default: .workspace); relative paths are auto-prefixed to the first whitelist path.",
@@ -470,7 +496,9 @@ class WorkspaceOps:
     def get_tools(self, *, as_dict: Literal[False] = ...) -> list[Callable[..., Any]]: ...
     @overload
     def get_tools(self, *, as_dict: Literal[True]) -> dict[str, Callable[..., Any]]: ...
-    def get_tools(self, *, as_dict: bool = False) -> Union[list[Callable[..., Any]], dict[str, Callable[..., Any]]]:
+    def get_tools(
+        self, *, as_dict: bool = False
+    ) -> list[Callable[..., Any]] | dict[str, Callable[..., Any]]:
         """返回当前 WorkspaceOps 暴露的工具。
 
         - `as_dict=False`：返回工具函数列表。

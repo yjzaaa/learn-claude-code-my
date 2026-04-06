@@ -56,10 +56,7 @@ class MemoryAge:
             return ""
 
         age_text = MemoryAge.memory_age_text(age_days)
-        return (
-            f"⚠️ This memory is {age_text} old. "
-            "Claims may be outdated."
-        )
+        return f"⚠️ This memory is {age_text} old. " "Claims may be outdated."
 
     @staticmethod
     def memory_freshness_note(memory: Memory) -> str:

@@ -13,13 +13,12 @@
 """
 
 from typing import Any, Optional
+
 from loguru import logger
 
-from ..base.runtime import AbstractAgentRuntime
-from .services.config_adapter import DeepAgentConfig
-from .services.logging_mixin import DeepLoggingMixin
 from backend.infrastructure.llm_adapter import LLMResponseAdapterFactory
 
+from ..base.runtime import AbstractAgentRuntime
 from .mixins import (
     DeepCheckpointMixin,
     DeepInitializerMixin,
@@ -29,6 +28,8 @@ from .mixins import (
     DeepSkillLoaderMixin,
     DeepStopHandlerMixin,
 )
+from .services.config_adapter import DeepAgentConfig
+from .services.logging_mixin import DeepLoggingMixin
 
 
 class DeepAgentRuntime(
@@ -44,13 +45,13 @@ class DeepAgentRuntime(
 ):
     """Deep Agent Runtime 实现 - Mixin 组合版"""
 
-    def __init__(self, agent_id: str, provider_manager: Optional[Any] = None):
+    def __init__(self, agent_id: str, provider_manager: Any | None = None):
         DeepLoggingMixin.__init__(self)
         AbstractAgentRuntime.__init__(self, agent_id)
         self._agent: Any = None
         self._checkpointer: Any = None
         self._store: Any = None
-        self._model_name: Optional[str] = None
+        self._model_name: str | None = None
         self._provider_manager = provider_manager
         self._adapter_factory = LLMResponseAdapterFactory()
         self._stop_requested: dict[str, bool] = {}  # Used by DeepStopHandlerMixin

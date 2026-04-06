@@ -5,13 +5,11 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from backend.infrastructure.container import container
 from backend.infrastructure.logging import get_logger
-from backend.infrastructure.websocket_buffer import WebSocketMessageBuffer, BufferStrategy
-from backend.domain.services.dialog_service import timestamp_ms
+from backend.infrastructure.websocket_buffer import BufferStrategy, WebSocketMessageBuffer
 
 logger = get_logger(__name__)
 
@@ -45,9 +43,9 @@ async def broadcast(event: Any) -> None:
         event: 要广播的事件
     """
     # 处理 Pydantic BaseModel
-    if hasattr(event, 'model_dump'):
+    if hasattr(event, "model_dump"):
         event_dict = event.model_dump(by_alias=True)
-    elif hasattr(event, 'dict'):
+    elif hasattr(event, "dict"):
         event_dict = event.dict(by_alias=True)
     else:
         event_dict = event
@@ -59,13 +57,15 @@ async def broadcast(event: Any) -> None:
     dead_clients: list[str] = []
     client_count = len(container.state.client_buffers)
     # 流式消息使用 debug 级别，避免刷屏
-    log_func = logger.debug if event_dict.get('type') == 'stream:delta' else logger.info
+    log_func = logger.debug if event_dict.get("type") == "stream:delta" else logger.info
     log_func(f"[Broadcast] Broadcasting to {client_count} clients: type={event_dict.get('type')}")
     for client_id, buffer in list(container.state.client_buffers.items()):
         try:
             success = await buffer.send(event_dict)
             if success:
-                logger.debug(f"[Broadcast] Message sent to {client_id}: type={event_dict.get('type')}")
+                logger.debug(
+                    f"[Broadcast] Message sent to {client_id}: type={event_dict.get('type')}"
+                )
             else:
                 logger.warning(f"[Broadcast] Message dropped for client {client_id}")
         except Exception as e:

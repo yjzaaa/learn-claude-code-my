@@ -4,8 +4,7 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
-from datetime import datetime
+from typing import Any
 
 from backend.domain.models.events.base import BaseEvent, EventPriority
 
@@ -16,6 +15,7 @@ class AgentExecuteRequest(BaseEvent):
 
     由 main.py 发射，Agent Runtime 订阅处理
     """
+
     dialog_id: str = ""
     content: str = ""
     message_id: str = ""
@@ -29,6 +29,7 @@ class AgentProgressEvent(BaseEvent):
 
     由 Agent Runtime 发射，main.py 订阅并广播到 WebSocket
     """
+
     dialog_id: str = ""
     message_id: str = ""
     delta: str = ""
@@ -43,6 +44,7 @@ class AgentCompleteEvent(BaseEvent):
 
     由 Agent Runtime 发射，通知执行完成
     """
+
     dialog_id: str = ""
     message_id: str = ""
     final_content: str = ""
@@ -56,6 +58,7 @@ class AgentErrorEvent(BaseEvent):
 
     由 Agent Runtime 发射，通知执行错误
     """
+
     dialog_id: str = ""
     message_id: str = ""
     error_type: str = ""
@@ -66,6 +69,7 @@ class AgentErrorEvent(BaseEvent):
 @dataclass
 class ToolCallRequest(BaseEvent):
     """工具调用请求事件"""
+
     dialog_id: str = ""
     tool_call_id: str = ""
     tool_name: str = ""
@@ -76,18 +80,20 @@ class ToolCallRequest(BaseEvent):
 @dataclass
 class ToolCallResultEvent(BaseEvent):
     """工具调用结果事件"""
+
     dialog_id: str = ""
     tool_call_id: str = ""
     tool_name: str = ""
     result: Any = None
     duration_ms: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     priority: EventPriority = EventPriority.HIGH
 
 
 @dataclass
 class AgentRoundsLimitReached(BaseEvent):
     """Agent 轮次限制达到事件"""
+
     dialog_id: str = ""
     rounds: int = 0
     priority: EventPriority = EventPriority.NORMAL

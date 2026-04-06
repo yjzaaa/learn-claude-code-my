@@ -6,11 +6,11 @@
 import os
 import re
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 # 加载 .env 文件
 load_dotenv()
@@ -19,32 +19,36 @@ load_dotenv()
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config.yaml"
 
 # 环境变量引用正则: ${VAR_NAME} 或 ${VAR_NAME:-default}
-ENV_VAR_PATTERN = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}')
+ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def _replace_env_vars(value: Any) -> Any:
     """递归替换值中的环境变量引用"""
     if isinstance(value, str):
+
         def replace_var(match):
             var_name = match.group(1)
             default_val = match.group(2)
             return os.getenv(var_name, default_val if default_val is not None else "")
+
         result = ENV_VAR_PATTERN.sub(replace_var, value)
         # 将 "null" 字符串转换为 None（用于可选整数如 max_rounds）
         if result == "null":
             return None
         return result
-    elif isinstance(value, dict):
+    if isinstance(value, dict):
         return {k: _replace_env_vars(v) for k, v in value.items()}
-    elif isinstance(value, list):
+    if isinstance(value, list):
         return [_replace_env_vars(item) for item in value]
     return value
 
 
 # ==================== Pydantic 模型定义 ====================
 
+
 class AppConfig(BaseModel):
     """应用基础配置"""
+
     name: str = "Learn Claude Code API"
     version: str = "1.0.0"
     debug: bool = True
@@ -53,6 +57,7 @@ class AppConfig(BaseModel):
 
 class ServerConfig(BaseModel):
     """服务器配置"""
+
     host: str = "0.0.0.0"
     port: int = 8001
 
@@ -79,6 +84,7 @@ def _get_db_password() -> str:
 
 class DatabaseConfig(BaseModel):
     """数据库配置"""
+
     driver: str = "postgresql+asyncpg"
     host: str = Field(default_factory=_get_db_host)
     port: int = 5432
@@ -96,6 +102,7 @@ class DatabaseConfig(BaseModel):
 
 class JWTConfig(BaseModel):
     """JWT 配置"""
+
     secret_key: str = "default-secret-key"
     algorithm: str = "HS256"
     expire_minutes: int = 1440
@@ -103,6 +110,7 @@ class JWTConfig(BaseModel):
 
 class ApiKeysConfig(BaseModel):
     """API 密钥配置"""
+
     deepseek: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     anthropic: str = ""
@@ -116,19 +124,22 @@ class ApiKeysConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """模型配置"""
+
     id: str = "deepseek/deepseek-reasoner"
     default: str = "deepseek/deepseek-reasoner"
 
 
 class AgentConfig(BaseModel):
     """Agent 配置"""
+
     type: str = "deep"
-    max_rounds: Optional[int] = None
+    max_rounds: int | None = None
     recursion_limit: int = 100
 
 
 class LoggingConfig(BaseModel):
     """日志配置"""
+
     level: str = "INFO"
     json_enabled: bool = Field(default=False, alias="json")
     file: str = "logs/app.log"
@@ -141,6 +152,7 @@ class LoggingConfig(BaseModel):
 
 class TodoConfig(BaseModel):
     """Todo 配置"""
+
     max_items: int = 20
     reminder_rounds: int = 3
     enable_hook: bool = True
@@ -148,23 +160,27 @@ class TodoConfig(BaseModel):
 
 class SkillEditConfig(BaseModel):
     """Skill Edit 配置"""
+
     enable_hitl: bool = True
 
 
 class SecurityConfig(BaseModel):
     """安全配置"""
-    blacklist_commands: List[str] = Field(default_factory=list)
-    blacklist_paths: List[str] = Field(default_factory=list)
-    whitelist_commands: List[str] = Field(default_factory=list)
+
+    blacklist_commands: list[str] = Field(default_factory=list)
+    blacklist_paths: list[str] = Field(default_factory=list)
+    whitelist_commands: list[str] = Field(default_factory=list)
 
 
 class SandboxConfig(BaseModel):
     """Sandbox 配置"""
+
     mode: str = "docker"
 
 
 class ConfigSchema(BaseModel):
     """配置 Schema - 与 config.yaml 结构完全映射"""
+
     app: AppConfig = Field(default_factory=AppConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -180,6 +196,7 @@ class ConfigSchema(BaseModel):
 
 
 # ==================== 配置加载器 ====================
+
 
 class Config:
     """统一配置管理器
@@ -203,7 +220,7 @@ class Config:
     def _load_config(self):
         """加载配置文件并解析为 Pydantic 模型"""
         if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(CONFIG_PATH, encoding="utf-8") as f:
                 raw_config = yaml.safe_load(f) or {}
                 # 替换环境变量
                 processed_config = _replace_env_vars(raw_config)

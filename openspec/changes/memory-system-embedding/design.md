@@ -31,7 +31,7 @@
 
 ### 1. AgentMiddleware vs Mixin vs Service
 **Decision**: 使用 **AgentMiddleware** 集成到 Runtime
-**Rationale**: 
+**Rationale**:
 - **与现有架构一致**: `ClaudeCompressionMiddleware` 已使用此模式，可链式组合多个中间件
 - **非侵入式**: 不需要修改 DeepAgentRuntime 类，通过配置注册中间件
 - **标准接口**: 通过 `before_model` / `abefore_model` / `aafter_model` 标准生命周期钩子操作 AgentState
@@ -108,27 +108,27 @@ runtime.middleware = [
 ```python
 class MemoryMiddleware(AgentMiddleware):
     """记忆系统中间件 - 加载和提取记忆"""
-    
+
     def __init__(self, user_id: str, project_path: str, db_session_factory, auto_extract: bool = True):
         self.user_id = user_id  # 多用户隔离
         self.project_path = project_path
         self.repo = PostgresMemoryRepository(db_session_factory, user_id)
         self.service = MemoryService(self.repo)
         self.auto_extract = auto_extract
-    
+
     # ═══════════════════════════════════════════════════════════
     # 查询前：从 Postgres 加载记忆
     # ═══════════════════════════════════════════════════════════
-    
+
     async def abefore_model(self, state: AgentState, runtime: Runtime) -> dict | None:
         """在 LLM 调用前加载相关记忆（从服务端 Postgres）"""
         messages = state.get("messages", [])
-        
+
         # 获取最后一条用户消息作为查询
         last_user_msg = self._get_last_user_message(messages)
         if not last_user_msg:
             return None
-        
+
         # 从 Postgres 检索相关记忆（带 user_id 过滤）
         memories = await self.service.get_relevant_memories(
             user_id=self.user_id,
@@ -136,38 +136,38 @@ class MemoryMiddleware(AgentMiddleware):
             query=last_user_msg,
             limit=5
         )
-        
+
         if not memories:
             return None
-        
+
         # 构建记忆提示词并插入
         memory_prompt = self._build_memory_prompt(memories)
         modified_messages = self._inject_memory_prompt(messages, memory_prompt)
-        
+
         return {"messages": modified_messages}
-    
+
     # ═══════════════════════════════════════════════════════════
     # 查询后：提取新记忆并写入 Postgres
     # ═══════════════════════════════════════════════════════════
-    
+
     async def aafter_model(self, state: AgentState, runtime: Runtime, output: Any) -> dict | None:
         """在 LLM 响应后提取记忆并写入服务端"""
         if not self.auto_extract:
             return None
-        
+
         # 检查是否是最终响应（无工具调用）
         if self._has_pending_tool_calls(output):
             return None
-        
+
         # 后台异步提取并写入 Postgres
         asyncio.create_task(self._extract_and_save_memories(state.get("messages", [])))
         return None
-    
+
     async def _extract_and_save_memories(self, messages: list):
         """提取并保存记忆到 Postgres"""
         extractor = MemoryExtractor(self.llm)
         new_memories = await extractor.extract_from_conversation(messages)
-        
+
         for memory in new_memories:
             await self.service.create_memory(
                 user_id=self.user_id,
@@ -202,35 +202,35 @@ LLM 调用
 class ClientMemoryManager {
   private db: IDBDatabase;
   private syncQueue: MemorySyncQueue;
-  
+
   async getMemory(id: string): Promise<Memory | null> {
     // 1. 优先读取 IndexedDB 缓存
     const cached = await this.db.get('memories', id);
     if (cached) return cached;
-    
+
     // 2. 缓存未命中，请求服务端 API
     const memory = await api.getMemory(id);
-    
+
     // 3. 回填缓存
     await this.db.put('memories', memory);
     return memory;
   }
-  
+
   async saveMemory(memory: Memory): Promise<void> {
     // 1. 立即写入 IndexedDB（本地优先）
     await this.db.put('memories', memory);
-    
+
     // 2. 加入同步队列
     await this.syncQueue.add({
       type: 'SAVE',
       data: memory,
       timestamp: Date.now()
     });
-    
+
     // 3. 后台同步到服务端
     this.flushSyncQueue();
   }
-  
+
   // 离线支持
   async getRecentMemories(limit: number = 20): Promise<Memory[]> {
     // 直接从 IndexedDB 读取，无需网络
@@ -254,7 +254,7 @@ interface SyncOperation {
 class MemorySyncManager {
   async flushQueue(): Promise<void> {
     const pending = await this.syncQueue.getPending();
-    
+
     for (const op of pending) {
       try {
         switch (op.type) {
@@ -334,16 +334,16 @@ class MemorySyncManager {
 # 用户可选择存储策略
 class MemoryStorageConfig:
     """记忆存储配置"""
-    
+
     # 存储模式
     mode: Literal["server", "local", "hybrid"] = "hybrid"
-    
+
     # 同步策略（hybrid 模式下）
     sync_strategy: Literal["realtime", "periodic", "manual"] = "periodic"
-    
+
     # 加密选项
     encryption: bool = False  # 端到端加密
-    
+
     # 保留策略
     local_retention_days: int = 30  # 本地保留天数
     server_retention_days: int = 365  # 服务端保留天数

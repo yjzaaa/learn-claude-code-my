@@ -1,6 +1,6 @@
 """Auth Database - 认证数据库连接 (PostgreSQL)"""
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.infrastructure.config import get_database_url
 
@@ -35,6 +35,7 @@ async def get_auth_session():
 async def init_auth_database():
     """初始化认证数据库表"""
     from backend.infrastructure.persistence.auth.models import Base
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("✓ Auth database tables initialized (PostgreSQL)")

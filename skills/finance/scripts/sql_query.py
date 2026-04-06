@@ -28,7 +28,7 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
         normalized,
         flags=re.IGNORECASE,
     )
-    
+
     # Normalize rate table names
     normalized = re.sub(
         r"\brate_table\b",
@@ -36,7 +36,7 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
         normalized,
         flags=re.IGNORECASE,
     )
-    
+
     # Normalize cc mapping table names
     normalized = re.sub(
         r"\bSSME_FI_InsightBot_CCMapping\b",
@@ -44,7 +44,7 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
         normalized,
         flags=re.IGNORECASE,
     )
-    
+
     # Normalize column names for rate table
     normalized = re.sub(r"(?<![\w\[])RateNo(?![\w\]])", "rate_no", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"(?<![\w\[])BL(?![\w\]])", "bl", normalized, flags=re.IGNORECASE)

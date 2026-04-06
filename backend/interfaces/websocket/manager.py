@@ -5,22 +5,22 @@ WebSocket Manager - WebSocket 事件格式化
 此模块仅保留事件格式化功能，供参考使用
 """
 
-from typing import Any, Optional, Union
+from typing import Any
 
 from langchain_core.messages import BaseMessage, message_to_dict
 from pydantic import BaseModel
 
 from backend.domain.models.events.websocket import (
-    WSSnapshotEvent,
-    WSDialogSnapshot,
-    WSDialogMetadata,
-    WSStreamTruncatedEvent,
     WSAckEvent,
+    WSDialogMetadata,
+    WSDialogSnapshot,
+    WSErrorDetail,
     WSErrorEvent,
-    WSStatusChangeEvent,
     WSMessageAddedEvent,
     WSNodeUpdateEvent,
-    WSErrorDetail,
+    WSSnapshotEvent,
+    WSStatusChangeEvent,
+    WSStreamTruncatedEvent,
 )
 
 
@@ -30,7 +30,7 @@ class WebSocketBroadcaster:
     统一使用 broadcast.py 的缓冲广播系统。
     """
 
-    async def broadcast(self, event: Union[BaseModel, dict]) -> None:
+    async def broadcast(self, event: BaseModel | dict) -> None:
         """广播事件到 WebSocket 客户端
 
         统一使用 broadcast.py 的广播系统（带缓冲和流量控制）
@@ -45,10 +45,7 @@ class WebSocketBroadcaster:
         await _broadcast(event_dict)
 
     async def broadcast_snapshot(
-        self,
-        dialog_id: str,
-        messages: list[BaseMessage],
-        metadata: Optional[WSDialogMetadata] = None
+        self, dialog_id: str, messages: list[BaseMessage], metadata: WSDialogMetadata | None = None
     ) -> None:
         """广播对话快照 - 使用 LangChain 格式"""
         snapshot = WSDialogSnapshot(
@@ -56,18 +53,11 @@ class WebSocketBroadcaster:
             title="Dialog",
             status="active",
             messages=[message_to_dict(m) for m in messages],
-            metadata=metadata or WSDialogMetadata(
-                model="",
-                agent_name="Agent"
-            ),
+            metadata=metadata or WSDialogMetadata(model="", agent_name="Agent"),
             created_at="",
-            updated_at=""
+            updated_at="",
         )
-        event = WSSnapshotEvent(
-            dialog_id=dialog_id,
-            data=snapshot,
-            timestamp=self._ts()
-        )
+        event = WSSnapshotEvent(dialog_id=dialog_id, data=snapshot, timestamp=self._ts())
         await self.broadcast(event)
 
     async def broadcast_delta(
@@ -95,41 +85,37 @@ class WebSocketBroadcaster:
                 "content": content,
                 "reasoning": reasoning,
             },
-            "timestamp": self._ts()
+            "timestamp": self._ts(),
         }
         await self.broadcast(event)
 
     async def broadcast_status_change(
-        self,
-        dialog_id: str,
-        from_status: str,
-        to_status: str
+        self, dialog_id: str, from_status: str, to_status: str
     ) -> None:
         """广播状态变更"""
-        event = WSStatusChangeEvent.model_validate({
-            "type": "status:change",
-            "dialog_id": dialog_id,
-            "from": from_status,
-            "to": to_status,
-            "timestamp": self._ts(),
-        })
+        event = WSStatusChangeEvent.model_validate(
+            {
+                "type": "status:change",
+                "dialog_id": dialog_id,
+                "from": from_status,
+                "to": to_status,
+                "timestamp": self._ts(),
+            }
+        )
         await self.broadcast(event)
 
     async def broadcast_stream_start(
-        self,
-        dialog_id: str,
-        message_id: str,
-        message: Optional[BaseMessage] = None
+        self, dialog_id: str, message_id: str, message: BaseMessage | None = None
     ) -> None:
         """广播流开始 - 使用 LangChain 格式"""
         # 提取 role 和 metadata 以匹配前端格式
         role = "assistant"
         metadata = {}
         if message:
-            if hasattr(message, 'type'):
+            if hasattr(message, "type"):
                 role = message.type
             elif isinstance(message, dict):
-                role = message.get('type', 'assistant')
+                role = message.get("type", "assistant")
 
         # 前端期望的格式
         event = {
@@ -138,24 +124,21 @@ class WebSocketBroadcaster:
             "message_id": message_id,
             "role": role,
             "metadata": metadata,
-            "timestamp": self._ts()
+            "timestamp": self._ts(),
         }
         await self.broadcast(event)
 
     async def broadcast_stream_end(
-        self,
-        dialog_id: str,
-        message_id: str,
-        message: Optional[BaseMessage] = None
+        self, dialog_id: str, message_id: str, message: BaseMessage | None = None
     ) -> None:
         """广播流结束 - 使用 LangChain 格式"""
         # 提取消息内容
         final_content = ""
         if message:
-            if hasattr(message, 'content'):
+            if hasattr(message, "content"):
                 final_content = message.content
             elif isinstance(message, dict):
-                final_content = message.get('content', '')
+                final_content = message.get("content", "")
 
         # 前端期望 camelCase 字段名
         event = {
@@ -163,51 +146,37 @@ class WebSocketBroadcaster:
             "dialog_id": dialog_id,
             "message_id": message_id,
             "finalContent": final_content,  # camelCase 匹配前端
-            "timestamp": self._ts()
+            "timestamp": self._ts(),
         }
         await self.broadcast(event)
 
     async def broadcast_stream_truncated(
-        self,
-        dialog_id: str,
-        message_id: str,
-        reason: str
+        self, dialog_id: str, message_id: str, reason: str
     ) -> None:
         """广播流截断"""
         event = WSStreamTruncatedEvent(
-            dialog_id=dialog_id,
-            message_id=message_id,
-            reason=reason,
-            timestamp=self._ts()
+            dialog_id=dialog_id, message_id=message_id, reason=reason, timestamp=self._ts()
         )
         await self.broadcast(event)
 
     async def broadcast_ack(
-        self,
-        dialog_id: str,
-        client_id: str,
-        message: Optional[BaseMessage] = None
+        self, dialog_id: str, client_id: str, message: BaseMessage | None = None
     ) -> None:
         """广播消息确认 - 使用 LangChain 格式"""
         event = WSAckEvent(
             dialog_id=dialog_id,
             client_id=client_id,
             message=message_to_dict(message) if message else None,
-            timestamp=self._ts()
+            timestamp=self._ts(),
         )
         await self.broadcast(event)
 
-    async def broadcast_error(
-        self,
-        dialog_id: str,
-        code: str,
-        message: str
-    ) -> None:
+    async def broadcast_error(self, dialog_id: str, code: str, message: str) -> None:
         """广播错误"""
         event = WSErrorEvent(
             dialog_id=dialog_id,
             error=WSErrorDetail(code=code, message=message),
-            timestamp=self._ts()
+            timestamp=self._ts(),
         )
         await self.broadcast(event)
 
@@ -218,9 +187,7 @@ class WebSocketBroadcaster:
     ) -> None:
         """广播新消息添加事件 - 使用 LangChain 格式"""
         event = WSMessageAddedEvent(
-            dialog_id=dialog_id,
-            message=message_to_dict(message),
-            timestamp=self._ts()
+            dialog_id=dialog_id, message=message_to_dict(message), timestamp=self._ts()
         )
         await self.broadcast(event)
 
@@ -241,7 +208,7 @@ class WebSocketBroadcaster:
 
     @staticmethod
     def _ts() -> int:
-        return int(__import__('time').time() * 1000)
+        return int(__import__("time").time() * 1000)
 
 
 ws_broadcaster = WebSocketBroadcaster()

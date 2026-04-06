@@ -4,7 +4,7 @@ Memory Database - 记忆数据库连接
 提供记忆系统的数据库连接配置。
 """
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from backend.infrastructure.config import get_database_url
 
@@ -41,6 +41,7 @@ async def get_memory_session():
 async def init_memory_database():
     """初始化记忆数据库表"""
     from backend.infrastructure.persistence.memory.models import Base
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("✓ Memory database tables initialized")

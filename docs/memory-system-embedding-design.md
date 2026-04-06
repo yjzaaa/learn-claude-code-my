@@ -91,7 +91,7 @@ class MemoryMetadata(BaseModel):
     source: Optional[str] = None  # 来源会话/工具
     confidence: float = 1.0       # 提取置信度
     extracted_at: datetime = Field(default_factory=datetime.now)
-    
+
     class Config:
         frozen = True
 
@@ -99,14 +99,14 @@ class MemoryMetadata(BaseModel):
 class Memory(BaseModel):
     """
     记忆实体 - 对应 free-code 的 memory file
-    
+
     文件格式:
     ```markdown
     ---
     type: feedback
     description: 用户偏好简要响应
     ---
-    
+
     用户不喜欢冗余的总结
     ```
     """
@@ -117,13 +117,13 @@ class Memory(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
     project_path: str            # 所属项目路径
-    
+
     # 可选: 向量嵌入 (用于语义搜索)
     embedding: Optional[list[float]] = None
-    
+
     class Config:
         frozen = False
-    
+
     def to_markdown(self) -> str:
         """转换为 Markdown 格式存储"""
         frontmatter = f"""---
@@ -134,7 +134,7 @@ extracted_at: {self.metadata.extracted_at.isoformat()}
 
 """
         return frontmatter + self.content
-    
+
     @classmethod
     def from_markdown(cls, file_path: str, content: str) -> "Memory":
         """从 Markdown 文件解析"""
@@ -147,7 +147,7 @@ extracted_at: {self.metadata.extracted_at.isoformat()}
         else:
             frontmatter = {}
             body = content
-        
+
         return cls(
             id=Path(file_path).stem,
             type=MemoryType(frontmatter.get('type', 'project')),
@@ -175,36 +175,36 @@ from ..models.memory import Memory, MemoryType
 class MemoryRepository(ABC):
     """
     记忆仓库接口 - Clean Architecture 的端口
-    
+
     实现可以是:
     - FileSystemMemoryRepository: 基于文件系统 (free-code 风格)
     - VectorMemoryRepository: 基于向量数据库 (未来扩展)
     """
-    
+
     @abstractmethod
     async def save(self, memory: Memory) -> None:
         """保存记忆"""
         pass
-    
+
     @abstractmethod
     async def find_by_id(self, memory_id: str, project_path: str) -> Optional[Memory]:
         """通过 ID 查找"""
         pass
-    
+
     @abstractmethod
     async def list_by_type(
-        self, 
-        project_path: str, 
+        self,
+        project_path: str,
         memory_type: Optional[MemoryType] = None
     ) -> List[Memory]:
         """按类型列出记忆"""
         pass
-    
+
     @abstractmethod
     async def search(
-        self, 
-        project_path: str, 
-        query: str, 
+        self,
+        project_path: str,
+        query: str,
         limit: int = 5
     ) -> List[Memory]:
         """
@@ -213,12 +213,12 @@ class MemoryRepository(ABC):
         - 高级实现: 基于向量相似度
         """
         pass
-    
+
     @abstractmethod
     async def delete(self, memory_id: str, project_path: str) -> bool:
         """删除记忆"""
         pass
-    
+
     @abstractmethod
     async def get_entrypoint(self, project_path: str) -> str:
         """获取 MEMORY.md 入口文件内容"""
@@ -242,15 +242,15 @@ from ...domain.repositories.memory_repository import MemoryRepository
 class MemoryService:
     """
     记忆服务 - 应用层用例协调器
-    
+
     对应 free-code 的:
     - loadMemoryPrompt() -> get_memories_for_prompt()
     - extractMemories() -> extract_from_conversation()
     """
-    
+
     def __init__(self, repository: MemoryRepository):
         self._repo = repository
-    
+
     async def create_memory(
         self,
         project_path: str,
@@ -272,38 +272,38 @@ class MemoryService:
         )
         await self._repo.save(memory)
         return memory
-    
+
     async def get_relevant_memories(
-        self, 
-        project_path: str, 
+        self,
+        project_path: str,
         query: str,
         limit: int = 5
     ) -> List[Memory]:
         """
         获取与查询相关的记忆
-        
+
         对应 free-code 的 findRelevantMemories()
         可以扩展为使用 LLM 选择最相关的记忆
         """
         # 基础实现: 返回所有记忆（按时间排序）
         memories = await self._repo.list_by_type(project_path)
-        
+
         # 如果有查询，进行简单过滤
         if query:
             memories = [
-                m for m in memories 
-                if query.lower() in m.content.lower() 
+                m for m in memories
+                if query.lower() in m.content.lower()
                 or (m.metadata.description and query.lower() in m.metadata.description.lower())
             ]
-        
+
         # 按时间倒序，限制数量
         memories.sort(key=lambda m: m.metadata.extracted_at, reverse=True)
         return memories[:limit]
-    
+
     async def build_memory_prompt(self, project_path: str) -> str:
         """
         构建记忆系统提示词
-        
+
         对应 free-code 的 loadMemoryPrompt()
         """
         entrypoint = await self._repo.get_entrypoint(project_path)
@@ -325,13 +325,13 @@ from ...infrastructure.llm_provider import LLMProvider
 class MemoryExtractor:
     """
     记忆提取器 - 从对话中提取有价值的记忆
-    
+
     对应 free-code 的 extractMemories 服务
     """
-    
+
     def __init__(self, llm_provider: LLMProvider):
         self._llm = llm_provider
-    
+
     async def extract_from_conversation(
         self,
         project_path: str,
@@ -340,7 +340,7 @@ class MemoryExtractor:
     ) -> List[Memory]:
         """
         从对话历史中提取新记忆
-        
+
         提示词设计参考 free-code 的 extractMemories/prompts.ts
         """
         system_prompt = """You are extracting durable memories from a conversation.
@@ -366,16 +366,16 @@ Return a JSON array of memories:
 
         # 构建上下文
         context = self._format_conversation(conversation_history)
-        
+
         # 调用 LLM 提取
         response = await self._llm.complete(
             system=system_prompt,
             messages=[{"role": "user", "content": context}]
         )
-        
+
         # 解析结果
         return self._parse_extraction_response(project_path, response)
-    
+
     def _format_conversation(self, history: List[dict]) -> str:
         """格式化对话历史"""
         lines = []
@@ -412,78 +412,78 @@ from ...domain.models.memory import Memory
 
 class MemoryMixin:
     """记忆功能 Mixin"""
-    
+
     # 依赖注入的属性
     _memory_service: Optional[MemoryService] = None
     _memory_extractor: Optional[MemoryExtractor] = None
     _project_path: str = "."
-    
+
     async def _init_memory_system(self) -> None:
         """初始化记忆系统 - 对应 ensureMemoryDirExists"""
         from ...infrastructure.persistence.memory.filesystem_repo import (
             FileSystemMemoryRepository
         )
-        
+
         # 创建仓库
         repo = FileSystemMemoryRepository(self._project_path)
         self._memory_service = MemoryService(repo)
-        
+
         # 确保目录存在
         memory_dir = Path(self._project_path) / ".claude" / "memory"
         memory_dir.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"[MemoryMixin] Initialized for {self._project_path}")
-    
+
     async def get_memory_prompt(self) -> str:
         """获取记忆系统提示词 - 注入到 LLM"""
         if not self._memory_service:
             return ""
         return await self._memory_service.build_memory_prompt(self._project_path)
-    
+
     async def save_memory(
-        self, 
-        memory_type: str, 
-        content: str, 
+        self,
+        memory_type: str,
+        content: str,
         description: Optional[str] = None
     ) -> Memory:
         """保存记忆"""
         from ...domain.models.memory import MemoryType
-        
+
         if not self._memory_service:
             raise RuntimeError("Memory system not initialized")
-        
+
         memory = await self._memory_service.create_memory(
             project_path=self._project_path,
             memory_type=MemoryType(memory_type),
             content=content,
             description=description
         )
-        
+
         logger.info(f"[MemoryMixin] Saved memory: {memory.id}")
         return memory
-    
+
     async def extract_memories(self, conversation_history: List[dict]) -> List[Memory]:
         """
         从对话历史中提取记忆
-        
+
         对应 free-code 的 extractMemories 功能
         可在查询结束时自动调用
         """
         if not self._memory_extractor or not self._memory_service:
             return []
-        
+
         # 获取现有记忆（避免重复）
         existing = await self._memory_service.get_relevant_memories(
             self._project_path, ""
         )
-        
+
         # 提取新记忆
         new_memories = await self._memory_extractor.extract_from_conversation(
             self._project_path,
             conversation_history,
             existing
         )
-        
+
         # 保存新记忆
         for memory in new_memories:
             await self._memory_service.create_memory(
@@ -492,19 +492,19 @@ class MemoryMixin:
                 content=memory.content,
                 description=memory.metadata.description
             )
-        
+
         logger.info(f"[MemoryMixin] Extracted {len(new_memories)} memories")
         return new_memories
-    
+
     async def get_relevant_memories(
-        self, 
-        query: str, 
+        self,
+        query: str,
         limit: int = 5
     ) -> List[Memory]:
         """获取相关记忆 - 对应 findRelevantMemories"""
         if not self._memory_service:
             return []
-        
+
         return await self._memory_service.get_relevant_memories(
             self._project_path, query, limit
         )
@@ -538,35 +538,35 @@ from ....domain.repositories.memory_repository import MemoryRepository
 
 class FileSystemMemoryRepository(MemoryRepository):
     """基于文件系统的记忆仓库 - free-code 风格"""
-    
+
     def __init__(self, project_path: str):
         self._base_path = Path(project_path) / ".claude" / "memory"
         self._base_path.mkdir(parents=True, exist_ok=True)
-    
+
     def _get_type_dir(self, memory_type: MemoryType) -> Path:
         """获取类型目录"""
         return self._base_path / memory_type.value
-    
+
     def _get_file_path(self, memory_id: str, memory_type: MemoryType) -> Path:
         """获取记忆文件路径"""
         return self._get_type_dir(memory_type) / f"{memory_id}.md"
-    
+
     async def save(self, memory: Memory) -> None:
         """保存记忆到文件"""
         # 确保类型目录存在
         type_dir = self._get_type_dir(memory.type)
         type_dir.mkdir(exist_ok=True)
-        
+
         # 写入文件
         file_path = self._get_file_path(memory.id, memory.type)
         file_path.write_text(memory.to_markdown(), encoding="utf-8")
-        
+
         # 更新入口文件
         await self._update_entrypoint()
-    
+
     async def find_by_id(
-        self, 
-        memory_id: str, 
+        self,
+        memory_id: str,
         project_path: str
     ) -> Optional[Memory]:
         """通过 ID 查找"""
@@ -577,7 +577,7 @@ class FileSystemMemoryRepository(MemoryRepository):
                 content = file_path.read_text(encoding="utf-8")
                 return Memory.from_markdown(str(file_path), content)
         return None
-    
+
     async def list_by_type(
         self,
         project_path: str,
@@ -585,14 +585,14 @@ class FileSystemMemoryRepository(MemoryRepository):
     ) -> List[Memory]:
         """列出记忆"""
         memories = []
-        
+
         types_to_scan = [memory_type] if memory_type else list(MemoryType)
-        
+
         for mt in types_to_scan:
             type_dir = self._get_type_dir(mt)
             if not type_dir.exists():
                 continue
-            
+
             for file_path in type_dir.glob("*.md"):
                 try:
                     content = file_path.read_text(encoding="utf-8")
@@ -600,14 +600,14 @@ class FileSystemMemoryRepository(MemoryRepository):
                     memories.append(memory)
                 except Exception:
                     continue  # 跳过损坏的文件
-        
+
         # 按时间排序
         memories.sort(
-            key=lambda m: m.metadata.extracted_at, 
+            key=lambda m: m.metadata.extracted_at,
             reverse=True
         )
         return memories
-    
+
     async def search(
         self,
         project_path: str,
@@ -616,7 +616,7 @@ class FileSystemMemoryRepository(MemoryRepository):
     ) -> List[Memory]:
         """搜索记忆 - 简单关键词匹配"""
         all_memories = await self.list_by_type(project_path)
-        
+
         # 简单关键词匹配（未来可替换为向量搜索）
         query_lower = query.lower()
         matches = [
@@ -624,52 +624,52 @@ class FileSystemMemoryRepository(MemoryRepository):
             if query_lower in m.content.lower()
             or (m.metadata.description and query_lower in m.metadata.description.lower())
         ]
-        
+
         return matches[:limit]
-    
+
     async def delete(self, memory_id: str, project_path: str) -> bool:
         """删除记忆"""
         memory = await self.find_by_id(memory_id, project_path)
         if not memory:
             return False
-        
+
         file_path = self._get_file_path(memory_id, memory.type)
         if file_path.exists():
             file_path.unlink()
             await self._update_entrypoint()
             return True
         return False
-    
+
     async def get_entrypoint(self, project_path: str) -> str:
         """生成 MEMORY.md 入口文件"""
         memories = await self.list_by_type(project_path)
-        
+
         # 按类型分组
         by_type: dict[MemoryType, List[Memory]] = {}
         for m in memories:
             by_type.setdefault(m.type, []).append(m)
-        
+
         # 生成索引
         lines = ["# Memory", ""]
-        
+
         for memory_type in MemoryType:
             type_memories = by_type.get(memory_type, [])
             if not type_memories:
                 continue
-            
+
             lines.extend([
                 f"## {memory_type.value.upper()}",
                 ""
             ])
-            
+
             for m in type_memories:
                 desc = m.metadata.description or m.content[:50] + "..."
                 lines.append(f"- [{m.id}]({m.type.value}/{m.id}.md): {desc}")
-            
+
             lines.append("")
-        
+
         return "\n".join(lines)
-    
+
     async def _update_entrypoint(self) -> None:
         """更新 MEMORY.md 入口文件"""
         entrypoint_content = await self.get_entrypoint(str(self._base_path.parent))
@@ -696,19 +696,19 @@ class DeepAgentRuntime(
     """
     Deep Agent Runtime - 现在包含记忆功能
     """
-    
+
     async def _do_initialize(self) -> None:
         # ... 其他初始化
-        
+
         # 初始化记忆系统
         await self._init_memory_system()
-    
+
     async def send_message(self, ...):
         # 查询前：加载记忆到系统提示词
         memory_prompt = await self.get_memory_prompt()
-        
+
         # ... 发送消息逻辑
-        
+
         # 查询后：提取新记忆
         await self.extract_memories(conversation_history)
 ```

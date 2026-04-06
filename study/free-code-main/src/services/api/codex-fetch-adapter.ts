@@ -470,7 +470,7 @@ async function translateCodexStreamToAnthropic(
                 outputTokens += 1
               }
             }
-            
+
             // Reasoning deltas
             else if (eventType === 'response.reasoning.delta') {
               const text = event.delta as string
