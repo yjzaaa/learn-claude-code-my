@@ -8,6 +8,7 @@ import os
 from typing import AsyncIterator, List, Optional
 
 from httpx import stream
+from backend.infrastructure.config import config
 from backend.infrastructure.protocols.provider import BaseProvider
 from backend.domain.models.shared import StreamChunk
 from backend.domain.models.shared.types import MessageDict, StreamToolCallDict
@@ -183,28 +184,28 @@ def create_provider_from_env() -> Optional[LiteLLMProvider]:
         LiteLLMProvider 实例，或 None（如果没有配置）
     """
     # 优先级: Anthropic > OpenAI > DeepSeek
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if config.api_keys.anthropic:
         return LiteLLMProvider(
             model="claude-sonnet-4-6",
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            base_url=os.getenv("ANTHROPIC_BASE_URL"),
+            api_key=config.api_keys.anthropic,
+            base_url=config.api_keys.anthropic_base_url,
             default_model="claude-sonnet-4-6",
         )
-    
-    if os.getenv("OPENAI_API_KEY"):
+
+    if config.api_keys.openai:
         return LiteLLMProvider(
             model="gpt-4",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
+            api_key=config.api_keys.openai,
+            base_url=config.api_keys.openai_base_url,
             default_model="gpt-4",
         )
-    
-    if os.getenv("DEEPSEEK_API_KEY"):
+
+    if config.api_keys.deepseek:
         return LiteLLMProvider(
             model="deepseek/deepseek-chat",
-            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            api_key=config.api_keys.deepseek,
             # Do NOT pass base_url — litellm routes deepseek/ prefix automatically
             default_model="deepseek/deepseek-chat",
         )
-    
+
     return None

@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { globalEventEmitter } from "@/lib/event-emitter";
 import type { ChatMessage, ChatRole } from "@/types/openai";
 import type { SkillEditApproval } from "@/types/dialog";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+
+// WebSocket URL
+const WS_URL =
+  typeof window !== "undefined"
+    ? process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8001/ws/client-1"
+    : "ws://localhost:8001/ws/client-1";
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -33,6 +39,74 @@ export function useAgentApi() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const REQUEST_TIMEOUT_MS = 8000;
+  const MAX_WS_WAIT_MS = 5000; // 最大等待 WebSocket 就绪时间
+
+  // WebSocket 引用
+  const wsRef = useRef<WebSocket | null>(null);
+  const isSubscribedRef = useRef(false);
+  const pendingDialogIdRef = useRef<string | null>(null);
+
+  // 确保 WebSocket 连接并订阅
+  const ensureWebSocketReady = useCallback(async (dialogId: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      // 检查现有连接
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        // 如果已经订阅了这个 dialog，直接返回
+        if (isSubscribedRef.current && pendingDialogIdRef.current === dialogId) {
+          console.log("[useAgentApi] WebSocket already ready for dialog:", dialogId);
+          resolve(true);
+          return;
+        }
+        // 发送 subscribe
+        wsRef.current.send(JSON.stringify({ type: "subscribe", dialog_id: dialogId }));
+        pendingDialogIdRef.current = dialogId;
+      } else {
+        // 创建新连接
+        console.log("[useAgentApi] Creating new WebSocket connection");
+        const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
+        pendingDialogIdRef.current = dialogId;
+
+        ws.onopen = () => {
+          console.log("[useAgentApi] WebSocket connected, subscribing to:", dialogId);
+          ws.send(JSON.stringify({ type: "subscribe", dialog_id: dialogId }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            // 收到 snapshot 表示订阅成功
+            if (msg.type === "dialog:snapshot" && msg.dialog_id === dialogId) {
+              console.log("[useAgentApi] Subscribed successfully to:", dialogId);
+              isSubscribedRef.current = true;
+              resolve(true);
+            }
+          } catch (e) {
+            console.error("[useAgentApi] Failed to parse message:", e);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("[useAgentApi] WebSocket error:", error);
+          resolve(false);
+        };
+
+        ws.onclose = () => {
+          console.log("[useAgentApi] WebSocket closed");
+          isSubscribedRef.current = false;
+          wsRef.current = null;
+        };
+      }
+
+      // 超时处理
+      setTimeout(() => {
+        if (!isSubscribedRef.current || pendingDialogIdRef.current !== dialogId) {
+          console.warn("[useAgentApi] WebSocket ready timeout");
+          resolve(false);
+        }
+      }, MAX_WS_WAIT_MS);
+    });
+  }, []);
 
   // 通用请求方法
   const request = useCallback(
@@ -132,6 +206,18 @@ export function useAgentApi() {
       content: string,
     ): Promise<ApiResponse<{ message_id: string; status: string }>> => {
       console.log("[useAgentApi] sendMessage called:", { dialogId, content });
+
+      // 【关键】确保 WebSocket 就绪后再发送 HTTP 请求
+      console.log("[useAgentApi] Ensuring WebSocket ready...");
+      const wsReady = await ensureWebSocketReady(dialogId);
+      if (!wsReady) {
+        console.warn("[useAgentApi] WebSocket not ready, proceeding anyway");
+      } else {
+        // 额外等待一小段时间确保后端 subscribe 完成
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+
+      console.log("[useAgentApi] Sending HTTP request...");
       const result = await request<{ message_id: string; status: string }>(
         `/api/dialogs/${dialogId}/messages`,
         {
@@ -148,7 +234,7 @@ export function useAgentApi() {
 
       return result;
     },
-    [request],
+    [request, ensureWebSocketReady],
   );
 
   // ========== Skills API ==========

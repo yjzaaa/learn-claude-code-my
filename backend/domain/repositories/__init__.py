@@ -5,9 +5,11 @@ Domain Repositories - 领域仓库接口
 """
 
 from .dialog import IDialogRepository
+from .memory_repository import IMemoryRepository
 from .skill import ISkillRepository
 
 __all__ = [
     "IDialogRepository",
     "ISkillRepository",
+    "IMemoryRepository",
 ]

@@ -7,7 +7,6 @@
 - DeepSandboxMixin: Docker 沙箱代理
 - DeepModelSwitcherMixin: 动态模型切换
 - DeepCheckpointMixin: Checkpoint 快照
-- DeepToolManagerMixin: 工具注册/注销
 - DeepStopHandlerMixin: 停止处理
 
 保持与 deep_legacy.py 100% API 兼容。
@@ -19,44 +18,42 @@ from loguru import logger
 from ..base.runtime import AbstractAgentRuntime
 from .services.config_adapter import DeepAgentConfig
 from .services.logging_mixin import DeepLoggingMixin
-from backend.infrastructure.services import ProviderManager
 from backend.infrastructure.llm_adapter import LLMResponseAdapterFactory
 
 from .mixins import (
+    DeepCheckpointMixin,
     DeepInitializerMixin,
     DeepMessageHandlerMixin,
-    DeepSkillLoaderMixin,
-    DeepSandboxMixin,
     DeepModelSwitcherMixin,
-    DeepCheckpointMixin,
-    DeepToolManagerMixin,
+    DeepSandboxMixin,
+    DeepSkillLoaderMixin,
     DeepStopHandlerMixin,
 )
 
 
 class DeepAgentRuntime(
+    DeepLoggingMixin,
     DeepInitializerMixin,
     DeepMessageHandlerMixin,
     DeepSkillLoaderMixin,
     DeepSandboxMixin,
     DeepModelSwitcherMixin,
     DeepCheckpointMixin,
-    DeepToolManagerMixin,
     DeepStopHandlerMixin,
     AbstractAgentRuntime[DeepAgentConfig],
-    DeepLoggingMixin,
 ):
     """Deep Agent Runtime 实现 - Mixin 组合版"""
 
     def __init__(self, agent_id: str, provider_manager: Optional[Any] = None):
         DeepLoggingMixin.__init__(self)
-        super().__init__(agent_id)
+        AbstractAgentRuntime.__init__(self, agent_id)
         self._agent: Any = None
         self._checkpointer: Any = None
         self._store: Any = None
         self._model_name: Optional[str] = None
         self._provider_manager = provider_manager
         self._adapter_factory = LLMResponseAdapterFactory()
+        self._stop_requested: dict[str, bool] = {}  # Used by DeepStopHandlerMixin
 
         logger.debug(f"[DeepAgentRuntime] Created: {agent_id}")
 
@@ -84,6 +81,5 @@ __all__ = [
     "DeepSandboxMixin",
     "DeepModelSwitcherMixin",
     "DeepCheckpointMixin",
-    "DeepToolManagerMixin",
     "DeepStopHandlerMixin",
 ]

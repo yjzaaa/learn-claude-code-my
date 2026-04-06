@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: learn-claude-code-app
+    ports:
+      - "8001:8001"
+    volumes:
+      - .:/app
+      - /app/.venv
+    env_file:
+      - .env
+    environment:
+      # 数据库配置（使用新命名）
+      - DB_HOST=finance-postgres
+      - DB_PORT=5432
+      - DB_NAME=agent_memory
+      - DB_USER=postgres
+      - DB_PASSWORD=123456
+      # API 配置
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - MODEL_ID=deepseek/deepseek-reasoner
+      # 可选：保留 DATABASE_URL 用于 backward compatibility
+      # - DATABASE_URL=postgresql+asyncpg://postgres:123456@finance-postgres:5432/agent_memory
+    depends_on:
+      - finance-postgres
+    networks:
+      - default
+      - finance-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+
+  finance-postgres:
+    image: postgres:16
+    container_name: finance-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=123456
+      - POSTGRES_DB=agent_memory
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  finance-network:
+    external: true
+  default:

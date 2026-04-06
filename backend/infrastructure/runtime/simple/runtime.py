@@ -187,7 +187,7 @@ class SimpleRuntime(ManagerAwareRuntime):
         tools = self._tool_mgr.get_schemas()
 
         try:
-            _max_rounds_env = os.getenv("MAX_AGENT_ROUNDS", "").strip()
+            _max_rounds_env = str(config.agent.max_rounds or "").strip()
             max_rounds = int(_max_rounds_env) if _max_rounds_env.isdigit() else None
 
             _round = 0

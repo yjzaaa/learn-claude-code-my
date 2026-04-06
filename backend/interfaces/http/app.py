@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv(Path(__file__).resolve().parent.parent.parent.parent / ".env", override=True)
 
+from backend.infrastructure.config import config
 from backend.infrastructure.container import container
 from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 from backend.infrastructure.services import ProviderManager
@@ -64,6 +65,14 @@ async def _initialize() -> None:
     """初始化应用组件"""
     logger.info("[App] Initializing...")
 
+    # 初始化记忆数据库
+    try:
+        from backend.infrastructure.persistence.memory.database import init_memory_database
+        await init_memory_database()
+    except Exception as e:
+        logger.warning(f"[App] Memory database initialization failed: {e}")
+        logger.warning("[App] Memory system will use mock storage")
+
     # 项目根目录
     project_root = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -73,7 +82,7 @@ async def _initialize() -> None:
     logger.info(f"[App] ProviderManager initialized: model={model_config.model}, provider={model_config.provider}")
 
     # 创建 Runtime
-    agent_type = os.getenv("AGENT_TYPE", "simple")
+    agent_type = config.agent.type
     if agent_type == "deep":
         try:
             import deepagents
@@ -84,7 +93,7 @@ async def _initialize() -> None:
     factory = AgentRuntimeFactory()
 
     # 配置现在主要由 ProviderManager 管理，EngineConfig 作为补充
-    config = EngineConfig.from_dict({
+    engine_config = EngineConfig.from_dict({
         "skills": {"skills_dir": str(project_root / "skills")},
         "provider": {
             "model": model_config.model,  # 从 ProviderManager 获取
@@ -94,8 +103,8 @@ async def _initialize() -> None:
         "system": "You are a helpful AI assistant...",
     })
 
-    runtime = factory.create(agent_type, "main-agent", config, provider_manager=provider_manager)
-    await runtime.initialize(config)
+    runtime = factory.create(agent_type, "main-agent", engine_config, provider_manager=provider_manager)
+    await runtime.initialize(engine_config)
 
     if hasattr(runtime, 'setup_workspace_tools'):
         runtime.setup_workspace_tools(project_root)
@@ -122,7 +131,7 @@ async def _initialize() -> None:
     container.session_manager = session_manager
     container.task_queue = task_queue
     container.event_bus = event_bus
-    container.config = config
+    container.config = engine_config
 
     logger.info("[App] Initialization complete")
 
@@ -157,10 +166,14 @@ async def _shutdown() -> None:
 def _register_routes(app: FastAPI) -> None:
     """注册路由"""
     from backend.interfaces.http.routes import dialogs, messages, agent
+    from backend.interfaces.http.memory_routes import router as memory_router
+    from backend.interfaces.http.commands import memory_commands
 
     app.include_router(dialogs.router)
     app.include_router(messages.router)
     app.include_router(agent.router)
+    app.include_router(memory_router)
+    app.include_router(memory_commands.router, prefix="/api")
 
     # WebSocket
     from backend.interfaces.websocket.handler import handle_websocket

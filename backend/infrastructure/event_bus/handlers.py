@@ -13,6 +13,7 @@ from backend.domain.models.events.agent_events import (
     AgentErrorEvent,
     AgentExecuteRequest,
     AgentProgressEvent,
+    AgentRoundsLimitReached,
 )
 from backend.domain.models.types import (
     WSDeltaContent,
@@ -43,11 +44,11 @@ class EventHandlers:
     集中管理所有事件处理器。
     """
 
-    def __init__(self, event_bus: QueuedEventBus | None = None):
+    def __init__(self: EventHandlers, event_bus: QueuedEventBus | None = None) -> None:
         self.event_bus = event_bus
         self._subscribed = False
 
-    def register_all(self) -> None:
+    def register_all(self: EventHandlers) -> None:
         """注册所有事件处理器"""
         if not self.event_bus or self._subscribed:
             return
@@ -64,7 +65,7 @@ class EventHandlers:
         self._subscribed = True
         logger.info("[EventHandlers] All handlers registered")
 
-    async def _handle_agent_progress(self, event: AgentProgressEvent) -> None:
+    async def _handle_agent_progress(self: EventHandlers, event: AgentProgressEvent) -> None:
         """处理 Agent 进度事件"""
         from backend.interfaces.websocket.broadcast import broadcast
 
@@ -106,7 +107,7 @@ class EventHandlers:
             )
         )
 
-    async def _handle_agent_complete(self, event: AgentCompleteEvent) -> None:
+    async def _handle_agent_complete(self: EventHandlers, event: AgentCompleteEvent) -> None:
         """处理 Agent 完成事件"""
         from backend.interfaces.websocket.broadcast import broadcast
 
@@ -126,7 +127,7 @@ class EventHandlers:
         logger.info(f"[_handle_agent_complete] Broadcasting: {status_change_2}")
         await broadcast(status_change_2)
 
-    async def _handle_agent_error(self, event: AgentErrorEvent) -> None:
+    async def _handle_agent_error(self: EventHandlers, event: AgentErrorEvent) -> None:
         """处理 Agent 错误事件"""
         from backend.interfaces.websocket.broadcast import broadcast
 
@@ -145,7 +146,9 @@ class EventHandlers:
         )
         await broadcast(make_status_change(dialog_id, "thinking", "error", timestamp_ms()))
 
-    async def _handle_execute_request(self, event: AgentExecuteRequest) -> None:
+    async def _handle_execute_request(  # noqa: C901
+        self: EventHandlers, event: AgentExecuteRequest
+    ) -> None:
         """处理 Agent 执行请求"""
         dialog_id = event.dialog_id
         content = event.content
@@ -154,6 +157,10 @@ class EventHandlers:
         logger.info(
             f"[_handle_execute_request] Received: dialog_id={dialog_id}, message_id={message_id}"
         )
+
+        # 检查 WebSocket 客户端连接
+        client_count = len(container.state.client_buffers)
+        logger.info(f"[_handle_execute_request] WebSocket clients: {client_count}")
 
         # 设置状态
         container.set_status(dialog_id, "thinking")
@@ -213,6 +220,7 @@ class EventHandlers:
 
                     # 发射进度事件
                     if self.event_bus:
+                        logger.debug(f"[_handle_execute_request] Emitting AgentProgressEvent, dialog_id={dialog_id}")
                         await self.event_bus.emit(
                             AgentProgressEvent(
                                 dialog_id=dialog_id,
@@ -230,6 +238,12 @@ class EventHandlers:
                         reasoning_chunk = "".join(str(c) for c in reasoning_chunk)
                     elif not isinstance(reasoning_chunk, str):
                         reasoning_chunk = str(reasoning_chunk)
+
+                    # 更新累积内容（将 reasoning 作为 content 处理，确保前端能显示）
+                    accumulated = container.append_accumulated(dialog_id, reasoning_chunk)
+
+                    # 注：不发射 AgentProgressEvent，避免重复广播
+                    # 直接使用 broadcast 发送 reasoning
 
                     # 广播 reasoning delta 到前端 - 使用递增序列号
                     reasoning_sequence = container.get_and_increment_delta_sequence(dialog_id)
@@ -257,6 +271,32 @@ class EventHandlers:
                             ),
                             timeout=0.5,
                         )
+
+                elif runtime_event.type == "tool_call":
+                    # 工具调用事件 - 广播到前端
+                    tool_data = runtime_event.data
+                    logger.debug(f"[_handle_execute_request] Tool call: {tool_data}")
+                    from backend.interfaces.websocket.broadcast import broadcast
+
+                    await broadcast({
+                        "type": "tool:call",
+                        "dialog_id": dialog_id,
+                        "data": tool_data,
+                        "timestamp": timestamp_ms(),
+                    })
+
+                elif runtime_event.type == "tool_result":
+                    # 工具结果事件 - 广播到前端
+                    result_data = runtime_event.data
+                    logger.debug(f"[_handle_execute_request] Tool result: {result_data}")
+                    from backend.interfaces.websocket.broadcast import broadcast
+
+                    await broadcast({
+                        "type": "tool:result",
+                        "dialog_id": dialog_id,
+                        "data": result_data,
+                        "timestamp": timestamp_ms(),
+                    })
 
                 elif runtime_event.type == "error":
                     error_msg = str(runtime_event.data)
@@ -290,7 +330,7 @@ class EventHandlers:
                     timeout=0.5,
                 )
 
-    async def _on_rounds_limit(self, event) -> None:
+    async def _on_rounds_limit(self: EventHandlers, event: AgentRoundsLimitReached) -> None:
         """处理轮次限制事件"""
         from backend.interfaces.websocket.broadcast import broadcast
 

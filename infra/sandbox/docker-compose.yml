@@ -11,6 +11,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/00_init_databases.sh:ro
       - ./init_cost_allocation.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d cost_allocation"]
@@ -26,7 +27,21 @@ services:
     container_name: deep-agent-sandbox
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    environment:
+      # 主数据库配置（记忆系统）
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=agent_memory
+      - DB_USER=postgres
+      - DB_PASSWORD=123456
+      # Finance 技能数据库
+      - FINANCE_DB_HOST=postgres
+      - FINANCE_DB_PORT=5432
+      - FINANCE_DB_NAME=cost_allocation
+      - FINANCE_DB_USER=postgres
+      - FINANCE_DB_PASSWORD=123456
     volumes:
       - ../../skills:/workspace/skills
     working_dir: /workspace/skills

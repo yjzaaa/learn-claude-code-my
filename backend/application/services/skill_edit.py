@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import dataclasses
 import difflib
-import os
 import time
 import uuid
 from pathlib import Path
@@ -19,6 +18,7 @@ from typing import Any, Callable, Coroutine, Optional
 from loguru import logger
 
 from backend.domain.models.api import SkillEditPendingEvent, SkillEditResolvedEvent, DecisionResult, SkillEditProposalDTO
+from backend.infrastructure.config import config
 
 
 @dataclass
@@ -242,8 +242,7 @@ class SkillEditHITLStore:
 
 def _is_hitl_enabled() -> bool:
     """检查是否启用 Skill Edit HITL"""
-    raw = os.getenv("ENABLE_SKILL_EDIT_HITL", "1")
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return config.skill_edit.enable_hitl
 
 
 # 全局单例

@@ -83,3 +83,11 @@ class ToolCallResultEvent(BaseEvent):
     duration_ms: int = 0
     error: Optional[str] = None
     priority: EventPriority = EventPriority.HIGH
+
+
+@dataclass
+class AgentRoundsLimitReached(BaseEvent):
+    """Agent 轮次限制达到事件"""
+    dialog_id: str = ""
+    rounds: int = 0
+    priority: EventPriority = EventPriority.NORMAL

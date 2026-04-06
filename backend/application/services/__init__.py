@@ -2,7 +2,8 @@
 
 from backend.application.services.dialog import DialogService, DialogNotFoundError
 from backend.application.services.skill import SkillService, SkillNotFoundError, ToolInfo
-from backend.application.services.memory import MemoryService
+from backend.application.services.memory_service import MemoryService
+from backend.application.services.memory_extractor import MemoryExtractor
 from backend.application.services.agent_orchestration import AgentOrchestrationService
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "DialogService",
     "SkillService",
     "MemoryService",
+    "MemoryExtractor",
     "AgentOrchestrationService",
     # Exceptions
     "DialogNotFoundError",

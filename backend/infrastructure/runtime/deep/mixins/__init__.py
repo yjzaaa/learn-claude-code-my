@@ -4,27 +4,25 @@
 
 使用方式:
     class DeepAgentRuntime(
+        AbstractAgentRuntime[DeepAgentConfig],  # Base class FIRST for correct MRO
+        DeepLoggingMixin,
         DeepInitializerMixin,
         DeepMessageHandlerMixin,
         DeepSkillLoaderMixin,
         DeepSandboxMixin,
         DeepModelSwitcherMixin,
         DeepCheckpointMixin,
-        DeepToolManagerMixin,
         DeepStopHandlerMixin,
-        AbstractAgentRuntime[DeepAgentConfig],
-        DeepLoggingMixin,
     ):
         pass
 """
 
+from .checkpoint import DeepCheckpointMixin
 from .initializer import DeepInitializerMixin
 from .message_handler import DeepMessageHandlerMixin
-from .skill_loader import DeepSkillLoaderMixin
-from .sandbox import DeepSandboxMixin
 from .model_switcher import DeepModelSwitcherMixin
-from .checkpoint import DeepCheckpointMixin
-from .tool_manager import DeepToolManagerMixin
+from .sandbox import DeepSandboxMixin
+from .skill_loader import DeepSkillLoaderMixin
 from .stop_handler import DeepStopHandlerMixin
 
 __all__ = [
@@ -34,6 +32,5 @@ __all__ = [
     "DeepSandboxMixin",
     "DeepModelSwitcherMixin",
     "DeepCheckpointMixin",
-    "DeepToolManagerMixin",
     "DeepStopHandlerMixin",
 ]

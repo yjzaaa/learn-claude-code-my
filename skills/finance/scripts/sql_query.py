@@ -112,11 +112,33 @@ def run_sql_query(sql: str, limit: int = 200) -> str:
 
     # 标准变量：DB_HOST / DB_NAME / DB_USER / DB_PASSWORD / DB_PORT
     # 兼容旧变量：database_url / database_name / database_username / database_password
-    host = os.getenv("DB_HOST") or os.getenv("DB_SERVER") or os.getenv("database_url", "localhost")
-    database = os.getenv("DB_NAME") or os.getenv("database_name", "cost_allocation")
-    username = os.getenv("DB_USER") or os.getenv("database_username", "postgres")
-    password = os.getenv("DB_PASSWORD") or os.getenv("database_password")
-    port = os.getenv("DB_PORT") or os.getenv("database_port", "5432")
+    # 兼容 FINANCE_DB_* 前缀（容器环境）
+    host = (
+        os.getenv("DB_HOST")
+        or os.getenv("FINANCE_DB_HOST")
+        or os.getenv("DB_SERVER")
+        or os.getenv("database_url", "localhost")
+    )
+    database = (
+        os.getenv("DB_NAME")
+        or os.getenv("FINANCE_DB_NAME")
+        or os.getenv("database_name", "cost_allocation")
+    )
+    username = (
+        os.getenv("DB_USER")
+        or os.getenv("FINANCE_DB_USER")
+        or os.getenv("database_username", "postgres")
+    )
+    password = (
+        os.getenv("DB_PASSWORD")
+        or os.getenv("FINANCE_DB_PASSWORD")
+        or os.getenv("database_password")
+    )
+    port = (
+        os.getenv("DB_PORT")
+        or os.getenv("FINANCE_DB_PORT")
+        or os.getenv("database_port", "5432")
+    )
     db_driver = (os.getenv("DB_DRIVER") or "").strip().lower()
 
     missing = []

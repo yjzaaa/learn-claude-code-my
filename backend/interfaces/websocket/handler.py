@@ -31,6 +31,7 @@ async def handle_websocket(websocket: WebSocket, client_id: str) -> None:
 
     # 创建消息缓冲区
     buffer = await _get_or_create_buffer(client_id, websocket)
+    logger.info(f"[WS] Buffer created for {client_id}, buffer_id={id(buffer)}, container_buffers={len(container.state.client_buffers)}")
 
     try:
         while True:

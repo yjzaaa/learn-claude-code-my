@@ -7,7 +7,6 @@ Todo HITL - Todo 任务管理
 from __future__ import annotations
 
 import dataclasses
-import os
 import time
 from dataclasses import dataclass, field
 from threading import RLock
@@ -17,6 +16,7 @@ from loguru import logger
 
 from backend.domain.models.api import TodoUpdatedEvent, TodoReminderEvent, TodoStateDTO
 from backend.domain.models.shared.types import TodoItemDict
+from backend.infrastructure.config import config
 
 
 @dataclass
@@ -61,9 +61,9 @@ class TodoStore:
     """管理对话级别的 Todo 状态"""
 
     # 配置常量
-    MAX_ITEMS = int(os.getenv("TODO_MAX_ITEMS", "20"))
+    MAX_ITEMS = config.todo.max_items
     VALID_STATUSES = {"pending", "in_progress", "completed"}
-    TODO_REMINDER_ROUNDS = int(os.getenv("TODO_REMINDER_ROUNDS", "3"))
+    TODO_REMINDER_ROUNDS = config.todo.reminder_rounds
 
     def __init__(self):
         self._lock = RLock()
@@ -281,5 +281,4 @@ todo_store = TodoStore()
 
 def is_todo_hook_enabled() -> bool:
     """检查是否启用 Todo Hook"""
-    raw = os.getenv("ENABLE_TODO_HOOK", "1")
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    return config.todo.enable_hook

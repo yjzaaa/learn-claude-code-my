@@ -11,6 +11,8 @@ from backend.domain.models.shared.config import ProviderConfig
 from backend.infrastructure.logging import get_logger
 from backend.infrastructure.providers import BaseProvider
 
+from backend.infrastructure.config import config
+
 from .discovery import discover_available_models
 from .factory import create_model_instance
 
@@ -92,15 +94,15 @@ class ProviderManager:
         base_url = self._config.base_url
 
         if not api_key:
-            if os.getenv("DEEPSEEK_API_KEY"):
-                api_key = os.getenv("DEEPSEEK_API_KEY")
+            if config.api_keys.deepseek:
+                api_key = config.api_keys.deepseek
                 model = self._config.model or "deepseek/deepseek-chat"
-            elif os.getenv("OPENAI_API_KEY"):
-                api_key = os.getenv("OPENAI_API_KEY")
+            elif config.api_keys.openai:
+                api_key = config.api_keys.openai
                 model = self._config.model or "gpt-4o"
-                base_url = base_url or os.getenv("OPENAI_BASE_URL")
-            elif os.getenv("ANTHROPIC_API_KEY"):
-                api_key = os.getenv("ANTHROPIC_API_KEY")
+                base_url = base_url or config.api_keys.openai_base_url
+            elif config.api_keys.anthropic:
+                api_key = config.api_keys.anthropic
                 model = self._config.model or "claude-sonnet-4-6"
 
         if api_key:
@@ -164,7 +166,7 @@ class ProviderManager:
 
     def _resolve_model_config(self) -> ModelConfig:
         """解析模型配置"""
-        model_id = os.getenv("MODEL_ID", "")
+        model_id = config.model.id
         api_key, provider, base_url = self._detect_provider_from_env(model_hint=model_id)
 
         if not api_key:
@@ -220,7 +222,7 @@ class ProviderManager:
         """解析最终模型名称"""
         if model_id:
             return model_id
-        provider_model = os.getenv(f"{provider.upper()}_MODEL", "").strip()
+        provider_model = config.model.id.strip()
         if provider_model:
             return provider_model
         return self._DEFAULT_MODELS.get(provider, "unknown")

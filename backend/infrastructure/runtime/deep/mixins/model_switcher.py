@@ -78,17 +78,19 @@ class DeepModelSwitcherMixin:
             self._model_name = selected_model
 
             # 重新创建 agent builder
-            project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+            project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
             skills_dir = project_root / "skills"
 
             # 创建 backend（与 _do_initialize 保持一致）
-            # 默认使用本地 shell backend
-            from backend.infrastructure.runtime.deep.services.windows_shell_backend import (
-                WindowsShellBackend,
+            from backend.infrastructure.runtime.deep.services.universal_shell_backend import (
+                create_universal_backend,
             )
 
-            backend = WindowsShellBackend(
-                root_dir=str(skills_dir), virtual_mode=True, inherit_env=True
+            backend = create_universal_backend(
+                root_dir=str(skills_dir),
+                virtual_root="/workspace/skills",
+                virtual_mode=True,
+                inherit_env=True,
             )
 
             # 转换工具格式

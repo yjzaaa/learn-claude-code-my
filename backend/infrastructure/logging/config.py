@@ -24,16 +24,18 @@ if TYPE_CHECKING:
 LOG_FORMAT = "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
 JSON_FORMAT = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {extra} | {message}"
 
-# 从环境变量读取配置
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-LOG_FILE = os.getenv("LOG_FILE", "logs/app.log")
-LOG_ROTATION = os.getenv("LOG_ROTATION", "10 MB")
-LOG_RETENTION = os.getenv("LOG_RETENTION", "7 days")
+# 从统一配置读取
+from backend.infrastructure.config import config
+
+LOG_LEVEL = config.logging.level.upper()
+LOG_FILE = config.logging.file
+LOG_ROTATION = config.logging.rotation
+LOG_RETENTION = config.logging.retention
 
 # Deep Agent 日志配置
-DEEP_LOG_DIR = os.getenv("DEEP_LOG_DIR", "logs/deep")
-DEEP_LOG_ROTATION = os.getenv("DEEP_LOG_ROTATION", "100 MB")
-DEEP_LOG_RETENTION = os.getenv("DEEP_LOG_RETENTION", "3 days")
+DEEP_LOG_DIR = config.logging.deep_dir
+DEEP_LOG_ROTATION = config.logging.deep_rotation
+DEEP_LOG_RETENTION = config.logging.deep_retention
 
 
 class InterceptHandler(logging.Handler):
@@ -267,7 +269,7 @@ def setup_logging():
     )
 
     # 可选: JSON 格式输出
-    if os.getenv("LOG_JSON", "false").lower() == "true":
+    if config.logging.json_enabled:
         logger.add(
             str(log_path).replace(".log", ".json.log"),
             level=LOG_LEVEL,

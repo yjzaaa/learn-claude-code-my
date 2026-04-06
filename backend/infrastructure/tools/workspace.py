@@ -308,7 +308,7 @@ class WorkspaceOps:
             "bash is restricted to scripts in BASH_SCRIPT_WHITELIST (e.g. python .workspace/run.py or python skills/finance/scripts/sql_query.py)",
         )
 
-    def run_bash(self, command: str, timeout: int = 120) -> str:
+    def run_bash(self, command: str, timeout: int = 60) -> str:
         """执行 shell 命令并返回截断后的输出。"""
         allowed, reason = self.command_guard.is_allowed(command)
         if not allowed:
@@ -355,7 +355,7 @@ class WorkspaceOps:
             output = (result.stdout + result.stderr).strip()
             return output[:50000] if output else "(no output)"
         except subprocess.TimeoutExpired:
-            return f"Error: Timeout ({timeout}s)"
+            return f"Error: Command timed out after {timeout}s. For long-running commands, consider running in background or increasing timeout."
 
     def run_read(self, path: str, limit: Optional[int] = None) -> str:
         """读取文件内容，可选按行数限制并提示剩余行数。"""
@@ -417,7 +417,7 @@ class WorkspaceOps:
         include_read: bool = True,
         include_write: bool = True,
         include_edit: bool = True,
-        bash_timeout: int = 120,
+        bash_timeout: int = 60,
     ) -> list[Callable[..., Any]]:
         """构建默认工具函数列表（已带 @tool 标记）。"""
         from .toolkit import tool

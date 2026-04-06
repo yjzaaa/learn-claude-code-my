@@ -52,16 +52,16 @@ class Dialog:
     @classmethod
     def create(cls, title: Optional[str] = None) -> "Dialog":
         """创建新对话"""
-        import os
-        # 从环境变量获取默认模型
-        default_model = os.getenv("MODEL_ID", "")
+        # 从配置获取默认模型
+        from backend.infrastructure.config import config
+        default_model = config.model.id
         return cls(title=title, selected_model_id=default_model or None)
 
     @classmethod
     def from_user_input(cls, user_input: str) -> "Dialog":
         """从用户输入创建对话"""
-        import os
-        default_model = os.getenv("MODEL_ID", "")
+        from backend.infrastructure.config import config
+        default_model = config.model.id
         dialog = cls.create(title=user_input[:50])
         dialog.selected_model_id = default_model or None
         dialog.add_human_message(user_input)

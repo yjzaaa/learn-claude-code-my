@@ -23,13 +23,13 @@ class EventStreamHandler:
     - 构建 AgentEvent
     """
 
-    def __init__(self, dialog_id: str, message_id: str):
+    def __init__(self: "EventStreamHandler", dialog_id: str, message_id: str) -> None:
         self.dialog_id = dialog_id
         self.message_id = message_id
         self.state = StreamingState()
 
     async def process_stream(
-        self,
+        self: "EventStreamHandler",
         stream_iterator: AsyncIterator[Any],
     ) -> AsyncIterator[AgentEvent]:
         """处理流式响应
@@ -45,7 +45,7 @@ class EventStreamHandler:
             for event in events:
                 yield event
 
-    def _process_raw_event(self, raw_event: Any) -> list:
+    def _process_raw_event(self: "EventStreamHandler", raw_event: Any) -> list:
         """处理单个原始事件"""
         events = []
 
@@ -91,7 +91,7 @@ class EventStreamHandler:
 
         return events
 
-    def _extract_message_chunk(self, raw_event: Any) -> Any | None:
+    def _extract_message_chunk(self: "EventStreamHandler", raw_event: Any) -> Any | None:
         """提取消息块"""
         if isinstance(raw_event, tuple) and len(raw_event) >= 2:
             msg_chunk = raw_event[1]
@@ -100,7 +100,7 @@ class EventStreamHandler:
             return msg_chunk
         return raw_event
 
-    def _extract_content(self, msg_chunk: Any) -> str:
+    def _extract_content(self: "EventStreamHandler", msg_chunk: Any) -> str:
         """提取内容"""
         content = getattr(msg_chunk, "content", "")
         if not content:
@@ -116,13 +116,13 @@ class EventStreamHandler:
             return "".join(parts)
         return str(content)
 
-    def _extract_reasoning(self, msg_chunk: Any) -> str:
+    def _extract_reasoning(self: "EventStreamHandler", msg_chunk: Any) -> str:
         """提取推理内容"""
         additional_kwargs = getattr(msg_chunk, "additional_kwargs", {})
         reasoning = additional_kwargs.get("reasoning_content", "")
         return str(reasoning) if reasoning else ""
 
-    def _build_tool_result_event(self, msg_chunk: Any) -> AgentEvent:
+    def _build_tool_result_event(self: "EventStreamHandler", msg_chunk: Any) -> AgentEvent:
         """构建工具结果事件"""
         return AgentEvent(
             type="tool_result",
@@ -134,7 +134,7 @@ class EventStreamHandler:
             metadata={"tool_call_id": getattr(msg_chunk, "tool_call_id", "unknown")},
         )
 
-    def _build_tool_call_event(self, tc: dict) -> AgentEvent:
+    def _build_tool_call_event(self: "EventStreamHandler", tc: dict) -> AgentEvent:
         """构建工具调用事件"""
         tc_args = tc.get("args", {})
         if isinstance(tc_args, str):
@@ -158,7 +158,9 @@ class EventStreamHandler:
             },
         )
 
-    def build_completion_event(self, model_name: str, provider: str) -> AgentEvent:
+    def build_completion_event(
+        self: "EventStreamHandler", model_name: str, provider: str
+    ) -> AgentEvent:
         """构建完成事件"""
         return AgentEvent(
             type="message_complete",

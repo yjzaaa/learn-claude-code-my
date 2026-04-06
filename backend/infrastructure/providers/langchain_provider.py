@@ -11,6 +11,7 @@ from typing import Any
 
 from backend.domain.models.shared import StreamChunk
 from backend.domain.models.shared.types import MessageDict
+from backend.infrastructure.config import config
 from backend.infrastructure.logging import get_logger
 from backend.infrastructure.protocols.provider import BaseProvider
 
@@ -253,35 +254,35 @@ def create_langchain_provider_from_env() -> LangChainProvider | None:
         LangChainProvider 实例，或 None（如果没有配置）
     """
     # 优先级: Anthropic > OpenAI > DeepSeek > Kimi
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if config.api_keys.anthropic:
         return LangChainProvider(
             model="claude-sonnet-4-6",
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            base_url=os.getenv("ANTHROPIC_BASE_URL"),
+            api_key=config.api_keys.anthropic,
+            base_url=config.api_keys.anthropic_base_url,
             default_model="claude-sonnet-4-6",
         )
 
-    if os.getenv("OPENAI_API_KEY"):
+    if config.api_keys.openai:
         return LangChainProvider(
             model="gpt-4o",
-            api_key=os.getenv("OPENAI_API_KEY"),
-            base_url=os.getenv("OPENAI_BASE_URL"),
+            api_key=config.api_keys.openai,
+            base_url=config.api_keys.openai_base_url,
             default_model="gpt-4o",
         )
 
-    if os.getenv("DEEPSEEK_API_KEY"):
+    if config.api_keys.deepseek:
         return LangChainProvider(
             model="deepseek-chat",
-            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            api_key=config.api_keys.deepseek,
             base_url="https://api.deepseek.com/v1",
             default_model="deepseek-chat",
         )
 
-    if os.getenv("MOONSHOT_API_KEY") or os.getenv("KIMI_API_KEY"):
+    if config.api_keys.moonshot or config.api_keys.kimi:
         return LangChainProvider(
             model="kimi-k2.5",
-            api_key=os.getenv("MOONSHOT_API_KEY") or os.getenv("KIMI_API_KEY"),
-            base_url=os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1"),
+            api_key=config.api_keys.moonshot or config.api_keys.kimi,
+            base_url=config.api_keys.moonshot_base_url,
             default_model="kimi-k2.5",
         )
 

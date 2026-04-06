@@ -52,25 +52,22 @@ async def broadcast(event: Any) -> None:
     else:
         event_dict = event
 
-    # 通过事件总线发射（背压控制）
-    event_bus = container.event_bus
-    if event_bus and event_bus.is_running:
-        try:
-            class SimpleEvent:
-                def __init__(self, data):
-                    self.data = data
-                    self.event_type = data.get("type", "unknown")
-            await event_bus.emit(SimpleEvent(event_dict), timeout=1.0)
-        except Exception:
-            pass
+    # 【注意】不通过 event_bus 发射，避免循环引用
+    # EventHandlers 直接调用此函数发送 WebSocket 消息
 
     # 直接发送到 WebSocket 客户端
     dead_clients: list[str] = []
+    client_count = len(container.state.client_buffers)
+    # 流式消息使用 debug 级别，避免刷屏
+    log_func = logger.debug if event_dict.get('type') == 'stream:delta' else logger.info
+    log_func(f"[Broadcast] Broadcasting to {client_count} clients: type={event_dict.get('type')}")
     for client_id, buffer in list(container.state.client_buffers.items()):
         try:
             success = await buffer.send(event_dict)
-            if not success:
-                logger.debug(f"[Broadcast] Message dropped for client {client_id}")
+            if success:
+                logger.debug(f"[Broadcast] Message sent to {client_id}: type={event_dict.get('type')}")
+            else:
+                logger.warning(f"[Broadcast] Message dropped for client {client_id}")
         except Exception as e:
             logger.warning(f"[Broadcast] Failed to send to {client_id}: {e}")
             dead_clients.append(client_id)

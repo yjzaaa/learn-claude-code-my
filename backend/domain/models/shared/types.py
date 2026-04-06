@@ -269,6 +269,7 @@ class WSStatusChangeEvent(TypedDict):
     dialog_id: str
     data: dict[str, str]  # { "from": ..., "to": ... }
     timestamp: int
+    sequence: int  # 序列号，用于确保消息唯一性
 
 
 def make_status_change(dialog_id: str, from_: str, to: str, timestamp: int) -> WSStatusChangeEvent:
@@ -289,6 +290,7 @@ class WSSnapshotEvent(TypedDict):
     type: str
     data: WSDialogSnapshot
     timestamp: int
+    sequence: int  # 序列号，用于确保消息唯一性
 
 
 class WSDeltaContent(TypedDict):
@@ -304,6 +306,7 @@ class WSStreamDeltaEvent(TypedDict):
     message_id: str
     delta: WSDeltaContent
     timestamp: int
+    sequence: int  # 序列号，用于确保消息唯一性
 
 
 class WSErrorDetail(TypedDict):
@@ -317,6 +320,7 @@ class WSErrorEvent(TypedDict):
     dialog_id: str
     error: WSErrorDetail
     timestamp: int
+    sequence: int  # 序列号，用于确保消息唯一性
 
 
 class WSRoundsLimitEvent(TypedDict):
@@ -325,6 +329,7 @@ class WSRoundsLimitEvent(TypedDict):
     dialog_id: str
     rounds: int
     timestamp: int
+    sequence: int  # 序列号，用于确保消息唯一性
 
 
 # ═══════════════════════════════════════════════════════════

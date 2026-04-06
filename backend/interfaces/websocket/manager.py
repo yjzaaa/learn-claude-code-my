@@ -1,15 +1,12 @@
 """
-WebSocket Manager - WebSocket 连接管理
+WebSocket Manager - WebSocket 事件格式化
 
-处理 WebSocket 连接、订阅和广播。
-使用 LangChain 标准格式进行消息序列化。
+【注意】广播已统一由 EventHandlers 处理
+此模块仅保留事件格式化功能，供参考使用
 """
 
-import json
-from typing import Any, Optional, Set, Union
-from fastapi import WebSocket, WebSocketDisconnect
+from typing import Any, Optional, Union
 
-from loguru import logger
 from langchain_core.messages import BaseMessage, message_to_dict
 from pydantic import BaseModel
 
@@ -17,10 +14,6 @@ from backend.domain.models.events.websocket import (
     WSSnapshotEvent,
     WSDialogSnapshot,
     WSDialogMetadata,
-    WSStreamDeltaEvent,
-    WSDeltaContent,
-    WSStreamStartEvent,
-    WSStreamEndEvent,
     WSStreamTruncatedEvent,
     WSAckEvent,
     WSErrorEvent,
@@ -31,81 +24,25 @@ from backend.domain.models.events.websocket import (
 )
 
 
-class ConnectionManager:
-    """WebSocket 连接管理器"""
-
-    def __init__(self) -> None:
-        self._dialog_subs: dict[str, Set[WebSocket]] = dict()
-        self._global_subs: Set[WebSocket] = set()
-
-    async def connect(self, websocket: WebSocket, dialog_id: Optional[str] = None) -> None:
-        """接受连接"""
-        await websocket.accept()
-        if dialog_id:
-            if dialog_id not in self._dialog_subs:
-                self._dialog_subs[dialog_id] = set()
-            self._dialog_subs[dialog_id].add(websocket)
-        else:
-            self._global_subs.add(websocket)
-
-    def subscribe_dialog(self, websocket: WebSocket, dialog_id: str) -> None:
-        """订阅特定对话"""
-        if dialog_id not in self._dialog_subs:
-            self._dialog_subs[dialog_id] = set()
-        self._dialog_subs[dialog_id].add(websocket)
-
-    def disconnect(self, websocket: WebSocket, dialog_id: Optional[str] = None) -> None:
-        """断开连接"""
-        if dialog_id and dialog_id in self._dialog_subs:
-            self._dialog_subs[dialog_id].discard(websocket)
-        else:
-            self._global_subs.discard(websocket)
-
-    async def broadcast_to_dialog(self, dialog_id: str, message: str) -> None:
-        """广播到特定对话的订阅者"""
-        if dialog_id not in self._dialog_subs:
-            return
-        disconnected: list[WebSocket] = []
-        for ws in list(self._dialog_subs[dialog_id]):
-            try:
-                await ws.send_text(message)
-            except Exception:
-                disconnected.append(ws)
-        for ws in disconnected:
-            self._dialog_subs[dialog_id].discard(ws)
-
-    async def broadcast(self, message: str) -> None:
-        """广播到所有订阅者"""
-        disconnected: list[WebSocket] = []
-        for ws in list(self._global_subs):
-            try:
-                await ws.send_text(message)
-            except Exception:
-                disconnected.append(ws)
-        for ws in disconnected:
-            self._global_subs.discard(ws)
-
-
 class WebSocketBroadcaster:
-    """WebSocket 事件广播器 - 使用 LangChain 标准格式"""
+    """WebSocket 事件广播器 - 使用 LangChain 标准格式
 
-    def __init__(self):
-        self._conn_mgr = ConnectionManager()
+    统一使用 broadcast.py 的缓冲广播系统。
+    """
 
-    @property
-    def connection_manager(self) -> ConnectionManager:
-        return self._conn_mgr
+    async def broadcast(self, event: Union[BaseModel, dict]) -> None:
+        """广播事件到 WebSocket 客户端
 
-    async def broadcast(self, event: Union[BaseModel, dict], dialog_id: Optional[str] = None) -> None:
-        """广播事件到 WebSocket 客户端"""
+        统一使用 broadcast.py 的广播系统（带缓冲和流量控制）
+        """
+        from backend.interfaces.websocket.broadcast import broadcast as _broadcast
+
         if isinstance(event, BaseModel):
-            text = event.model_dump_json(by_alias=True)
+            event_dict = event.model_dump(by_alias=True)
         else:
-            text = json.dumps(event, default=str)
-        if dialog_id:
-            await self._conn_mgr.broadcast_to_dialog(dialog_id, text)
-        else:
-            await self._conn_mgr.broadcast(text)
+            event_dict = event
+
+        await _broadcast(event_dict)
 
     async def broadcast_snapshot(
         self,
@@ -131,7 +68,7 @@ class WebSocketBroadcaster:
             data=snapshot,
             timestamp=self._ts()
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_delta(
         self,
@@ -160,7 +97,7 @@ class WebSocketBroadcaster:
             },
             "timestamp": self._ts()
         }
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_status_change(
         self,
@@ -176,7 +113,7 @@ class WebSocketBroadcaster:
             "to": to_status,
             "timestamp": self._ts(),
         })
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_stream_start(
         self,
@@ -203,7 +140,7 @@ class WebSocketBroadcaster:
             "metadata": metadata,
             "timestamp": self._ts()
         }
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_stream_end(
         self,
@@ -228,7 +165,7 @@ class WebSocketBroadcaster:
             "finalContent": final_content,  # camelCase 匹配前端
             "timestamp": self._ts()
         }
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_stream_truncated(
         self,
@@ -243,7 +180,7 @@ class WebSocketBroadcaster:
             reason=reason,
             timestamp=self._ts()
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_ack(
         self,
@@ -258,7 +195,7 @@ class WebSocketBroadcaster:
             message=message_to_dict(message) if message else None,
             timestamp=self._ts()
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_error(
         self,
@@ -272,7 +209,7 @@ class WebSocketBroadcaster:
             error=WSErrorDetail(code=code, message=message),
             timestamp=self._ts()
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_message_added(
         self,
@@ -285,7 +222,7 @@ class WebSocketBroadcaster:
             message=message_to_dict(message),
             timestamp=self._ts()
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     async def broadcast_node_update(
         self,
@@ -300,7 +237,7 @@ class WebSocketBroadcaster:
             messages=messages,
             timestamp=self._ts(),
         )
-        await self.broadcast(event, dialog_id)
+        await self.broadcast(event)
 
     @staticmethod
     def _ts() -> int:

@@ -86,9 +86,9 @@ class SessionLifecycleManager:
         if len(self._sessions) >= self._max_sessions:
             await self._cleanup_lru()
 
-        import os
+        from backend.infrastructure.config import config
 
-        default_model = os.getenv("MODEL_ID", "")
+        default_model = config.model.id
 
         session = DialogSession(
             dialog_id=dialog_id,

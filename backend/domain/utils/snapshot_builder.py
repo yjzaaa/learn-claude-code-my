@@ -3,7 +3,6 @@
 统一构建对话快照的逻辑，消除 manager.py 和 dialog_service.py 中的重复代码。
 """
 
-import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -155,8 +154,9 @@ class SnapshotBuilder:
             model_config = pm.get_model_config()
             return model_config.model
         except Exception:
-            # 回退到环境变量
-            return os.getenv("MODEL_ID", "unknown")
+            # 回退到配置
+            from backend.infrastructure.config import config
+            return config.model.id
 
     @staticmethod
     def transform_message_for_ws(msg_dict: Dict[str, Any]) -> Dict[str, Any]:

@@ -13,6 +13,7 @@ from typing import Any
 from loguru import logger
 
 from backend.domain.models.events.agent import AgentEvent
+from backend.infrastructure.config import config
 from backend.infrastructure.llm_adapter import LLMResponseAdapterFactory
 
 
@@ -223,8 +224,8 @@ class DeepMessageHandlerMixin:
             ai_message_id = message_id or f"msg_{id(message)}"
 
         messages = self._merge_system_messages(messages)
-        recursion_limit = int(os.getenv("AGENT_RECURSION_LIMIT", "100").strip())
-        config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
+        recursion_limit = config.agent.recursion_limit
+        agent_config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
 
         self._fire_log_msg("debug", f"User message: {message[:200]}", dialog_id)
 
@@ -242,7 +243,7 @@ class DeepMessageHandlerMixin:
 
         try:
             async for raw_event in self._agent.astream(
-                {"messages": messages}, config, stream_mode=["messages"]
+                {"messages": messages}, agent_config, stream_mode=["messages"]
             ):
                 # 检查是否请求停止
                 if self.is_stop_requested(dialog_id):

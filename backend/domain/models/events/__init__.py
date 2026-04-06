@@ -47,6 +47,14 @@ from .agent_events import (
     ToolCallResultEvent,
 )
 
+from .memory_events import (
+    MemoryCreatedEvent,
+    MemoryExtractedEvent,
+    MemoryRetrievedEvent,
+    MemoryUpdatedEvent,
+    MemoryDeletedEvent,
+)
+
 __all__ = [
     # Base
     "BaseEvent",
@@ -85,4 +93,10 @@ __all__ = [
     "AgentErrorEvent",
     "ToolCallRequest",
     "ToolCallResultEvent",
+    # Memory Events
+    "MemoryCreatedEvent",
+    "MemoryExtractedEvent",
+    "MemoryRetrievedEvent",
+    "MemoryUpdatedEvent",
+    "MemoryDeletedEvent",
 ]
