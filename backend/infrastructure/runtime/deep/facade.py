@@ -4,29 +4,26 @@
 这是主要入口，协调各个子模块。
 """
 
-import asyncio
-import os
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator, Any, Optional
+from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel
 
-from backend.infrastructure.runtime.base.runtime import AbstractAgentRuntime, ToolCache
-from backend.domain.models.dialog.dialog import Dialog
-from backend.domain.models.shared.config import EngineConfig
 from backend.domain.models.shared import AgentEvent
+from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.llm_adapter import (
     LLMResponseAdapterFactory,
 )
+from backend.infrastructure.runtime.base.runtime import AbstractAgentRuntime, ToolCache
 from backend.infrastructure.services import ProviderManager
-from .types import DeepAgentConfig, StreamingState
+
 from .agent import AgentLifecycleManager
+from .agents import AgentBuilder
+from .checkpoint import CheckpointManager
 from .events import EventStreamHandler
 from .model import ModelSwitchManager
-from .checkpoint import CheckpointManager
-
-from .agents import AgentBuilder, MiddlewareStack
+from .types import DeepAgentConfig
 
 
 class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
@@ -39,26 +36,26 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
     - CheckpointManager: checkpoint 管理
     """
 
-    def __init__(self, agent_id: str, provider_manager: Optional[ProviderManager] = None):
+    def __init__(self, agent_id: str, provider_manager: ProviderManager | None = None):
         super().__init__(agent_id)
 
         self._agent: Any = None
         self._checkpointer: Any = None
         self._store: Any = None
         self._adapter_factory = LLMResponseAdapterFactory()
-        self._model_name: Optional[str] = None
+        self._model_name: str | None = None
         self._provider_manager = provider_manager
 
         # 子模块
-        self._agent_mgr: Optional[AgentLifecycleManager] = None
-        self._model_switcher: Optional[ModelSwitchManager] = None
-        self._checkpoint_mgr: Optional[CheckpointManager] = None
+        self._agent_mgr: AgentLifecycleManager | None = None
+        self._model_switcher: ModelSwitchManager | None = None
+        self._checkpoint_mgr: CheckpointManager | None = None
 
         # 运行时状态
         self._backend: Any = None
 
         # SessionManager（由外部注入或延迟创建）
-        self._session_mgr: Optional[Any] = None
+        self._session_mgr: Any | None = None
 
         logger.debug(f"[DeepAgentRuntime] Created: {agent_id}")
 
@@ -67,20 +64,19 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         return "deep"
 
     @property
-    def session_manager(self) -> Optional[Any]:
+    def session_manager(self) -> Any | None:
         """获取 SessionManager 实例"""
         # 返回父类的 session_manager（通过 ManagerAwareRuntime 继承）
-        return getattr(self, '_session_mgr', None)
+        return getattr(self, "_session_mgr", None)
 
     async def _do_initialize(self) -> None:
         """初始化 Runtime"""
-        from dotenv import load_dotenv
-
-        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path, override=True)
-
-        os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+        # 必须提供 ProviderManager
+        if not self._provider_manager:
+            raise RuntimeError(
+                "ProviderManager is required for DeepAgentRuntime. "
+                "All model configuration must be provided through ProviderManager."
+            )
 
         config = self._config
         if config is None:
@@ -109,9 +105,6 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         self._agent_mgr.load_skill_scripts()
         self._backend = self._create_backend()
 
-        if os.getenv("AGENT_SANDBOX", "local") == "docker":
-            self._agent_mgr.proxy_sandbox_tools(self._backend)
-
         # 创建模型和 Agent
         model = await self._create_model()
         self._agent = self._build_agent(model)
@@ -129,11 +122,22 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         skills_value = config_dict.get("skills", [])
         if isinstance(skills_value, dict) and skills_value.get("skills_dir"):
             import os as os_module
-            skills_dir = skills_value["skills_dir"]
-            skills_value = [d for d in os_module.listdir(skills_dir)
-                           if os_module.path.isdir(os_module.path.join(skills_dir, d))] if os_module.path.exists(skills_dir) else []
 
-        model = self._provider_manager.active_model if self._provider_manager else os.getenv("MODEL_ID", "claude-sonnet-4-6")
+            skills_dir = skills_value["skills_dir"]
+            skills_value = (
+                [
+                    d
+                    for d in os_module.listdir(skills_dir)
+                    if os_module.path.isdir(os_module.path.join(skills_dir, d))
+                ]
+                if os_module.path.exists(skills_dir)
+                else []
+            )
+
+        # 从 ProviderManager 获取模型名称
+        if not self._provider_manager:
+            raise RuntimeError("ProviderManager is required")
+        model = self._provider_manager.active_model
 
         return DeepAgentConfig(
             name=config_dict.get("name", self._agent_id),
@@ -149,36 +153,26 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         """创建 backend"""
         project_root = Path(__file__).resolve().parent.parent.parent.parent
         skills_dir = project_root / "skills"
-        agent_sandbox = os.getenv("AGENT_SANDBOX", "local").strip().lower()
 
-        if agent_sandbox == "docker":
-            from .deep.services.docker_sandbox_backend import create_sandbox_backend
-            backend = create_sandbox_backend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
-            logger.info(f"[DeepAgentRuntime] Using sandbox backend")
-        else:
-            from .deep.services.windows_shell_backend import WindowsShellBackend
-            backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
-            logger.info(f"[DeepAgentRuntime] Using local shell backend")
+        # 默认使用本地 shell backend
+        # 注：sandbox 模式应通过 ProviderManager 配置传递
+        from .deep.services.windows_shell_backend import WindowsShellBackend
+
+        backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+        logger.info("[DeepAgentRuntime] Using local shell backend")
 
         return backend
 
     async def _create_model(self) -> Any:
-        """创建模型实例"""
-        if self._provider_manager:
-            model_config = self._provider_manager.get_model_config()
-            return await self._provider_manager.create_model_instance(model_config.model)
+        """创建模型实例 - 必须通过 ProviderManager"""
+        if not self._provider_manager:
+            raise RuntimeError(
+                "ProviderManager is required for creating model instance. "
+                "All model configuration must be provided through ProviderManager."
+            )
 
-        # 回退：直接创建
-        import os as os_module
-        model_name = os_module.getenv("MODEL_ID", "claude-sonnet-4-6")
-        api_key = os_module.getenv("ANTHROPIC_API_KEY") or ""
-
-        try:
-            from langchain_community.chat_models import ChatLiteLLM
-            return ChatLiteLLM(model=model_name, api_key=api_key, temperature=0.7)
-        except Exception:
-            from langchain_anthropic import ChatAnthropic
-            return ChatAnthropic(model=model_name, api_key=api_key, temperature=0.7)
+        model_config = self._provider_manager.get_model_config()
+        return await self._provider_manager.create_model_instance(model_config.model)
 
     def _build_agent(self, model: Any) -> Any:
         """构建 Agent"""
@@ -235,7 +229,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """发送消息，返回流式事件"""
         if self._agent is None:
@@ -254,13 +248,13 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
 
         # 构建消息
         from backend.domain.models.events.event_models import UserMessageModel
+
         user_msg = UserMessageModel(role="user", content=message)
         messages = [user_msg.model_dump()]
         messages = self._merge_system_messages(messages)
 
-        # 配置
-        recursion_limit = int(os.getenv("AGENT_RECURSION_LIMIT", "100"))
-        config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": recursion_limit}
+        # 配置 - 使用默认 recursion_limit
+        config = {"configurable": {"thread_id": dialog_id}, "recursion_limit": 100}
 
         # 处理流
         handler = EventStreamHandler(dialog_id, message_id or f"msg_{id(message)}")
@@ -281,7 +275,7 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
                     metadata={
                         "model": handler.state.actual_model_name or self._model_name or "unknown",
                         "reasoning_content": handler.state.accumulated_reasoning,
-                    }
+                    },
                 )
 
             # Checkpoint 快照
@@ -291,7 +285,10 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
 
             yield handler.build_completion_event(
                 handler.state.actual_model_name or self._model_name or "unknown",
-                self._adapter_factory.detect_provider(handler.state.actual_model_name or self._model_name or "") or "unknown"
+                self._adapter_factory.detect_provider(
+                    handler.state.actual_model_name or self._model_name or ""
+                )
+                or "unknown",
             )
 
         except Exception as e:
@@ -342,13 +339,15 @@ class DeepAgentRuntime(AbstractAgentRuntime[DeepAgentConfig]):
         """清理资源"""
         logger.info(f"[DeepAgentRuntime] Stopped: {self._agent_id}")
 
-    async def stop(self, dialog_id: Optional[str] = None) -> None:
+    async def stop(self, dialog_id: str | None = None) -> None:
         """停止 Agent"""
-        if self._agent is not None and hasattr(self._agent, 'stop'):
+        if self._agent is not None and hasattr(self._agent, "stop"):
             await self._agent.stop()
         logger.info(f"[DeepAgentRuntime] Stopped: {self._agent_id}")
 
-    def register_tool(self, name: str, handler: Any, description: str, parameters_schema: Optional[dict] = None) -> None:
+    def register_tool(
+        self, name: str, handler: Any, description: str, parameters_schema: dict | None = None
+    ) -> None:
         """注册工具"""
         if self._agent_mgr:
             self._agent_mgr.register_tool(name, handler, description, parameters_schema)

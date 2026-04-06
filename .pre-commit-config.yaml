@@ -16,11 +16,11 @@ repos:
         name: ruff-lint
         args: [--fix, --exit-non-zero-on-fix]
         files: ^backend/.*\.py$
-        exclude: ^(\.venv|logs|tmp|web|workspace)/
+        exclude: ^(venv|logs|tmp|web|workspace)/
       - id: ruff-format
         name: ruff-format
         files: ^backend/.*\.py$
-        exclude: ^(\.venv|logs|tmp|web|workspace)/
+        exclude: ^(venv|logs|tmp|web|workspace)/
 
   # ═════════════════════════════════════════════════════════════════
   # MyPy - Static type checking
@@ -77,7 +77,7 @@ repos:
     hooks:
       - id: check-bare-dicts
         name: Check for bare dict literals
-        entry: .venv-new/Scripts/python.exe scripts/check_bare_dicts.py
+        entry: venv/Scripts/python.exe scripts/check_bare_dicts.py
         language: script
         files: ^backend/.*\.py$
         exclude: ^(\.venv|logs|tmp|web|workspace|tests)/

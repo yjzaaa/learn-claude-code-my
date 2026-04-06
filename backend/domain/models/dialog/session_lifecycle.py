@@ -4,19 +4,21 @@
 """
 
 import asyncio
-from typing import Dict, Optional, Callable, Awaitable
+from collections.abc import Awaitable, Callable
 
 from backend.infrastructure.logging import get_logger
-from .session import DialogSession, SessionStatus, SessionMetadata
-from .exceptions import SessionNotFoundError, SessionFullError, InvalidTransitionError
+
+from .exceptions import InvalidTransitionError, SessionFullError, SessionNotFoundError
+from .session import DialogSession, SessionMetadata, SessionStatus
 
 logger = get_logger(__name__)
 
-EventHandler = Callable[['SessionEvent'], Awaitable[None]]
+EventHandler = Callable[["SessionEvent"], Awaitable[None]]
 
 
 class SessionEvent:
     """会话事件"""
+
     def __init__(self, type: str, dialog_id: str, data: dict):
         self.type = type
         self.dialog_id = dialog_id
@@ -33,12 +35,27 @@ class SessionLifecycleManager:
     """
 
     # 有效的状态转换矩阵
-    VALID_TRANSITIONS: Dict[SessionStatus, set[SessionStatus]] = {
+    VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.CREATING: {SessionStatus.ACTIVE, SessionStatus.ERROR},
-        SessionStatus.ACTIVE: {SessionStatus.STREAMING, SessionStatus.CLOSING, SessionStatus.ERROR},
-        SessionStatus.STREAMING: {SessionStatus.COMPLETED, SessionStatus.ERROR, SessionStatus.ACTIVE},
+        # ACTIVE 可以直接到 COMPLETED（处理无流式响应的情况）
+        SessionStatus.ACTIVE: {
+            SessionStatus.STREAMING,
+            SessionStatus.COMPLETED,
+            SessionStatus.CLOSING,
+            SessionStatus.ERROR,
+        },
+        SessionStatus.STREAMING: {
+            SessionStatus.COMPLETED,
+            SessionStatus.ERROR,
+            SessionStatus.ACTIVE,
+        },
         # 允许 COMPLETED -> STREAMING 用于新一轮对话
-        SessionStatus.COMPLETED: {SessionStatus.ACTIVE, SessionStatus.STREAMING, SessionStatus.CLOSING, SessionStatus.ERROR},
+        SessionStatus.COMPLETED: {
+            SessionStatus.ACTIVE,
+            SessionStatus.STREAMING,
+            SessionStatus.CLOSING,
+            SessionStatus.ERROR,
+        },
         SessionStatus.ERROR: {SessionStatus.ACTIVE, SessionStatus.CLOSING},
         SessionStatus.CLOSING: {SessionStatus.CLOSED},
         SessionStatus.CLOSED: set(),
@@ -48,19 +65,19 @@ class SessionLifecycleManager:
         self,
         max_sessions: int = 100,
         session_ttl_seconds: int = 1800,
-        event_handler: Optional[EventHandler] = None,
+        event_handler: EventHandler | None = None,
     ):
         self._max_sessions = max_sessions
         self._session_ttl = session_ttl_seconds
         self._event_handler = event_handler
 
-        self._sessions: Dict[str, DialogSession] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._sessions: dict[str, DialogSession] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
     async def create_session(
         self,
         dialog_id: str,
-        title: Optional[str] = None,
+        title: str | None = None,
     ) -> DialogSession:
         """创建新会话"""
         if dialog_id in self._sessions:
@@ -70,6 +87,7 @@ class SessionLifecycleManager:
             await self._cleanup_lru()
 
         import os
+
         default_model = os.getenv("MODEL_ID", "")
 
         session = DialogSession(
@@ -87,11 +105,11 @@ class SessionLifecycleManager:
         logger.info(f"[SessionLifecycle] Created session: {dialog_id}")
         return session
 
-    def get_session_sync(self, dialog_id: str) -> Optional[DialogSession]:
+    def get_session_sync(self, dialog_id: str) -> DialogSession | None:
         """同步获取会话"""
         return self._sessions.get(dialog_id)
 
-    async def get_session(self, dialog_id: str) -> Optional[DialogSession]:
+    async def get_session(self, dialog_id: str) -> DialogSession | None:
         """获取会话"""
         session = self._sessions.get(dialog_id)
         if session:
@@ -113,7 +131,7 @@ class SessionLifecycleManager:
         self,
         dialog_id: str,
         to_status: SessionStatus,
-        context: Optional[Dict] = None,
+        context: dict | None = None,
     ) -> DialogSession:
         """状态转换（带验证）"""
         async with self._get_lock(dialog_id):
@@ -123,7 +141,7 @@ class SessionLifecycleManager:
         self,
         dialog_id: str,
         to_status: SessionStatus,
-        context: Optional[Dict] = None,
+        context: dict | None = None,
     ) -> DialogSession:
         """内部状态转换"""
         session = await self._require_session(dialog_id)
@@ -135,11 +153,13 @@ class SessionLifecycleManager:
         session.status = to_status
         session.touch()
 
-        self._emit(SessionEvent(
-            type="status_change",
-            dialog_id=dialog_id,
-            data={"from": from_status.value, "to": to_status.value, **(context or {})},
-        ))
+        self._emit(
+            SessionEvent(
+                type="status_change",
+                dialog_id=dialog_id,
+                data={"from": from_status.value, "to": to_status.value, **(context or {})},
+            )
+        )
 
         logger.debug(f"[SessionLifecycle] {from_status.value} -> {to_status.value} for {dialog_id}")
         return session

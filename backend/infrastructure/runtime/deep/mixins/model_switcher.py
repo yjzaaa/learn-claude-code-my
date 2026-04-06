@@ -3,9 +3,9 @@
 从 deep_legacy.py 提取的模型动态切换逻辑。
 """
 
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 from loguru import logger
 
 from backend.infrastructure.services import ProviderManager
@@ -16,12 +16,12 @@ class DeepModelSwitcherMixin:
 
     _agent: Any
     _config: Any
-    _model_name: Optional[str]
+    _model_name: str | None
     _agent_id: str
     _checkpointer: Any
     _store: Any
     _tools: dict
-    _provider_manager: Optional[ProviderManager]
+    _provider_manager: ProviderManager | None
 
     async def _ensure_agent_for_dialog(self, dialog_id: str) -> bool:
         """
@@ -33,7 +33,9 @@ class DeepModelSwitcherMixin:
         Returns:
             如果重新创建了 agent 返回 True，否则返回 False
         """
-        logger.info(f"[_ensure_agent_for_dialog] Checking model for dialog={dialog_id}, current_model={self._model_name}")
+        logger.info(
+            f"[_ensure_agent_for_dialog] Checking model for dialog={dialog_id}, current_model={self._model_name}"
+        )
 
         if not self._provider_manager:
             logger.warning("[_ensure_agent_for_dialog] No provider_manager available")
@@ -42,17 +44,22 @@ class DeepModelSwitcherMixin:
         # 获取对话选择的模型
         try:
             from backend.infrastructure.container import container
+
             if not container.session_manager:
                 logger.warning("[_ensure_agent_for_dialog] No session_manager in container")
                 return False
 
             session = container.session_manager.get_session_sync(dialog_id)
             if not session:
-                logger.warning(f"[_ensure_agent_for_dialog] Session not found for dialog={dialog_id}")
+                logger.warning(
+                    f"[_ensure_agent_for_dialog] Session not found for dialog={dialog_id}"
+                )
                 return False
 
-            selected_model = getattr(session, 'selected_model_id', None)
-            logger.info(f"[_ensure_agent_for_dialog] Session found, selected_model={selected_model}, current={self._model_name}")
+            selected_model = getattr(session, "selected_model_id", None)
+            logger.info(
+                f"[_ensure_agent_for_dialog] Session found, selected_model={selected_model}, current={self._model_name}"
+            )
 
             if not selected_model:
                 logger.info(f"[_ensure_agent_for_dialog] No selected_model for dialog={dialog_id}")
@@ -75,16 +82,18 @@ class DeepModelSwitcherMixin:
             skills_dir = project_root / "skills"
 
             # 创建 backend（与 _do_initialize 保持一致）
-            agent_sandbox = os.getenv("AGENT_SANDBOX", "local").strip().lower()
-            if agent_sandbox == "docker":
-                from backend.infrastructure.runtime.deep.services.docker_sandbox_backend import create_sandbox_backend
-                backend = create_sandbox_backend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
-            else:
-                from backend.infrastructure.runtime.deep.services.windows_shell_backend import WindowsShellBackend
-                backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
+            # 默认使用本地 shell backend
+            from backend.infrastructure.runtime.deep.services.windows_shell_backend import (
+                WindowsShellBackend,
+            )
+
+            backend = WindowsShellBackend(
+                root_dir=str(skills_dir), virtual_mode=True, inherit_env=True
+            )
 
             # 转换工具格式
             from langchain_core.tools import StructuredTool
+
             adapted_tools = [
                 StructuredTool.from_function(
                     func=tool_info.handler,
@@ -96,6 +105,7 @@ class DeepModelSwitcherMixin:
 
             # 重新构建 agent
             from ..agents import AgentBuilder
+
             base_prompt = self._config.system or self._config.system_prompt or ""
             system_prompt = base_prompt + (
                 "\n\n## Environment\n"
@@ -128,6 +138,7 @@ class DeepModelSwitcherMixin:
         except Exception as e:
             logger.error(f"[DeepAgentRuntime] Failed to check/switch model: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
 
         return False

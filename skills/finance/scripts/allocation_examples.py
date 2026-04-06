@@ -3,7 +3,15 @@
 展示如何正确使用 RateNo 进行分摊计算
 """
 
-from finance.scripts.pg_allocation_utils import (
+import sys
+from pathlib import Path
+
+# 添加当前目录到模块搜索路径
+_scripts_dir = Path(__file__).parent
+if str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
+
+from pg_allocation_utils import (
     generate_hr_allocation_sql,
     generate_it_allocation_sql,
     generate_comparison_sql,
@@ -19,23 +27,23 @@ def example_hr_allocation_to_cc():
     print("=" * 60)
     print("示例：HR Allocation 分摊到 413001")
     print("=" * 60)
-    
+
     # 用户输入 4130011，但数据库中是 413001
     user_input_cc = "4130011"
     normalized_cc = normalize_cc(user_input_cc)
     print(f"\n用户输入 CC: {user_input_cc}")
     print(f"标准化后 CC: {normalized_cc}")
-    
+
     # 生成 SQL
     sql = generate_hr_allocation_sql(
         target_cc=user_input_cc,
         years=['FY25', 'FY26'],
         scenarios=['Actual', 'Budget1']
     )
-    
+
     print("\n生成的 SQL:")
     print(sql)
-    
+
     print("\n预期结果:")
     print("- FY25 Actual: -241,612.80")
     print("- FY26 BGT: -216,978.89")
@@ -44,7 +52,7 @@ def example_hr_allocation_to_cc():
     print("- FY25 Actual RateNo: 0.020800 (2.08%)")
     print("- FY26 BGT RateNo: 0.018000 (1.80%)")
     print("- 计算: Monthly Amount × RateNo (小数形式，无需除以100)")
-    
+
     return sql
 
 
@@ -53,16 +61,16 @@ def example_it_allocation():
     print("\n" + "=" * 60)
     print("示例：IT Allocation 分摊到 413001")
     print("=" * 60)
-    
+
     sql = generate_it_allocation_sql(
         target_cc="413001",
         years=['FY25', 'FY26'],
         scenarios=['Actual', 'Budget1']
     )
-    
+
     print("\n生成的 SQL:")
     print(sql)
-    
+
     return sql
 
 
@@ -71,17 +79,17 @@ def example_comparison():
     print("\n" + "=" * 60)
     print("示例：HR Allocation 对比分析（含变化率）")
     print("=" * 60)
-    
+
     sql = generate_comparison_sql(
         allocation_type='HR',
         target_cc='413001',
         years=['FY25', 'FY26'],
         scenarios=['Actual', 'Budget1']
     )
-    
+
     print("\n生成的 SQL:")
     print(sql)
-    
+
     return sql
 
 
@@ -90,7 +98,7 @@ def key_points():
     print("\n" + "=" * 60)
     print("关键要点总结")
     print("=" * 60)
-    
+
     points = [
         ("1. RateNo 处理", [
             "数据库中 RateNo 存储为小数字符串（如 '0.020800'）",
@@ -118,7 +126,7 @@ def key_points():
             "字符串使用单引号（如 'Budget1'）"
         ])
     ]
-    
+
     for title, items in points:
         print(f"\n{title}:")
         for item in items:

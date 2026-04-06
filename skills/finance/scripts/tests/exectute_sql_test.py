@@ -2,15 +2,18 @@ from pathlib import Path
 import sys
 import logging
 
-sys.path.append(str(Path(__file__).resolve().parents[4]))
+# 添加 scripts 目录到模块搜索路径
+_scripts_dir = Path(__file__).resolve().parent.parent
+if str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
 
-from skills.finance.scripts.dynamic_skill_sql import execute_sql
+from dynamic_skill_sql import execute_sql
 
 def test_execute_sql():
 
     # 模拟用户查询和意图分析结果
-    
-    sql = """SELECT * 
+
+    sql = """SELECT *
 FROM SSME_FI_InsightBot_CostDataBase
 where  [Function] = 'IT'"""
     # 执行 SQL 查询

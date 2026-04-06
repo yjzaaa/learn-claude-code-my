@@ -23,11 +23,12 @@ Example:
 """
 
 import asyncio
-from typing import Callable, Optional, List, Any
+from collections.abc import Callable
+from typing import Any
 
-from backend.domain.models.events import BaseEvent, EventPriority
-from backend.infrastructure.queue import InMemoryAsyncQueue, QueueFull
+from backend.domain.models.events import BaseEvent
 from backend.infrastructure.logging import get_logger
+from backend.infrastructure.queue import InMemoryAsyncQueue, QueueFull
 
 logger = get_logger(__name__)
 
@@ -63,12 +64,10 @@ class QueuedEventBus:
         """
         self.maxsize = maxsize
         self.num_consumers = num_consumers
-        self._event_queue: InMemoryAsyncQueue[BaseEvent] = InMemoryAsyncQueue(
-            maxsize=maxsize
-        )
-        self._subscribers: List[tuple[str, Callable[[BaseEvent], Any], Optional[List[str]]]] = []
+        self._event_queue: InMemoryAsyncQueue[BaseEvent] = InMemoryAsyncQueue(maxsize=maxsize)
+        self._subscribers: list[tuple[str, Callable[[BaseEvent], Any], list[str] | None]] = []
         self._running = False
-        self._consumer_tasks: List[asyncio.Task] = []
+        self._consumer_tasks: list[asyncio.Task] = []
         self._sub_id_counter = 0
 
     async def start(self) -> None:
@@ -78,8 +77,7 @@ class QueuedEventBus:
 
         self._running = True
         self._consumer_tasks = [
-            asyncio.create_task(self._consumer_loop())
-            for _ in range(self.num_consumers)
+            asyncio.create_task(self._consumer_loop()) for _ in range(self.num_consumers)
         ]
         logger.info(f"[QueuedEventBus] Started with {self.num_consumers} consumers")
 
@@ -118,7 +116,7 @@ class QueuedEventBus:
     def subscribe(
         self,
         callback: Callable[[BaseEvent], Any],
-        event_types: Optional[List[str]] = None,
+        event_types: list[str] | None = None,
     ) -> Callable[[], None]:
         """订阅事件
 
@@ -145,7 +143,7 @@ class QueuedEventBus:
 
         return unsubscribe
 
-    async def emit(self, event: BaseEvent, timeout: Optional[float] = None) -> bool:
+    async def emit(self, event: BaseEvent, timeout: float | None = None) -> bool:
         """发射事件（带背压控制）
 
         将事件加入队列，等待消费者处理。
@@ -165,9 +163,11 @@ class QueuedEventBus:
             raise RuntimeError("EventBus not started. Call start() first.")
 
         try:
+            logger.debug(f"[emit] Enqueuing event: type={event.event_type}")
             await self._event_queue.enqueue(event, timeout=timeout)
+            logger.debug(f"[emit] Event enqueued: type={event.event_type}")
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(f"[QueuedEventBus] Emit timeout for event {event.event_type}")
             return False
 
@@ -204,18 +204,39 @@ class QueuedEventBus:
 
     async def _dispatch(self, event: BaseEvent) -> None:
         """分发事件到匹配的订阅者"""
+        logger.debug(
+            f"[_dispatch] Dispatching event: type={event.event_type}, subscribers={len(self._subscribers)}"
+        )
+        matched = False
         for sub_id, callback, event_types in self._subscribers:
             # 检查事件类型匹配
             if event_types and event.event_type not in event_types:
+                logger.debug(
+                    f"[_dispatch] Skipping {sub_id}: {event.event_type} not in {event_types}"
+                )
                 continue
+            matched = True
+            logger.debug(f"[_dispatch] Calling {sub_id} for {event.event_type}")
 
             try:
                 if asyncio.iscoroutinefunction(callback):
                     await callback(event)
                 else:
                     callback(event)
+                logger.debug(f"[_dispatch] {sub_id} completed successfully")
             except Exception as e:
                 logger.exception(f"[QueuedEventBus] Handler error: {e}")
+        if not matched:
+            # 忽略 WebSocket 广播事件（这些事件直接发送到客户端，不需要 EventBus 处理）
+            if event.event_type not in (
+                "stream:delta",
+                "status:change",
+                "dialog:snapshot",
+                "agent:tool_call",
+                "agent:tool_result",
+                "error",
+            ):
+                logger.warning(f"[_dispatch] No subscriber matched for event {event.event_type}")
 
     @property
     def is_running(self) -> bool:

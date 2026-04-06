@@ -4,25 +4,34 @@
 这是主要入口，保持向后兼容。
 """
 
-from typing import Any, Optional, Dict, List
 import os
+from typing import Any
 
-from backend.infrastructure.providers import BaseProvider
-from backend.infrastructure.logging import get_logger
 from backend.domain.models.shared.config import ProviderConfig
+from backend.infrastructure.logging import get_logger
+from backend.infrastructure.providers import BaseProvider
 
-from .discovery import discover_available_models, ModelConfig as DiscoveredModelConfig
+from .discovery import discover_available_models
 from .factory import create_model_instance
 
-# 尝试导入 Provider 实现
+# 尝试导入 Provider 实现 - 优先使用 LangChain
 try:
-    from backend.infrastructure.providers.litellm import LiteLLMProvider, _LITELLM_AVAILABLE
+    from backend.infrastructure.providers.langchain_provider import LangChainProvider
+
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+
+try:
+    from backend.infrastructure.providers.litellm import _LITELLM_AVAILABLE, LiteLLMProvider
+
     LITELLM_AVAILABLE = _LITELLM_AVAILABLE
 except ImportError:
     LITELLM_AVAILABLE = False
 
 try:
     from backend.infrastructure.providers.openai_provider import OpenAIProvider
+
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
@@ -38,7 +47,7 @@ class ModelConfig:
         model: str,
         provider: str,
         api_key: str,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
     ):
         self.model = model
         self.provider = provider
@@ -66,12 +75,12 @@ class ProviderManager:
         "deepseek": "deepseek/deepseek-chat",
     }
 
-    def __init__(self, config: Optional[ProviderConfig] = None):
+    def __init__(self, config: ProviderConfig | None = None):
         self._config = config or ProviderConfig()
         self._providers: dict[str, BaseProvider] = {}
-        self._default_provider: Optional[BaseProvider] = None
-        self._resolved_config: Optional[ModelConfig] = None
-        self._discovered_models: Optional[list] = None
+        self._default_provider: BaseProvider | None = None
+        self._resolved_config: ModelConfig | None = None
+        self._discovered_models: list | None = None
         self._model_instance_cache: dict[str, Any] = {}
 
         self._init_default_provider()
@@ -83,19 +92,24 @@ class ProviderManager:
         base_url = self._config.base_url
 
         if not api_key:
-            if os.getenv('DEEPSEEK_API_KEY'):
-                api_key = os.getenv('DEEPSEEK_API_KEY')
-                model = self._config.model or 'deepseek/deepseek-chat'
-            elif os.getenv('OPENAI_API_KEY'):
-                api_key = os.getenv('OPENAI_API_KEY')
-                model = self._config.model or 'gpt-4o'
-                base_url = base_url or os.getenv('OPENAI_BASE_URL')
-            elif os.getenv('ANTHROPIC_API_KEY'):
-                api_key = os.getenv('ANTHROPIC_API_KEY')
-                model = self._config.model or 'claude-sonnet-4-6'
+            if os.getenv("DEEPSEEK_API_KEY"):
+                api_key = os.getenv("DEEPSEEK_API_KEY")
+                model = self._config.model or "deepseek/deepseek-chat"
+            elif os.getenv("OPENAI_API_KEY"):
+                api_key = os.getenv("OPENAI_API_KEY")
+                model = self._config.model or "gpt-4o"
+                base_url = base_url or os.getenv("OPENAI_BASE_URL")
+            elif os.getenv("ANTHROPIC_API_KEY"):
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                model = self._config.model or "claude-sonnet-4-6"
 
         if api_key:
-            if LITELLM_AVAILABLE:
+            if LANGCHAIN_AVAILABLE:
+                self._default_provider = LangChainProvider(
+                    model=model, api_key=api_key, base_url=base_url, default_model=model
+                )
+                logger.info(f"[ProviderManager] Created default provider with LangChain: {model}")
+            elif LITELLM_AVAILABLE:
                 self._default_provider = LiteLLMProvider(
                     model=model, api_key=api_key, base_url=base_url, default_model=model
                 )
@@ -113,14 +127,14 @@ class ProviderManager:
         self._providers[name] = provider
         logger.info(f"[ProviderManager] Registered provider: {name}")
 
-    def get(self, name: Optional[str] = None) -> Optional[BaseProvider]:
+    def get(self, name: str | None = None) -> BaseProvider | None:
         """获取 Provider"""
         if name is None:
             return self._default_provider
         return self._providers.get(name)
 
     @property
-    def default(self) -> Optional[BaseProvider]:
+    def default(self) -> BaseProvider | None:
         """默认 Provider"""
         return self._default_provider
 
@@ -136,9 +150,9 @@ class ProviderManager:
         """列出所有 Provider"""
         result = {}
         for name, provider in self._providers.items():
-            result[name] = getattr(provider, 'default_model', 'unknown')
-        if self._default_provider and 'default' not in result:
-            result['default'] = getattr(self._default_provider, 'default_model', 'unknown')
+            result[name] = getattr(provider, "default_model", "unknown")
+        if self._default_provider and "default" not in result:
+            result["default"] = getattr(self._default_provider, "default_model", "unknown")
         return result
 
     def get_model_config(self) -> ModelConfig:
@@ -160,13 +174,18 @@ class ProviderManager:
         model = self._resolve_model_name(model_id, provider)
         return ModelConfig(model=model, provider=provider, api_key=api_key, base_url=base_url)
 
-    def _detect_provider_from_env(self, model_hint: Optional[str] = None) -> tuple[str, str, Optional[str]]:
+    def _detect_provider_from_env(
+        self, model_hint: str | None = None
+    ) -> tuple[str, str, str | None]:
         """从环境变量检测 provider
 
         Args:
             model_hint: 模型名称提示，用于匹配正确的 credential
         """
-        from backend.infrastructure.services.model_discovery import discover_credentials, detect_provider_from_url
+        from backend.infrastructure.services.model_discovery import (
+            detect_provider_from_url,
+            discover_credentials,
+        )
 
         creds = discover_credentials()
         if not creds:
@@ -186,7 +205,9 @@ class ProviderManager:
                     return cred.api_key, effective_provider, cred.base_url
 
                 # kimi 特殊处理
-                if "kimi" in model_lower and (url_provider == "kimi" or "kimi" in cred.base_url.lower()):
+                if "kimi" in model_lower and (
+                    url_provider == "kimi" or "kimi" in cred.base_url.lower()
+                ):
                     return cred.api_key, "kimi", cred.base_url
 
         # 默认返回第一个
@@ -209,7 +230,7 @@ class ProviderManager:
         """当前激活的模型名称"""
         return self.get_model_config().model
 
-    async def discover_models(self, background: bool = True) -> List[dict]:
+    async def discover_models(self, background: bool = True) -> list[dict]:
         """
         发现所有可用的模型配置
 
@@ -277,6 +298,7 @@ class ProviderManager:
 
             # 启动后台发现（不阻塞）
             from .discovery import get_discovery
+
             discovery = get_discovery()
             discovery.start_discovery()
 

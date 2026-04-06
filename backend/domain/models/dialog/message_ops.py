@@ -3,14 +3,13 @@
 处理消息的添加、获取和格式转换。
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Any
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
-from langchain_core.messages import message_to_dict
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
 from backend.infrastructure.logging import get_logger
+
 from .session import DialogSession
-from .exceptions import SessionNotFoundError
 
 logger = get_logger(__name__)
 
@@ -28,7 +27,7 @@ class MessageOperations:
         self,
         session: DialogSession,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> HumanMessage:
         """添加用户消息"""
         msg = HumanMessage(
@@ -47,7 +46,7 @@ class MessageOperations:
         self,
         session: DialogSession,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AIMessage:
         """添加助手消息"""
         msg = AIMessage(
@@ -67,7 +66,7 @@ class MessageOperations:
         session: DialogSession,
         tool_call_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ToolMessage:
         """添加工具执行结果"""
         msg = ToolMessage(
@@ -85,8 +84,8 @@ class MessageOperations:
     def get_messages(
         self,
         session: DialogSession,
-        limit: Optional[int] = None,
-    ) -> List[BaseMessage]:
+        limit: int | None = None,
+    ) -> list[BaseMessage]:
         """获取消息列表"""
         messages = list(session.history.messages)
         if limit:
@@ -97,8 +96,11 @@ class MessageOperations:
         self,
         session: DialogSession,
         max_tokens: int = 8000,
-    ) -> List[Dict]:
-        """获取 LLM 可用的消息格式（带 token 截断）"""
+    ) -> list[BaseMessage]:
+        """获取 LLM 可用的消息格式（带 token 截断）。
+
+        返回 LangChain 消息对象列表（LangGraph 需要原始消息对象）。
+        """
         messages = list(session.history.messages)
 
         total_tokens = 0
@@ -108,7 +110,7 @@ class MessageOperations:
             if total_tokens + msg_tokens > max_tokens:
                 break
             total_tokens += msg_tokens
-            result.insert(0, message_to_dict(msg))
+            result.insert(0, msg)
 
         return result
 

@@ -4,9 +4,11 @@
 不再经过 deepagents.create_deep_agent 的固定中间件栈。
 """
 
-import os
-from typing import Any, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
+from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SubAgentMiddleware
+from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
     HumanInTheLoopMiddleware,
@@ -14,10 +16,9 @@ from langchain.agents.middleware import (
 )
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
-from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware, SubAgentMiddleware
-from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
-
-from backend.infrastructure.runtime.deep.middleware.claude_compression import ClaudeCompressionMiddleware
+from backend.infrastructure.runtime.deep.middleware.claude_compression import (
+    ClaudeCompressionMiddleware,
+)
 
 
 class MiddlewareStack:
@@ -53,7 +54,8 @@ class AgentBuilder:
         self._store: Any = None
         self._skills: list[str] = []
         self._subagents: list[Any] = []
-        self._interrupt_on: Optional[dict] = None
+        self._skill_sources: list[str] | None = None
+        self._interrupt_on: dict | None = None
         self._enable_todo_list: bool = False
         self._enable_filesystem: bool = False
         self._enable_claude_compression: bool = False
@@ -96,9 +98,16 @@ class AgentBuilder:
         self._store = store
         return self
 
-    def with_skills(self, skills: list[str]) -> "AgentBuilder":
-        """设置技能列表"""
+    def with_skills(self, skills: list[str], sources: list[str] | None = None) -> "AgentBuilder":
+        """设置技能列表
+
+        Args:
+            skills: 技能名称列表（如 ["finance"])
+            sources: 技能 source 路径列表（如 ["/skills/finance/"]）。
+                    如果为 None，则自动从技能名称生成。
+        """
         self._skills = skills
+        self._skill_sources = sources
         return self
 
     def with_subagents(self, subagents: list[Any]) -> "AgentBuilder":
@@ -158,7 +167,11 @@ class AgentBuilder:
         if self._skills:
             if self._backend is None:
                 raise ValueError("Backend is required when skills are enabled.")
-            middleware.append(SkillsMiddleware(backend=self._backend, sources=self._skills))
+            # 如果没有提供 sources，自动从技能名称生成
+            sources = self._skill_sources
+            if sources is None:
+                sources = [f"/skills/{skill}/" for skill in self._skills]
+            middleware.append(SkillsMiddleware(backend=self._backend, sources=sources))
 
         if self._enable_filesystem:
             if self._backend is None:
@@ -174,9 +187,7 @@ class AgentBuilder:
             middleware.append(ClaudeCompressionMiddleware(model=self._model, backend=self._backend))
 
         if self._enable_prompt_caching:
-            middleware.append(
-                AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore")
-            )
+            middleware.append(AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"))
 
         # PatchToolCallsMiddleware 修正 tool call 格式问题，建议始终挂载
         middleware.append(PatchToolCallsMiddleware())
@@ -194,7 +205,6 @@ class AgentBuilder:
             store=self._store,
             name=self._name,
         )
-        
 
 
 __all__ = ["AgentBuilder", "MiddlewareStack"]

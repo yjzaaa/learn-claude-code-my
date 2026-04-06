@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# 添加当前目录到模块搜索路径
+_scripts_dir = Path(__file__).parent
+if str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
+
 from allocation_utils import generate_alloc_sql
 
 # 根据用户问题生成SQL
@@ -23,7 +31,7 @@ if __name__ == "__main__":
     print("生成的SQL查询：")
     print(sql)
     print("\n" + "="*80 + "\n")
-    
+
     # 执行SQL查询
     # 注意：这里需要sqlquery工具来执行，我无法直接执行
     # 但可以展示SQL结构

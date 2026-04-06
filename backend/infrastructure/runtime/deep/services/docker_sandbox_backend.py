@@ -7,17 +7,15 @@ Docker 容器内执行。容器通过 Volume 挂载 skills 目录，保证文件
 from __future__ import annotations
 
 import os
-import shlex
 import subprocess
-from pathlib import Path
-from typing import Optional
-
 import sys
 import tempfile
+from pathlib import Path
 
 from deepagents.backends.local_shell import LocalShellBackend
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox
+
 from backend.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -66,7 +64,7 @@ class DockerSandboxBackend(BaseSandbox):
         root_dir: str,
         image: str = DEFAULT_IMAGE,
         container_name: str = DEFAULT_CONTAINER_NAME,
-        env_allowlist: Optional[list[str]] = None,
+        env_allowlist: list[str] | None = None,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> None:
         self.root_dir = str(Path(root_dir).resolve())
@@ -105,12 +103,18 @@ class DockerSandboxBackend(BaseSandbox):
 
         # 启动新的守护容器
         cmd = [
-            "docker", "run", "-d",
-            "--name", self.container_name,
-            "-v", f"{self.root_dir}:/workspace/skills",
-            "-w", "/workspace/skills",
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            self.container_name,
+            "-v",
+            f"{self.root_dir}:/workspace/skills",
+            "-w",
+            "/workspace/skills",
             self.image,
-            "sleep", "infinity",
+            "sleep",
+            "infinity",
         ]
         result = subprocess.run(
             cmd,
@@ -127,7 +131,7 @@ class DockerSandboxBackend(BaseSandbox):
         self,
         command: str,
         *,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> ExecuteResponse:
         """通过 docker exec 在容器内执行命令。"""
         effective_timeout = timeout if timeout is not None else self._default_timeout
@@ -150,10 +154,13 @@ class DockerSandboxBackend(BaseSandbox):
                 env_args.extend(["-e", f"{key}={val}"])
 
         exec_cmd = [
-            "docker", "exec",
+            "docker",
+            "exec",
             *env_args,
             self.container_name,
-            "sh", "-c", command,
+            "sh",
+            "-c",
+            command,
         ]
 
         try:
@@ -284,7 +291,7 @@ class DockerSandboxBackend(BaseSandbox):
 def create_sandbox_backend(
     root_dir: str,
     virtual_mode: bool = True,  # noqa: FBT001,FBT002
-    inherit_env: bool = True,   # noqa: FBT001,FBT002
+    inherit_env: bool = True,  # noqa: FBT001,FBT002
 ) -> BaseSandbox:
     """创建 Sandbox Backend，Docker 不可用时自动降级到 LocalShellBackend。"""
     if _docker_available():
@@ -294,11 +301,12 @@ def create_sandbox_backend(
                 env_allowlist=DEFAULT_ENV_ALLOWLIST,
             )
         except Exception as e:
-            logger.warning(
-                "Docker sandbox init failed (%s), falling back to LocalShellBackend", e
-            )
+            logger.warning("Docker sandbox init failed (%s), falling back to LocalShellBackend", e)
     if sys.platform == "win32":
-        from backend.infrastructure.runtime.services.windows_shell_backend import WindowsShellBackend
+        from backend.infrastructure.runtime.deep.services.windows_shell_backend import (
+            WindowsShellBackend,
+        )
+
         return WindowsShellBackend(
             root_dir=root_dir,
             virtual_mode=virtual_mode,

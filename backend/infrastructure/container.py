@@ -9,39 +9,33 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
-
-if TYPE_CHECKING:
-    from fastapi import WebSocket
-    from backend.infrastructure.queue import InMemoryAsyncQueue
-    from backend.infrastructure.event_bus import QueuedEventBus
-    from backend.infrastructure.agent_queue import AgentTaskQueue
-    from backend.infrastructure.websocket_buffer import WebSocketMessageBuffer
-    from backend.domain.models.dialog import DialogSessionManager
+from typing import Any
 
 
 @dataclass
 class AppState:
     """应用状态"""
+
     # HTTP/WebSocket
     ws_clients: set = field(default_factory=set)
     client_buffers: dict[str, Any] = field(default_factory=dict)
 
     # Dialog State
     status: dict[str, str] = field(default_factory=dict)
-    streaming_msg: dict[str, Optional[dict]] = field(default_factory=dict)
+    streaming_msg: dict[str, dict | None] = field(default_factory=dict)
     accumulated_content: dict[str, str] = field(default_factory=dict)
     dialog_locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+    delta_sequences: dict[str, int] = field(default_factory=dict)  # 递增序列号
 
     # Services
-    event_bus: Optional[Any] = None
-    task_queue: Optional[Any] = None
-    session_manager: Optional[Any] = None
-    runtime: Optional[Any] = None
+    event_bus: Any | None = None
+    task_queue: Any | None = None
+    session_manager: Any | None = None
+    runtime: Any | None = None
 
     # Config
     project_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent)
-    config: Optional[Any] = None
+    config: Any | None = None
 
 
 class AppContainer:
@@ -57,7 +51,7 @@ class AppContainer:
         status = container.state.status.get(dialog_id)
     """
 
-    _instance: Optional[AppContainer] = None
+    _instance: AppContainer | None = None
 
     def __new__(cls) -> AppContainer:
         if cls._instance is None:
@@ -95,21 +89,21 @@ class AppContainer:
         self.state.session_manager = value
 
     @property
-    def event_bus(self) -> Optional[Any]:
+    def event_bus(self) -> Any | None:
         """Event Bus 实例"""
         return self.state.event_bus
 
     @event_bus.setter
-    def event_bus(self, value: Optional[Any]) -> None:
+    def event_bus(self, value: Any | None) -> None:
         self.state.event_bus = value
 
     @property
-    def task_queue(self) -> Optional[Any]:
+    def task_queue(self) -> Any | None:
         """Agent Task Queue 实例"""
         return self.state.task_queue
 
     @task_queue.setter
-    def task_queue(self, value: Optional[Any]) -> None:
+    def task_queue(self, value: Any | None) -> None:
         self.state.task_queue = value
 
     @property
@@ -138,11 +132,11 @@ class AppContainer:
         """设置对话状态"""
         self.state.status[dialog_id] = status
 
-    def get_streaming_message(self, dialog_id: str) -> Optional[dict]:
+    def get_streaming_message(self, dialog_id: str) -> dict | None:
         """获取流式消息"""
         return self.state.streaming_msg.get(dialog_id)
 
-    def set_streaming_message(self, dialog_id: str, msg: Optional[dict]) -> None:
+    def set_streaming_message(self, dialog_id: str, msg: dict | None) -> None:
         """设置流式消息"""
         self.state.streaming_msg[dialog_id] = msg
 
@@ -167,6 +161,7 @@ class AppContainer:
         self.state.streaming_msg.pop(dialog_id, None)
         self.state.accumulated_content.pop(dialog_id, None)
         self.state.dialog_locks.pop(dialog_id, None)
+        self.state.delta_sequences.pop(dialog_id, None)
 
     def get_dialog_lock(self, dialog_id: str) -> asyncio.Lock:
         """获取对话锁"""
@@ -174,7 +169,28 @@ class AppContainer:
             self.state.dialog_locks[dialog_id] = asyncio.Lock()
         return self.state.dialog_locks[dialog_id]
 
-    def get_ws_buffer(self, client_id: str) -> Optional[Any]:
+    def get_and_increment_delta_sequence(self, dialog_id: str) -> int:
+        """获取并递增 delta 序列号
+
+        用于 stream:delta 事件的序列号，确保每个 delta 都有唯一的序号，
+        避免前端因去重逻辑而丢弃消息。
+
+        Args:
+            dialog_id: 对话 ID
+
+        Returns:
+            当前序列号（递增后）
+        """
+        current = self.state.delta_sequences.get(dialog_id, 0)
+        current += 1
+        self.state.delta_sequences[dialog_id] = current
+        return current
+
+    def clear_delta_sequence(self, dialog_id: str) -> None:
+        """清理对话的 delta 序列号"""
+        self.state.delta_sequences.pop(dialog_id, None)
+
+    def get_ws_buffer(self, client_id: str) -> Any | None:
         """获取 WebSocket 缓冲区"""
         return self.state.client_buffers.get(client_id)
 

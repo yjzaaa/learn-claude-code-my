@@ -3,14 +3,114 @@
 从 deep_legacy.py 提取的 send_message 逻辑。
 """
 
+import json
 import os
-from typing import AsyncIterator, Any, Optional
+from collections.abc import AsyncIterator
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
 from loguru import logger
 
 from backend.domain.models.shared import AgentEvent
-from backend.domain.models.events.event_models import UserMessageModel
 from backend.infrastructure.llm_adapter import LLMResponseAdapterFactory
-from pydantic import BaseModel
+
+
+class RuntimeSnapshotWriter:
+    """运行时快照写入器
+
+    当 LangGraph checkpoint 变化时将状态追加写入 JSON 文件。
+    同一个 dialog_id 共享一个 JSON 文件，按 rounds 数组追加。
+    只在 checkpoint_id 变化时写入（避免重复）。
+    """
+
+    def __init__(self, snapshot_dir: str = "logs/runtime_snapshots"):
+        self.snapshot_dir = Path(snapshot_dir)
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self._last_checkpoint_ids: dict[str, str] = {}  # dialog_id -> last checkpoint_id
+
+    def write_snapshot(
+        self,
+        dialog_id: str,
+        round_num: int,
+        checkpoint_data: dict,
+        accumulated_content: str,
+        accumulated_reasoning: str,
+        pending_tool_calls: dict,
+        model_name: str | None = None,
+    ) -> str | None:
+        """写入运行时快照（只在 checkpoint 变化时）
+
+        Args:
+            dialog_id: 对话 ID
+            round_num: 轮次编号
+            checkpoint_data: LangGraph checkpoint 数据
+            accumulated_content: 累积的内容
+            accumulated_reasoning: 累积的推理内容
+            pending_tool_calls: 待处理的工具调用
+            model_name: 模型名称
+
+        Returns:
+            写入的文件路径，失败返回 None，checkpoint 未变化返回 None
+        """
+        try:
+            # 检查 checkpoint 是否变化
+            current_checkpoint_id = checkpoint_data.get("checkpoint_id")
+            if current_checkpoint_id:
+                last_id = self._last_checkpoint_ids.get(dialog_id)
+                if current_checkpoint_id == last_id:
+                    # checkpoint 未变化，跳过写入
+                    return None
+                self._last_checkpoint_ids[dialog_id] = current_checkpoint_id
+
+            filepath = self.snapshot_dir / f"{dialog_id}.json"
+
+            # 读取现有快照（如果存在）
+            existing_data = self._load_existing(filepath)
+
+            # 创建本轮快照
+            round_snapshot = {
+                "timestamp": datetime.now().isoformat(),
+                "round": round_num,
+                "model_name": model_name or "unknown",
+                "checkpoint": checkpoint_data,
+                "accumulated_content": accumulated_content,
+                "accumulated_reasoning": accumulated_reasoning,
+                "pending_tool_calls": pending_tool_calls,
+            }
+
+            # 追加到 rounds 数组
+            existing_data["rounds"].append(round_snapshot)
+            existing_data["last_updated"] = datetime.now().isoformat()
+
+            # 写回文件
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=2, default=str)
+
+            return str(filepath)
+        except Exception as e:
+            logger.warning(f"[RuntimeSnapshotWriter] Failed to write snapshot: {e}")
+            return None
+
+    def _load_existing(self, filepath: Path) -> dict:
+        """加载现有快照文件，如果不存在返回初始结构"""
+        if filepath.exists():
+            try:
+                with open(filepath, encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
+        return {
+            "dialog_id": filepath.stem,
+            "created_at": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat(),
+            "rounds": [],
+        }
+
+    def clear_dialog(self, dialog_id: str) -> None:
+        """清除对话的 checkpoint 缓存（对话结束时调用）"""
+        self._last_checkpoint_ids.pop(dialog_id, None)
 
 
 class DeepMessageHandlerMixin:
@@ -26,10 +126,11 @@ class DeepMessageHandlerMixin:
     # 来自其他 Mixin 的属性
     _agent: Any
     _config: Any
-    _model_name: Optional[str]
+    _model_name: str | None
     _checkpointer: Any
     _adapter_factory: LLMResponseAdapterFactory
     _session_mgr: Any  # from DeepModelSwitcherMixin
+    _snapshot_writer: RuntimeSnapshotWriter | None = None  # 运行时快照写入器
 
     # 来自其他 Mixin 的方法（运行时注入）
     _ensure_agent_for_dialog: Any
@@ -42,12 +143,62 @@ class DeepMessageHandlerMixin:
     is_stop_requested: Any
     clear_stop_request: Any
 
+    @staticmethod
+    def _convert_message_to_openai_format(msg: Any) -> dict[str, Any]:
+        """将 LangChain 消息转换为 OpenAI API 格式。"""
+        type_mapping = {"human": "user", "ai": "assistant", "system": "system", "tool": "tool"}
+        role = type_mapping.get(getattr(msg, "type", "unknown"), getattr(msg, "type", "unknown"))
+        result: dict[str, Any] = {"role": role}
+
+        # 处理 content
+        content = getattr(msg, "content", None)
+        result["content"] = DeepMessageHandlerMixin._extract_content(content)
+
+        # 处理 tool_calls 和 tool_call_id
+        if tool_calls := getattr(msg, "tool_calls", None):
+            result["tool_calls"] = tool_calls
+        if tool_call_id := getattr(msg, "tool_call_id", None):
+            result["tool_call_id"] = tool_call_id
+
+        # 确保 content 不为 None (Deepseek 要求)
+        if result.get("content") is None and "tool_calls" not in result:
+            result["content"] = ""
+
+        return result
+
+    @staticmethod
+    def _extract_content(content: Any) -> str | None:
+        """从消息内容中提取文本。"""
+        if content is None:
+            return None
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return DeepMessageHandlerMixin._extract_from_list(content)
+        return str(content)
+
+    @staticmethod
+    def _extract_from_list(content_list: list) -> str:
+        """从列表格式的内容中提取文本。"""
+        text_parts = []
+        for block in content_list:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    text_parts.append(block.get("text", ""))
+                elif "text" in block:
+                    text_parts.append(block["text"])
+                elif "content" in block:
+                    text_parts.append(str(block["content"]))
+            elif isinstance(block, str):
+                text_parts.append(block)
+        return "".join(text_parts) if text_parts else ""
+
     async def send_message(
         self,
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """发送消息，返回流式事件"""
         if self._agent is None:
@@ -60,20 +211,15 @@ class DeepMessageHandlerMixin:
             session = await session_mgr.get_session(dialog_id)
             if session is None:
                 await session_mgr.create_session(dialog_id, title=message[:50])
-            history_messages = await session_mgr.get_messages(dialog_id)
-            messages = []
-            for msg in history_messages:
-                if hasattr(msg, 'model_dump'):
-                    messages.append(msg.model_dump())
-                elif hasattr(msg, 'content'):
-                    messages.append({"role": getattr(msg, 'type', 'unknown'), "content": msg.content})
-                else:
-                    messages.append(msg)
+            # 获取历史消息 - LangGraph 需要 LangChain 消息对象
+            # 注意：用户消息已在 HTTP 路由中添加，这里不再重复添加
+            messages = await session_mgr.get_messages(dialog_id)
             ai_message_id = message_id or f"msg_{id(message)}"
             await session_mgr.start_ai_response(dialog_id, ai_message_id)
         else:
-            user_msg = UserMessageModel(role="user", content=message)
-            messages = [user_msg.model_dump() if isinstance(user_msg, BaseModel) else {"role": "user", "content": message}]
+            from langchain_core.messages import HumanMessage
+
+            messages = [HumanMessage(content=message)]
             ai_message_id = message_id or f"msg_{id(message)}"
 
         messages = self._merge_system_messages(messages)
@@ -82,9 +228,14 @@ class DeepMessageHandlerMixin:
 
         self._fire_log_msg("debug", f"User message: {message[:200]}", dialog_id)
 
+        # 初始化运行时快照写入器
+        if self._snapshot_writer is None:
+            self._snapshot_writer = RuntimeSnapshotWriter()
+
         accumulated_content = ""
         accumulated_reasoning = ""
         actual_model_name = None
+        round_num = 0  # 轮次计数器
 
         # 跟踪工具调用，用于关联 tool_call 和 tool_result
         pending_tool_calls: dict[str, dict[str, Any]] = {}
@@ -106,31 +257,54 @@ class DeepMessageHandlerMixin:
 
                 if isinstance(raw_event, tuple) and len(raw_event) >= 2:
                     msg_chunk = raw_event[1]
+                    # DEBUG: 记录第一个事件的完整结构
+                    if round_num == 0:
+                        logger.debug(f"[DEBUG] raw_event type: {type(raw_event)}")
+                        logger.debug(f"[DEBUG] msg_chunk type: {type(msg_chunk)}")
+                        if isinstance(msg_chunk, tuple):
+                            logger.debug(f"[DEBUG] msg_chunk[0] type: {type(msg_chunk[0])}")
+                            logger.debug(
+                                f"[DEBUG] msg_chunk[0] content: {getattr(msg_chunk[0], 'content', None)}"
+                            )
+                            logger.debug(
+                                f"[DEBUG] msg_chunk[0] additional_kwargs: {getattr(msg_chunk[0], 'additional_kwargs', None)}"
+                            )
+                        else:
+                            logger.debug(
+                                f"[DEBUG] msg_chunk content: {getattr(msg_chunk, 'content', None)}"
+                            )
+                            logger.debug(
+                                f"[DEBUG] msg_chunk additional_kwargs: {getattr(msg_chunk, 'additional_kwargs', None)}"
+                            )
                     if isinstance(msg_chunk, tuple):
                         event_metadata = msg_chunk[1] if len(msg_chunk) > 1 else None
                         msg_chunk = msg_chunk[0]
 
                     if actual_model_name is None and event_metadata:
-                        actual_model_name = event_metadata.get('ls_model_name')
+                        actual_model_name = event_metadata.get("ls_model_name")
 
-                    if getattr(msg_chunk, 'type', None) == 'tool':
-                        tool_call_id = getattr(msg_chunk, 'tool_call_id', 'unknown')
-                        tool_content = getattr(msg_chunk, 'content', '')
+                    if getattr(msg_chunk, "type", None) == "tool":
+                        tool_call_id = getattr(msg_chunk, "tool_call_id", "unknown")
+                        tool_content = getattr(msg_chunk, "content", "")
 
                         # 从 pending_tool_calls 获取工具名和参数
                         pending = pending_tool_calls.pop(tool_call_id, None)
                         if pending:
-                            tool_name = pending.get('name', 'unknown')
-                            tool_args = pending.get('args', {})
+                            tool_name = pending.get("name", "unknown")
+                            tool_args = pending.get("args", {})
                         else:
-                            tool_name = getattr(msg_chunk, 'name', 'unknown')
+                            tool_name = getattr(msg_chunk, "name", "unknown")
                             tool_args = {}
 
-                        result_data = {"tool_name": tool_name, "tool_call_id": tool_call_id, "result": str(tool_content)}
+                        result_data = {
+                            "tool_name": tool_name,
+                            "tool_call_id": tool_call_id,
+                            "result": str(tool_content),
+                        }
                         yield AgentEvent(
                             type="tool_result",
                             data=result_data,
-                            metadata={"tool_call_id": tool_call_id}
+                            metadata={"tool_call_id": tool_call_id},
                         )
 
                         # 记录完整的工具执行结果到 jsonl
@@ -138,19 +312,20 @@ class DeepMessageHandlerMixin:
                             tool_name=tool_name,
                             arguments=tool_args,
                             result=str(tool_content),
-                            dialog_id=dialog_id
+                            dialog_id=dialog_id,
                         )
                         continue
 
-                    if getattr(msg_chunk, 'type', None) in ('ai', 'assistant'):
-                        tool_calls = getattr(msg_chunk, 'tool_calls', None) or []
+                    if getattr(msg_chunk, "type", None) in ("ai", "assistant"):
+                        tool_calls = getattr(msg_chunk, "tool_calls", None) or []
                         for tc in tool_calls:
-                            tc_id = tc.get('id', 'call_0')
-                            tc_name = tc.get('name', 'unknown')
-                            tc_args = tc.get('args', {})
+                            tc_id = tc.get("id", "call_0")
+                            tc_name = tc.get("name", "unknown")
+                            tc_args = tc.get("args", {})
                             if isinstance(tc_args, str):
                                 try:
                                     import json
+
                                     tc_args = json.loads(tc_args)
                                 except Exception:
                                     tc_args = {"raw": tc_args}
@@ -160,79 +335,184 @@ class DeepMessageHandlerMixin:
 
                             yield AgentEvent(
                                 type="tool_call",
-                                data={"message_id": message_id or "unknown", "tool_call": {"id": tc_id, "name": tc_name, "arguments": tc_args, "status": "pending"}},
+                                data={
+                                    "message_id": message_id or "unknown",
+                                    "tool_call": {
+                                        "id": tc_id,
+                                        "name": tc_name,
+                                        "arguments": tc_args,
+                                        "status": "pending",
+                                    },
+                                },
                             )
                             # 记录工具调用（pending 状态）到 jsonl
-                            self._fire_log_tool_result(tc_name, tc_args, {"status": "pending", "tool_call_id": tc_id}, dialog_id)
+                            self._fire_log_tool_result(
+                                tc_name,
+                                tc_args,
+                                {"status": "pending", "tool_call_id": tc_id},
+                                dialog_id,
+                            )
 
-                    if hasattr(msg_chunk, 'content') and msg_chunk.content:
+                    if hasattr(msg_chunk, "content") and msg_chunk.content:
                         content = msg_chunk.content
                         if isinstance(content, list):
                             for block in content:
-                                if isinstance(block, dict) and block.get('type') == 'text':
-                                    delta_content += block.get('text', '')
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    delta_content += block.get("text", "")
                                 elif isinstance(block, str):
                                     delta_content += block
                         else:
                             delta_content = str(content)
 
-                    if hasattr(msg_chunk, 'additional_kwargs'):
-                        reasoning = msg_chunk.additional_kwargs.get('reasoning_content', '')
-                        if reasoning:
-                            delta_reasoning = str(reasoning)
+                    # 提取 reasoning_content（Deepseek reasoner 模型）
+                    # 可能在多个位置：direct attribute, additional_kwargs, response_metadata
+                    reasoning = None
+                    # 1. 直接属性（LiteLLM 返回）
+                    if hasattr(msg_chunk, "reasoning_content"):
+                        reasoning = msg_chunk.reasoning_content
+                    # 2. additional_kwargs
+                    if (
+                        not reasoning
+                        and hasattr(msg_chunk, "additional_kwargs")
+                        and msg_chunk.additional_kwargs
+                    ):
+                        reasoning = msg_chunk.additional_kwargs.get("reasoning_content")
+                    # 3. response_metadata
+                    if (
+                        not reasoning
+                        and hasattr(msg_chunk, "response_metadata")
+                        and msg_chunk.response_metadata
+                    ):
+                        reasoning = msg_chunk.response_metadata.get("reasoning_content")
+
+                    # DEBUG: 记录第一个 AI 消息的完整结构
+                    if (
+                        getattr(msg_chunk, "type", None) in ("ai", "assistant")
+                        and not accumulated_content
+                        and not accumulated_reasoning
+                    ):
+                        logger.debug(f"[DEBUG] AI msg_chunk type: {type(msg_chunk).__name__}")
+                        logger.debug(f"[DEBUG] AI msg_chunk attrs: {dir(msg_chunk)}")
+                        logger.debug(
+                            f"[DEBUG] AI additional_kwargs: {getattr(msg_chunk, 'additional_kwargs', None)}"
+                        )
+                        logger.debug(
+                            f"[DEBUG] AI response_metadata: {getattr(msg_chunk, 'response_metadata', None)}"
+                        )
+
+                    if reasoning:
+                        delta_reasoning = str(reasoning)
 
                 if session_mgr is not None:
                     if delta_content:
                         await session_mgr.emit_delta(dialog_id, delta_content, ai_message_id)
                     if delta_reasoning:
-                        await session_mgr.emit_reasoning_delta(dialog_id, delta_reasoning, ai_message_id)
+                        await session_mgr.emit_reasoning_delta(
+                            dialog_id, delta_reasoning, ai_message_id
+                        )
 
                 if delta_content:
                     accumulated_content += delta_content
-                    yield AgentEvent(type="text_delta", data=delta_content, metadata={"accumulated_length": len(accumulated_content)})
+                    yield AgentEvent(
+                        type="text_delta",
+                        data=delta_content,
+                        metadata={"accumulated_length": len(accumulated_content)},
+                    )
 
                 if delta_reasoning:
                     accumulated_reasoning += delta_reasoning
-                    yield AgentEvent(type="reasoning_delta", data=delta_reasoning, metadata={"accumulated_length": len(accumulated_reasoning)})
+                    yield AgentEvent(
+                        type="reasoning_delta",
+                        data=delta_reasoning,
+                        metadata={"accumulated_length": len(accumulated_reasoning)},
+                    )
 
-            if session_mgr is not None and accumulated_content:
+                # 每轮 LLM 返回时写入运行时快照
+                round_num += 1
+                # 获取 LangGraph checkpoint 快照
+                checkpoint_data = self._get_checkpoint_snapshot(dialog_id)
+                snapshot_path = self._snapshot_writer.write_snapshot(
+                    dialog_id=dialog_id,
+                    round_num=round_num,
+                    checkpoint_data=checkpoint_data,
+                    accumulated_content=accumulated_content,
+                    accumulated_reasoning=accumulated_reasoning,
+                    pending_tool_calls=pending_tool_calls,
+                    model_name=actual_model_name or self._model_name,
+                )
+                if snapshot_path:
+                    logger.debug(f"[DeepAgentRuntime] Runtime snapshot written: {snapshot_path}")
+
+            if session_mgr is not None and (accumulated_content or accumulated_reasoning):
                 session = await session_mgr.get_session(dialog_id)
                 if session and session.status.value not in ("completed", "closed"):
                     effective_model = actual_model_name or self._model_name or "unknown"
-                    completion_metadata = {"model": effective_model, "provider": self._adapter_factory.detect_provider(effective_model) or "unknown"}
+                    completion_metadata = {
+                        "model": effective_model,
+                        "provider": self._adapter_factory.detect_provider(effective_model)
+                        or "unknown",
+                    }
                     if accumulated_reasoning:
                         completion_metadata["reasoning_content"] = accumulated_reasoning
-                    await session_mgr.complete_ai_response(dialog_id, ai_message_id, accumulated_content, metadata=completion_metadata)
-                    self._fire_log_update("info", f"AI response completed: dialog_id={dialog_id}, content_len={len(accumulated_content)}", dialog_id)
+                    await session_mgr.complete_ai_response(
+                        dialog_id, ai_message_id, accumulated_content, metadata=completion_metadata
+                    )
+                    self._fire_log_update(
+                        "info",
+                        f"AI response completed: dialog_id={dialog_id}, content_len={len(accumulated_content)}",
+                        dialog_id,
+                    )
 
                     checkpoint_data = self._get_checkpoint_snapshot(dialog_id)
                     snapshot_path = session_mgr.save_checkpoint_snapshot(checkpoint_data)
                     if snapshot_path:
-                        self._fire_log_update("debug", f"Checkpoint snapshot saved: {snapshot_path}", dialog_id)
+                        self._fire_log_update(
+                            "debug", f"Checkpoint snapshot saved: {snapshot_path}", dialog_id
+                        )
 
             # 正常完成，清除停止请求
             self.clear_stop_request(dialog_id)
 
             if accumulated_content:
                 effective_model = actual_model_name or self._model_name or "unknown"
-                completion_metadata = {"reasoning_content": accumulated_reasoning, "model": effective_model, "provider": self._adapter_factory.detect_provider(effective_model) or "unknown", "content_length": len(accumulated_content)}
-                yield AgentEvent(type="text_complete", data=accumulated_content, metadata=completion_metadata)
+                completion_metadata = {
+                    "reasoning_content": accumulated_reasoning,
+                    "model": effective_model,
+                    "provider": self._adapter_factory.detect_provider(effective_model) or "unknown",
+                    "content_length": len(accumulated_content),
+                }
+                yield AgentEvent(
+                    type="text_complete", data=accumulated_content, metadata=completion_metadata
+                )
 
         except Exception as e:
             import traceback
+
             error_detail = f"{str(e)}\n{traceback.format_exc()}"
             logger.exception(f"[DeepAgentRuntime] Error in send_message: {e}")
             self._fire_log_msg("error", f"Error: {error_detail}", dialog_id)
 
             if accumulated_content and session_mgr is not None:
-                logger.warning(f"[DeepAgentRuntime] Saving partial content: {len(accumulated_content)} chars")
+                logger.warning(
+                    f"[DeepAgentRuntime] Saving partial content: {len(accumulated_content)} chars"
+                )
                 try:
                     effective_model = actual_model_name or self._model_name or "unknown"
-                    completion_metadata = {"model": effective_model, "provider": self._adapter_factory.detect_provider(effective_model) or "unknown", "error_interrupted": True, "error_type": type(e).__name__}
+                    completion_metadata = {
+                        "model": effective_model,
+                        "provider": self._adapter_factory.detect_provider(effective_model)
+                        or "unknown",
+                        "error_interrupted": True,
+                        "error_type": type(e).__name__,
+                    }
                     if accumulated_reasoning:
                         completion_metadata["reasoning_content"] = accumulated_reasoning
-                    await session_mgr.complete_ai_response(dialog_id, ai_message_id, accumulated_content, completion_metadata)
-                    yield AgentEvent(type="text_complete", data=accumulated_content, metadata=completion_metadata)
+                    await session_mgr.complete_ai_response(
+                        dialog_id, ai_message_id, accumulated_content, completion_metadata
+                    )
+                    yield AgentEvent(
+                        type="text_complete", data=accumulated_content, metadata=completion_metadata
+                    )
                 except Exception as save_error:
                     logger.error(f"[DeepAgentRuntime] Failed to save partial content: {save_error}")
 

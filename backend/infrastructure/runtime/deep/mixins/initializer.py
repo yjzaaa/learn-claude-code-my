@@ -3,46 +3,43 @@
 从 deep_legacy.py 提取的初始化逻辑。
 """
 
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 from loguru import logger
 
-from backend.infrastructure.services import ProviderManager
 from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.runtime.deep.services.config_adapter import DeepAgentConfig
+from backend.infrastructure.services import ProviderManager
 
 
 class DeepInitializerMixin:
     """初始化 Mixin"""
 
-    _config: Optional[DeepAgentConfig]
+    _config: DeepAgentConfig | None
     _agent_id: str
-    _provider_manager: Optional[ProviderManager]
+    _provider_manager: ProviderManager | None
     _tools: dict[str, Any]
     _checkpointer: Any
     _store: Any
     _agent: Any
-    _model_name: Optional[str]
+    _model_name: str | None
 
     async def _do_initialize(self) -> None:
         """初始化 Runtime 和 Deep Agent"""
-        from dotenv import load_dotenv
-
         # 初始化统一日志记录器（必须在其他操作之前）
         await self._init_unified_loggers()
-
-        # 安全网：确保加载项目根目录的 .env（覆盖已有环境变量）
-        env_path = Path(__file__).resolve().parent.parent.parent.parent.parent / ".env"
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path, override=True)
-
-        # 清除错误的中文占位符 token
-        os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
         config = self._config
         if config is None:
             raise ValueError("Config not set. Call initialize() first.")
+
+        # 必须有 ProviderManager
+        if not self._provider_manager:
+            raise RuntimeError(
+                "ProviderManager is required. "
+                "All model configuration must be provided through ProviderManager."
+            )
 
         # 统一转换为 DeepAgentConfig
         if isinstance(config, dict):
@@ -53,18 +50,13 @@ class DeepInitializerMixin:
             if isinstance(skills_value, dict):
                 skills_list = []
                 if skills_value.get("skills_dir"):
-                    skills_dir = skills_value["skills_dir"]
-                    if os.path.exists(skills_dir):
-                        skills_list = [d for d in os.listdir(skills_dir)
-                                       if os.path.isdir(os.path.join(skills_dir, d))]
+                    skills_dir = Path(skills_value["skills_dir"])
+                    if skills_dir.exists():
+                        skills_list = [d.name for d in skills_dir.iterdir() if d.is_dir()]
                 skills_value = skills_list
 
-            if self._provider_manager:
-                model = self._provider_manager.active_model
-            else:
-                model = os.getenv("MODEL_ID", "").strip()
-                if not model:
-                    model = config_dict.get("provider", {}).get("model", "claude-sonnet-4-6")
+            # 从 ProviderManager 获取模型名称
+            model = self._provider_manager.active_model
 
             self._config = DeepAgentConfig(
                 name=config_dict.get("name", self._agent_id),
@@ -82,7 +74,10 @@ class DeepInitializerMixin:
         try:
             from langgraph.checkpoint.memory import MemorySaver
             from langgraph.store.memory import InMemoryStore
-            from backend.infrastructure.runtime.deep.services.docker_sandbox_backend import create_sandbox_backend
+
+            from backend.infrastructure.runtime.deep.services.universal_shell_backend import (
+                create_universal_backend,
+            )
         except ImportError as e:
             raise ImportError(
                 "Required packages are missing for DeepAgentRuntime. "
@@ -96,23 +91,27 @@ class DeepInitializerMixin:
         self._checkpointer = MemorySaver()
         self._store = InMemoryStore()
 
-        # 配置 backend
+        # 配置 backend - 使用 UniversalShellBackend 自动处理 Docker/Windows 降级
         project_root = Path(__file__).resolve().parent.parent.parent.parent.parent.parent
         skills_dir = project_root / "skills"
-        agent_sandbox = os.getenv("AGENT_SANDBOX", "local").strip().lower()
-        if agent_sandbox == "docker":
-            backend = create_sandbox_backend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
-            logger.info(f"[DeepAgentRuntime] Using sandbox backend for skills_dir={skills_dir}")
-        else:
-            from backend.infrastructure.runtime.deep.services.windows_shell_backend import WindowsShellBackend
-            backend = WindowsShellBackend(root_dir=str(skills_dir), virtual_mode=True, inherit_env=True)
-            logger.info(f"[DeepAgentRuntime] Using local shell backend for skills_dir={skills_dir}")
 
-        if agent_sandbox == "docker":
+        backend = create_universal_backend(
+            root_dir=str(skills_dir),
+            virtual_root="/workspace/skills",
+            virtual_mode=True,
+            inherit_env=True,
+        )
+        logger.info(
+            f"[DeepAgentRuntime] Using universal backend for skills_dir={skills_dir}, backend_id={backend.id}"
+        )
+
+        # 代理 sandbox 工具（如果需要）
+        if hasattr(backend, "_use_docker") and backend._use_docker:
             self._proxy_sandbox_tools(backend)
 
         # 转换工具格式
         from langchain_core.tools import StructuredTool
+
         adapted_tools = [
             StructuredTool.from_function(
                 func=tool_info.handler,
@@ -122,40 +121,24 @@ class DeepInitializerMixin:
             for name, tool_info in self._tools.items()
         ]
 
-        # 创建模型实例
-        if self._provider_manager:
-            model_config = self._provider_manager.get_model_config()
-            model_name = model_config.model
-            logger.info(
-                f"[DeepAgentRuntime] Model config: model_name={model_name}, "
-                f"api_key_set={'yes' if model_config.api_key else 'no'}"
-            )
-            try:
-                model = await self._provider_manager.create_model_instance(model_name)
-                logger.info(f"[DeepAgentRuntime] Created model via ProviderManager: {model_name}")
-            except Exception as e:
-                logger.error(f"[DeepAgentRuntime] Failed to create model: {e}")
-                raise RuntimeError(f"Failed to create model: {e}")
-        else:
-            model_name = os.getenv("MODEL_ID", "claude-sonnet-4-6")
-            api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or ""
-            base_url = os.getenv("ANTHROPIC_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL") or ""
-            logger.warning(f"[DeepAgentRuntime] No ProviderManager, using direct creation")
-            try:
-                from langchain_community.chat_models import ChatLiteLLM
-                model = ChatLiteLLM(
-                    model=model_name, api_key=api_key,
-                    api_base=base_url if base_url else None, temperature=0.7,
-                )
-            except Exception as e:
-                logger.warning(f"[DeepAgentRuntime] ChatLiteLLM failed: {e}")
-                from langchain_anthropic import ChatAnthropic
-                model = ChatAnthropic(
-                    model=model_name, api_key=api_key,
-                    anthropic_api_url=base_url, temperature=0.7,
-                )
+        # 创建模型实例 - 必须通过 ProviderManager
+        model_config = self._provider_manager.get_model_config()
+        model_name = model_config.model
+        logger.info(
+            f"[DeepAgentRuntime] Model config: model_name={model_name}, "
+            f"api_key_set={'yes' if model_config.api_key else 'no'}"
+        )
+        try:
+            model = await self._provider_manager.create_model_instance(model_name)
+            logger.info(f"[DeepAgentRuntime] Created model via ProviderManager: {model_name}")
+        except Exception as e:
+            logger.error(f"[DeepAgentRuntime] Failed to create model: {e}")
+            raise RuntimeError(f"Failed to create model: {e}")
 
         self._model_name = model_name
+
+        # 加载 skill references 文件内容
+        skill_references_content = self._load_skill_references(skills_dir)
 
         # 构建系统提示词
         base_prompt = self._config.system or self._config.system_prompt or ""
@@ -170,10 +153,17 @@ class DeepInitializerMixin:
             "## SQL\n"
             "Always use the `run_sql_query` tool directly with the SQL string."
         )
-        system_prompt = base_prompt + path_hint if base_prompt else path_hint
+
+        # 组合系统提示词：基础提示词 + skill references + 环境提示
+        system_prompt_parts = [p for p in [base_prompt, skill_references_content, path_hint] if p]
+        system_prompt = "\n\n".join(system_prompt_parts)
 
         # 使用 AgentBuilder 创建 Agent
         from ..agents import AgentBuilder
+
+        # 构建 skill sources 路径（与 backend 的 virtual_root 一致）
+        skill_sources = [f"/workspace/skills/{skill}/" for skill in (self._config.skills or [])]
+
         builder = (
             AgentBuilder()
             .with_name(self._config.name or self._agent_id)
@@ -183,7 +173,7 @@ class DeepInitializerMixin:
             .with_backend(backend)
             .with_checkpointer(self._checkpointer)
             .with_store(self._store)
-            .with_skills(self._config.skills or [])
+            .with_skills(self._config.skills or [], sources=skill_sources)
             .with_todo_list()
             .with_filesystem()
             .with_claude_compression(level="standard", enable_session_memory=True)
@@ -220,25 +210,101 @@ class DeepInitializerMixin:
         return str(raw)
 
     @classmethod
-    def _merge_system_messages(cls, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """合并 system 消息"""
+    def _merge_system_messages(cls, messages: list) -> list:
+        """合并 system 消息。
+
+        支持 LangChain 消息对象和字典格式。
+        """
+        from langchain_core.messages import SystemMessage
+
         system_parts = []
         others = []
+
         for msg in messages:
-            role = msg.get("role") or msg.get("type", "")
-            if role == "system":
-                content = msg.get("content", "")
+            if isinstance(msg, SystemMessage):
+                # LangChain SystemMessage
+                content = msg.content
                 if isinstance(content, str):
                     system_parts.append(content)
-                elif isinstance(content, list):
-                    system_parts.append(cls._extract_text_content(msg))
                 else:
                     system_parts.append(str(content))
+            elif isinstance(msg, dict):
+                # 字典格式
+                role = msg.get("role") or msg.get("type", "")
+                if role == "system":
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        system_parts.append(content)
+                    elif isinstance(content, list):
+                        system_parts.append(cls._extract_text_content(msg))
+                    else:
+                        system_parts.append(str(content))
+                else:
+                    others.append(msg)
             else:
-                others.append(msg)
+                # 其他 LangChain 消息类型
+                msg_type = getattr(msg, "type", "")
+                if msg_type == "system":
+                    content = getattr(msg, "content", "")
+                    if isinstance(content, str):
+                        system_parts.append(content)
+                    else:
+                        system_parts.append(str(content))
+                else:
+                    others.append(msg)
+
         if system_parts:
-            return [{"role": "system", "content": "\n\n".join(system_parts)}] + others
+            # 返回合并后的 SystemMessage 对象
+            merged_content = "\n\n".join(system_parts)
+            return [SystemMessage(content=merged_content)] + others
         return messages
+
+    def _load_skill_references(self, skills_dir: Path) -> str:
+        """加载 skill 的 references 文件内容
+
+        读取所有启用的 skill 的 references 目录下的 .md 文件内容，
+        并组合成系统提示词的一部分。
+        """
+        if not self._config or not self._config.skills:
+            return ""
+
+        references_parts = []
+
+        for skill_name in self._config.skills:
+            skill_dir = skills_dir / skill_name
+            if not skill_dir.exists():
+                continue
+
+            # 读取 SKILL.md
+            skill_md = skill_dir / "SKILL.md"
+            if skill_md.exists():
+                try:
+                    content = skill_md.read_text(encoding="utf-8")
+                    # 移除 YAML frontmatter
+                    if content.startswith("---"):
+                        parts = content.split("---", 2)
+                        if len(parts) >= 3:
+                            content = parts[2].strip()
+                    references_parts.append(f"## Skill: {skill_name}\n{content}")
+                except Exception as e:
+                    logger.warning(
+                        f"[DeepAgentRuntime] Failed to read SKILL.md for {skill_name}: {e}"
+                    )
+
+            # 读取 references 目录下的所有 .md 文件
+            references_dir = skill_dir / "references"
+            if references_dir.exists() and references_dir.is_dir():
+                for md_file in sorted(references_dir.glob("*.md")):
+                    try:
+                        content = md_file.read_text(encoding="utf-8")
+                        references_parts.append(f"### {skill_name}/{md_file.name}\n{content}")
+                    except Exception as e:
+                        logger.warning(f"[DeepAgentRuntime] Failed to read {md_file}: {e}")
+
+        if references_parts:
+            return "## Skills Knowledge Base\n\n" + "\n\n".join(references_parts)
+
+        return ""
 
     # _init_unified_loggers 和 _stop_unified_loggers 由 DeepLoggingMixin 提供
     # 不要在这里实现空方法，否则会覆盖 Mixin 中的实现

@@ -14,6 +14,11 @@ import sys
 import zipfile
 from pathlib import Path
 
+# 添加当前目录到模块搜索路径
+_scripts_dir = Path(__file__).parent
+if str(_scripts_dir) not in sys.path:
+    sys.path.insert(0, str(_scripts_dir))
+
 from quick_validate import validate_skill
 
 
