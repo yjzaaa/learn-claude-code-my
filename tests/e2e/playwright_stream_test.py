@@ -9,10 +9,10 @@ Playwright CLI 流式输出测试
 
 import argparse
 import asyncio
-import json
-import sys
-import os
 import io
+import json
+import os
+import sys
 
 # 设置 UTF-8 编码
 os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -155,9 +155,8 @@ def main():
         else:
             print("[WARN] 未检测到流式输出事件")
         return 0
-    else:
-        print("\n[FAIL] 测试失败")
-        return 1
+    print("\n[FAIL] 测试失败")
+    return 1
 
 
 if __name__ == "__main__":

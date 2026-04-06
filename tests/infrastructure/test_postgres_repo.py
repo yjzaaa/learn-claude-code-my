@@ -4,14 +4,13 @@ Test PostgresMemoryRepository - PostgreSQL 记忆仓库测试
 使用 SQLite 内存数据库测试 SQLAlchemy 实现。
 """
 
-import sys
 import asyncio
-from datetime import datetime
+import sys
 
 sys.path.insert(0, '.')
 
-from backend.domain.models.memory.types import MemoryType
 from backend.domain.models.memory.memory import Memory
+from backend.domain.models.memory.types import MemoryType
 
 
 async def test_postgres_repository():
@@ -30,9 +29,10 @@ async def test_postgres_repository():
         return
 
     try:
-        from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
         from sqlalchemy.orm import sessionmaker
-        from backend.infrastructure.persistence.memory.models import MemoryModel, Base
+
+        from backend.infrastructure.persistence.memory.models import Base, MemoryModel
         from backend.infrastructure.persistence.memory.postgres_repo import PostgresMemoryRepository
 
         # 使用 SQLite 内存数据库测试

@@ -5,9 +5,10 @@ The key insight: spawn child agents with ISOLATED context to prevent
 "context pollution" where exploration details fill up the main conversation.
 """
 
-from loguru import logger
-import time
 import sys
+import time
+
+from loguru import logger
 
 # Assuming client, MODEL, execute_tool are defined elsewhere
 
@@ -242,4 +243,3 @@ def execute_tool(name: str, args: dict) -> str:
 # In your TOOLS list:
 TOOLS = BASE_TOOLS + [TASK_TOOL]
 """
-

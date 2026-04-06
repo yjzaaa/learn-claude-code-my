@@ -2,12 +2,12 @@
 Tests for Dialog Repository - 对话仓库测试
 """
 
-import pytest
-import asyncio
 
+import pytest
+
+from backend.domain.models import Dialog, Message
 from backend.domain.repositories.dialog_repository import IDialogRepository
 from backend.infrastructure.persistence.memory.dialog_repo import InMemoryDialogRepository
-from backend.domain.models import Dialog, Message
 
 
 @pytest.fixture

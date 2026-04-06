@@ -4,14 +4,13 @@ Test MemoryService - 记忆应用服务测试
 测试 MemoryService 的核心功能，使用 Mock Repository。
 """
 
-import pytest
 from datetime import datetime
-from typing import List, Optional
-from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from backend.application.services.memory_service import MemoryService
 from backend.domain.models.memory import Memory, MemoryType
 from backend.domain.repositories.memory_repository import IMemoryRepository
-from backend.application.services.memory_service import MemoryService
 
 
 class MockMemoryRepository(IMemoryRepository):
@@ -23,7 +22,7 @@ class MockMemoryRepository(IMemoryRepository):
     async def save(self, memory: Memory) -> None:
         self._memories[memory.id] = memory
 
-    async def find_by_id(self, memory_id: str, user_id: str) -> Optional[Memory]:
+    async def find_by_id(self, memory_id: str, user_id: str) -> Memory | None:
         memory = self._memories.get(memory_id)
         if memory and memory.user_id == user_id:
             return memory
@@ -32,11 +31,11 @@ class MockMemoryRepository(IMemoryRepository):
     async def list_by_user(
         self,
         user_id: str,
-        project_path: Optional[str] = None,
-        memory_type: Optional[MemoryType] = None,
+        project_path: str | None = None,
+        memory_type: MemoryType | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         results = [
             m for m in self._memories.values()
             if m.user_id == user_id
@@ -51,9 +50,9 @@ class MockMemoryRepository(IMemoryRepository):
         self,
         user_id: str,
         query: str,
-        project_path: Optional[str] = None,
+        project_path: str | None = None,
         limit: int = 5,
-    ) -> List[Memory]:
+    ) -> list[Memory]:
         results = [
             m for m in self._memories.values()
             if m.user_id == user_id and (
@@ -194,7 +193,7 @@ class TestMemoryService:
     @pytest.mark.asyncio
     async def test_build_memory_prompt_with_freshness_warning(self, service):
         """测试带新鲜度警告的提示词"""
-        from datetime import datetime, timedelta
+        from datetime import timedelta
 
         # 创建一个旧记忆（手动设置时间戳）
         old_memory = Memory(

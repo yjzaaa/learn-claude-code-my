@@ -3,21 +3,26 @@ SSE Event Models - SSE 事件模型
 
 服务器发送事件 (Server-Sent Events) 相关模型。
 """
-from typing import Optional, List
+
 import time
+from typing import Optional
+
 from pydantic import BaseModel, Field
+
 from .containers import ItemData
 
 
 class EventMetadata(BaseModel):
     """事件元数据"""
-    iteration: Optional[int] = None
-    tool_call_id: Optional[str] = None
-    max_iterations: Optional[int] = None
+
+    iteration: int | None = None
+    tool_call_id: str | None = None
+    max_iterations: int | None = None
 
 
 class BaseSSEEvent(BaseModel):
     """SSE 事件基类"""
+
     type: str = ""
     dialog_id: str = ""
     timestamp: float = Field(default_factory=time.time)
@@ -25,12 +30,14 @@ class BaseSSEEvent(BaseModel):
 
 class SkillEditPendingEvent(BaseSSEEvent):
     """Skill Edit 待处理事件"""
+
     type: str = "skill_edit:pending"
     approval: ItemData = Field(default_factory=ItemData)
 
 
 class SkillEditResolvedEvent(BaseSSEEvent):
     """Skill Edit 已解决事件"""
+
     type: str = "skill_edit:resolved"
     approval_id: str = ""
     result: str = ""
@@ -38,6 +45,7 @@ class SkillEditResolvedEvent(BaseSSEEvent):
 
 class TodoItemDTO(BaseModel):
     """Todo 项 DTO"""
+
     id: str
     text: str
     status: str = "pending"
@@ -59,13 +67,15 @@ class TodoItemDTO(BaseModel):
 
 class TodoUpdatedEvent(BaseSSEEvent):
     """Todo 更新事件"""
+
     type: str = "todo:updated"
-    todos: List[TodoItemDTO] = Field(default_factory=list)
+    todos: list[TodoItemDTO] = Field(default_factory=list)
     rounds_since_todo: int = 0
 
 
 class TodoReminderEvent(BaseSSEEvent):
     """Todo 提醒事件"""
+
     type: str = "todo:reminder"
     message: str = "Update your todos."
     rounds_since_todo: int = 0
@@ -73,13 +83,15 @@ class TodoReminderEvent(BaseSSEEvent):
 
 class SSEEvent(BaseModel):
     """HTTP SSE 流式输出事件"""
-    content: Optional[str] = None
+
+    content: str | None = None
     done: bool = False
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_sse_format(self) -> str:
         """转换为 SSE 格式字符串"""
         import json
+
         data: dict = {}
         if self.error:
             data["error"] = self.error

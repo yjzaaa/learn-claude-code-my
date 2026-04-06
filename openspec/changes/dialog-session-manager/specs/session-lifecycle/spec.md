@@ -76,16 +76,16 @@ class SessionMetadata:
     total_ai_messages: int = 0       # AI 消息数
     total_tool_calls: int = 0        # 工具调用次数
     total_tokens: int = 0            # 预估总 token 数
-    
+
     # 时间追踪
     first_message_at: Optional[datetime] = None
     last_message_at: Optional[datetime] = None
-    
+
     # 当前回合信息
     current_turn: int = 0
     current_turn_started_at: Optional[datetime] = None
     current_turn_tokens: int = 0
-    
+
     # 错误信息（仅在 ERROR 状态时有效）
     last_error: Optional[str] = None
     last_error_at: Optional[datetime] = None
@@ -105,21 +105,21 @@ class DialogSession:
     dialog_id: str
     title: Optional[str] = None
     status: SessionStatus = SessionStatus.CREATING
-    
+
     # 消息列表（仅最终消息，LangChain BaseMessage 格式）
     messages: list = field(default_factory=list)
-    
+
     # 元数据
     metadata: SessionMetadata = field(default_factory=SessionMetadata)
-    
+
     # 流式上下文（仅在 STREAMING 状态时非 None）
     streaming_context: Optional[StreamingContext] = None
-    
+
     # 时间戳
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     last_activity_at: datetime = field(default_factory=datetime.now)
-    
+
     def touch(self):
         """更新活动时间"""
         self.last_activity_at = datetime.now()
@@ -134,50 +134,50 @@ from contextlib import asynccontextmanager
 
 class ISessionLifecycle(Protocol):
     """会话生命周期管理接口"""
-    
+
     async def create_session(
-        self, 
-        dialog_id: str, 
+        self,
+        dialog_id: str,
         title: Optional[str] = None
     ) -> DialogSession:
         """创建新会话，状态为 CREATING，初始化完成后转为 ACTIVE"""
         ...
-    
+
     async def transition(
-        self, 
-        dialog_id: str, 
+        self,
+        dialog_id: str,
         to_status: SessionStatus,
         context: Optional[dict] = None
     ) -> DialogSession:
         """
         状态转换
-        
+
         Args:
             context: 转换上下文，如错误信息、流式消息 ID 等
-        
+
         Raises:
             InvalidTransitionError: 非法状态转换
             SessionNotFoundError: 会话不存在
         """
         ...
-    
+
     async def get_session(self, dialog_id: str) -> Optional[DialogSession]:
         """获取会话状态"""
         ...
-    
+
     async def close_session(self, dialog_id: str) -> None:
         """关闭会话（CLOSING → CLOSED）"""
         ...
-    
+
     @asynccontextmanager
     async def streaming_context(
-        self, 
-        dialog_id: str, 
+        self,
+        dialog_id: str,
         message_id: str
     ):
         """
         流式上下文管理器
-        
+
         自动处理 ACTIVE → STREAMING → COMPLETED/ERROR 的转换
         """
         ...
@@ -192,7 +192,7 @@ class ISessionLifecycle(Protocol):
 class SessionLifecycleEvent:
     event_type: Literal[
         "session_created",
-        "status_changed", 
+        "status_changed",
         "streaming_started",
         "streaming_completed",
         "streaming_interrupted",
@@ -232,7 +232,7 @@ async def transition(self, dialog_id: str, ...):
     lock = self._locks.get(dialog_id)
     if not lock:
         raise SessionNotFoundError(dialog_id)
-    
+
     async with lock:
         # 执行状态转换
         ...

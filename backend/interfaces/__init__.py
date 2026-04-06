@@ -7,7 +7,7 @@ Interfaces - 接口层
 使用示例:
     from backend.interfaces.http.server import create_app
     from backend.application.engine import AgentEngine
-    
+
     engine = AgentEngine(config)
     app = create_app(engine)
 """

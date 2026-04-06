@@ -1,6 +1,7 @@
 """AgentTaskQueue 测试"""
 import asyncio
-from backend.infrastructure.agent_queue import AgentTaskQueue, AgentTask, TaskPriority
+
+from backend.infrastructure.agent_queue import AgentTask, AgentTaskQueue, TaskPriority
 
 
 async def test_task_submission():
@@ -20,7 +21,7 @@ async def test_task_submission():
     try:
         result = await asyncio.wait_for(future, timeout=2.0)
         print(f"✓ test_task_submission passed (result={result})")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         print("✗ test_task_submission timeout")
 
     await queue.shutdown()

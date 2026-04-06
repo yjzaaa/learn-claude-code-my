@@ -4,8 +4,9 @@
 """
 
 import logging
-from .factory import LoggerFactory, get_logger
-from .mixins import LoggerMixin, ClassLoggerMixin
+
+from .factory import get_logger
+from .mixins import ClassLoggerMixin, LoggerMixin
 
 
 def test_basic_logger():
@@ -27,24 +28,26 @@ def test_logger_singleton():
 
 def test_logger_mixin():
     """测试 LoggerMixin"""
+
     class TestClass(LoggerMixin):
         def log_something(self):
             self.logger.info("Test message from mixin")
 
     obj = TestClass()
-    assert hasattr(obj, 'logger')
+    assert hasattr(obj, "logger")
     assert obj.logger is not None
     print("✓ LoggerMixin 验证成功")
 
 
 def test_class_logger_mixin():
     """测试 ClassLoggerMixin"""
+
     class TestClass(ClassLoggerMixin):
         @classmethod
         def log_something(cls):
             cls.class_logger.info("Test message from class mixin")
 
-    assert hasattr(TestClass, 'class_logger')
+    assert hasattr(TestClass, "class_logger")
     assert TestClass.class_logger is not None
     print("✓ ClassLoggerMixin 验证成功")
 

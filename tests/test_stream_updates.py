@@ -7,7 +7,7 @@ from pathlib import Path
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -23,9 +23,9 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 async def test():
     from deepagents import create_deep_agent
     from deepagents.backends import FilesystemBackend
+    from langchain_anthropic import ChatAnthropic
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.store.memory import InMemoryStore
-    from langchain_anthropic import ChatAnthropic
 
     model = ChatAnthropic(
         model=os.getenv("MODEL_ID", "kimi-k2-coding"),

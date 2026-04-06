@@ -5,14 +5,15 @@ Core Types - 核心类型定义
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
 from enum import Enum
+from typing import Any, Optional
 
 from backend.domain.models.shared.types import StreamToolCallDict
 
 
 class AgentStatus(Enum):
     """Agent 状态"""
+
     IDLE = "idle"
     RUNNING = "running"
     THINKING = "thinking"
@@ -25,50 +26,55 @@ class AgentStatus(Enum):
 @dataclass
 class AgentMessage:
     """标准化消息格式"""
-    role: str                    # "user", "assistant", "system", "tool"
+
+    role: str  # "user", "assistant", "system", "tool"
     content: str
-    tool_calls: Optional[list] = None
-    tool_call_id: Optional[str] = None
-    metadata: Optional[dict] = None
+    tool_calls: list | None = None
+    tool_call_id: str | None = None
+    metadata: dict | None = None
 
 
 @dataclass
 class ToolResult:
     """工具执行结果"""
+
     tool_name: str
     tool_call_id: str
     output: str
-    error: Optional[str] = None
+    error: str | None = None
     execution_time_ms: int = 0
 
 
 @dataclass
 class AgentEvent:
     """Agent 事件 - 用于流式通知上层"""
-    type: str                    # "text_delta", "reasoning_delta", "tool_start", "tool_end", "complete", "error", "stopped"
+
+    type: str  # "text_delta", "reasoning_delta", "tool_start", "tool_end", "complete", "error", "stopped"
     data: Any
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 @dataclass
 class StreamChunk:
     """流式响应块 - Provider 层统一格式"""
+
     is_content: bool = False
     is_tool_call: bool = False
     is_reasoning: bool = False
     is_done: bool = False
     is_error: bool = False
-    
+
     content: str = ""
     reasoning_content: str = ""
-    tool_call: Optional[StreamToolCallDict] = None
-    finish_reason: Optional[str] = None
+    tool_call: StreamToolCallDict | None = None
+    finish_reason: str | None = None
     error: str = ""
-    usage: Optional[dict] = None
+    usage: dict | None = None
 
 
 class HookName(Enum):
     """Agent 生命周期钩子名称"""
+
     ON_BEFORE_RUN = "on_before_run"
     ON_STREAM_TOKEN = "on_stream_token"
     ON_TOOL_CALL = "on_tool_call"
@@ -82,7 +88,7 @@ class HookName(Enum):
 __all__ = [
     "AgentStatus",
     "AgentMessage",
-    "ToolResult", 
+    "ToolResult",
     "AgentEvent",
     "StreamChunk",
     "HookName",

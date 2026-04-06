@@ -5,22 +5,24 @@ Tool Models - 工具模型 (Pydantic BaseModel 版本)
 合并自 tool_models.py 和 tool.py。
 """
 
-from typing import Any, Callable, Dict, List, Optional, Union
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from collections.abc import Callable
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ═══════════════════════════════════════════════════════════
 # JSON Schema 相关
 # ═══════════════════════════════════════════════════════════
 
+
 class JSONSchemaProperty(BaseModel):
     """JSON Schema 属性定义"""
 
     type: str = "string"
-    description: Optional[str] = None
-    items: Optional[Dict[str, Any]] = None  # for array type
-    enum: Optional[List[str]] = None
-    properties: Optional[Dict[str, "JSONSchemaProperty"]] = None
+    description: str | None = None
+    items: dict[str, Any] | None = None  # for array type
+    enum: list[str] | None = None
+    properties: dict[str, "JSONSchemaProperty"] | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -29,9 +31,9 @@ class JSONSchema(BaseModel):
     """JSON Schema (OpenAI function parameters 格式)"""
 
     type: str = "object"
-    properties: Dict[str, JSONSchemaProperty] = Field(default_factory=dict)
-    required: List[str] = Field(default_factory=list)
-    description: Optional[str] = None
+    properties: dict[str, JSONSchemaProperty] = Field(default_factory=dict)
+    required: list[str] = Field(default_factory=list)
+    description: str | None = None
 
     @field_validator("type")
     @classmethod
@@ -49,12 +51,13 @@ class JSONSchema(BaseModel):
 # OpenAI 格式工具定义
 # ═══════════════════════════════════════════════════════════
 
+
 class OpenAIFunctionSchema(BaseModel):
     """OpenAI Function Schema"""
 
     name: str
     description: str
-    parameters: Union[JSONSchema, Dict[str, Any]]
+    parameters: JSONSchema | dict[str, Any]
 
     @field_validator("name")
     @classmethod
@@ -84,12 +87,13 @@ class OpenAIToolSchema(BaseModel):
 # 工具规格和定义
 # ═══════════════════════════════════════════════════════════
 
+
 class ToolSpec(BaseModel):
     """工具规格定义 (从 __tool_spec__ 属性解析)"""
 
     name: str
     description: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("parameters", mode="before")
     @classmethod
@@ -116,7 +120,7 @@ class ToolSpec(BaseModel):
         return v
 
     @classmethod
-    def from_dict(cls, spec: Dict[str, Any], default_name: str = "") -> "ToolSpec":
+    def from_dict(cls, spec: dict[str, Any], default_name: str = "") -> "ToolSpec":
         """从工具规格字典创建"""
         return cls(
             name=spec.get("name", default_name),
@@ -127,29 +131,33 @@ class ToolSpec(BaseModel):
 
 class ToolFunction(BaseModel):
     """OpenAI Function 定义 (内部函数描述)"""
+
     name: str
     description: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
 
 
 class ToolSchema(BaseModel):
     """OpenAI Tool Schema (顶层包装，用于 API)"""
+
     type: str = "function"
     function: ToolFunction
 
 
 class ToolDefinition(BaseModel):
     """工具定义 (用于注册和存储)"""
+
     name: str
-    handler: Optional[Callable] = None  # 运行时填充
+    handler: Callable | None = None  # 运行时填充
     description: str = ""
-    parameters: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class ToolInfo(BaseModel):
     """工具信息 (序列化后返回给客户端)"""
+
     name: str
     description: str
     parameters: JSONSchema
@@ -157,21 +165,24 @@ class ToolInfo(BaseModel):
 
 class ToolExecutionResult(BaseModel):
     """工具执行结果"""
+
     tool_call_id: str
     tool_name: str
     result: str
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ActiveToolInfo(BaseModel):
     """激活的工具信息 (包含技能关联)"""
+
     skill_id: str
     skill_name: str
-    tool: Dict[str, Any]  # ToolInfo 的字典形式
+    tool: dict[str, Any]  # ToolInfo 的字典形式
 
 
 class ToolCallBuffer(BaseModel):
     """流式响应中的工具调用缓冲"""
+
     id: str = ""
     name: str = ""
     arguments: str = ""
@@ -185,16 +196,18 @@ class ToolCallBuffer(BaseModel):
 
 class SkillToolRegistration(BaseModel):
     """技能工具注册信息"""
+
     name: str
     description: str = ""
-    parameters: Dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
-    handler: Optional[Callable] = None  # 可选的处理函数
+    parameters: dict[str, Any] = Field(default_factory=lambda: {"type": "object", "properties": {}})
+    handler: Callable | None = None  # 可选的处理函数
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class MergedToolItem(BaseModel):
     """build_tools 返回的合并工具项"""
+
     name: str
     description: str
     parameters: JSONSchema

@@ -7,12 +7,11 @@ MemoryService - 记忆应用服务
 - 记忆注入上下文
 """
 
-from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
 
-from backend.domain.models.dialog.dialog import Dialog
 from backend.application.dto.responses import MemorySummary
+from backend.domain.models.dialog.dialog import Dialog
 
 
 class MemoryService:
@@ -25,11 +24,7 @@ class MemoryService:
         _memory_file: 记忆文件路径
     """
 
-    def __init__(
-        self,
-        llm_provider,
-        memory_file: Path = Path("memory.md")
-    ):
+    def __init__(self, llm_provider, memory_file: Path = Path("memory.md")):
         """初始化 MemoryService
 
         Args:
@@ -73,7 +68,7 @@ class MemoryService:
             async for chunk in self._llm.chat_stream(
                 messages=[{"role": "user", "content": prompt}]
             ):
-                if hasattr(chunk, 'content') and chunk.content:
+                if hasattr(chunk, "content") and chunk.content:
                     summary_parts.append(chunk.content)
                 elif isinstance(chunk, str):
                     summary_parts.append(chunk)
@@ -88,11 +83,7 @@ class MemoryService:
 
         return summary
 
-    async def get_relevant_memories(
-        self,
-        query: str,
-        limit: int = 3
-    ) -> List[str]:
+    async def get_relevant_memories(self, query: str, limit: int = 3) -> list[str]:
         """获取与查询相关的记忆
 
         简化实现：返回最近的记忆
@@ -119,7 +110,7 @@ class MemoryService:
         except Exception:
             return []
 
-    async def get_memory_summary(self) -> Optional[MemorySummary]:
+    async def get_memory_summary(self) -> MemorySummary | None:
         """获取记忆摘要
 
         Returns:
@@ -134,9 +125,7 @@ class MemoryService:
 
             return MemorySummary(
                 content=content[:500] + "..." if len(content) > 500 else content,
-                created_at=datetime.fromtimestamp(
-                    self._memory_file.stat().st_mtime
-                ),
+                created_at=datetime.fromtimestamp(self._memory_file.stat().st_mtime),
                 dialog_count=len(entries) - 1 if len(entries) > 1 else 1,
             )
         except Exception:
@@ -168,7 +157,7 @@ class MemoryService:
         with open(self._memory_file, "a", encoding="utf-8") as f:
             f.write(entry)
 
-    def _format_history(self, messages: List[dict]) -> str:
+    def _format_history(self, messages: list[dict]) -> str:
         """格式化消息历史
 
         Args:

@@ -8,14 +8,13 @@ AsyncQueue 集成使用示例
 """
 
 import asyncio
-from typing import Set
+
 from fastapi import WebSocket
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 示例 1: 使用 WebSocketMessageBuffer 优化广播
 # ═══════════════════════════════════════════════════════════════════════════
-
-from backend.infrastructure.websocket_buffer import WebSocketMessageBuffer, BufferStrategy
+from backend.infrastructure.websocket_buffer import BufferStrategy, WebSocketMessageBuffer
 
 # 为每个客户端维护独立的缓冲区
 _client_buffers: dict[str, WebSocketMessageBuffer] = {}
@@ -52,7 +51,7 @@ async def broadcast_with_buffer(event: dict, client_id: str, websocket: WebSocke
 # 示例 2: 使用 AgentTaskQueue 控制并发
 # ═══════════════════════════════════════════════════════════════════════════
 
-from backend.infrastructure.agent_queue import AgentTaskQueue, AgentTask, TaskPriority
+from backend.infrastructure.agent_queue import AgentTask, AgentTaskQueue, TaskPriority
 
 # 全局任务队列（限制最多 5 个并发 Agent）
 _agent_queue = AgentTaskQueue(max_concurrent=5)
@@ -89,7 +88,7 @@ async def submit_agent_task(dialog_id: str, content: str) -> dict:
     try:
         result = await asyncio.wait_for(future, timeout=60.0)
         return {"status": "completed", "result": result}
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {"status": "timeout"}
 
 

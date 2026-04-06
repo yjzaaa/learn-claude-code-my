@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 s07_task_system.py - 任务系统
@@ -27,12 +28,13 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
     from agents.providers import create_provider_from_env
     from base import BaseAgentLoop, WorkspaceOps, tool
 except ImportError:
-    from providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps, tool
+    from providers import create_provider_from_env
 
 load_dotenv(override=True)
 

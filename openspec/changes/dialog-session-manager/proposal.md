@@ -39,7 +39,7 @@
 
 ## Impact
 
-- **Backend**: 
+- **Backend**:
   - 新增 `core/session/` 目录
   - 修改 `core/agent/runtimes/base.py`
   - 修改 `core/agent/runtimes/deep_runtime.py`

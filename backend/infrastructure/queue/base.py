@@ -12,7 +12,8 @@ Usage Example:
 """
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Generic, TypeVar
+from collections.abc import AsyncIterator
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 

@@ -26,12 +26,12 @@ Example:
 """
 
 import asyncio
-from backend.infrastructure.logging import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
+from backend.infrastructure.logging import get_logger
 from backend.infrastructure.queue import InMemoryAsyncQueue
 
 logger = get_logger(__name__)
@@ -82,7 +82,7 @@ class TaskResult:
     task_id: str
     success: bool
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class AgentTaskQueue:
@@ -123,7 +123,7 @@ class AgentTaskQueue:
         )
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._running = False
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
         self._stats = {
             "submitted": 0,
             "completed": 0,
@@ -183,7 +183,9 @@ class AgentTaskQueue:
         await self._task_queue.enqueue((task.priority.value, task, future))
         self._stats["submitted"] += 1
 
-        logger.debug(f"[AgentTaskQueue] Task {task.task_id} submitted with priority {task.priority.name}")
+        logger.debug(
+            f"[AgentTaskQueue] Task {task.task_id} submitted with priority {task.priority.name}"
+        )
         return future
 
     async def _worker_loop(self) -> None:
@@ -256,7 +258,5 @@ class AgentTaskQueue:
             "submitted": self._stats["submitted"],
             "completed": self._stats["completed"],
             "failed": self._stats["failed"],
-            "pending": self._stats["submitted"]
-            - self._stats["completed"]
-            - self._stats["failed"],
+            "pending": self._stats["submitted"] - self._stats["completed"] - self._stats["failed"],
         }

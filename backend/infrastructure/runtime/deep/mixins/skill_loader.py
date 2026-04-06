@@ -3,10 +3,10 @@
 从 deep_legacy.py 提取的技能加载逻辑。
 """
 
-import sys
 import importlib.util
+import sys
 from pathlib import Path
-from typing import Any
+
 from loguru import logger
 
 from backend.infrastructure.runtime.base.runtime import ToolCache
@@ -64,6 +64,8 @@ class DeepSkillLoaderMixin:
                         logger.info("[DeepAgentRuntime] Loaded skill tool: %s", tool_item["name"])
                 except Exception as e:
                     # 记录警告但继续加载其他脚本
-                    logger.warning("[DeepAgentRuntime] Failed to load skill script %s: %s", py_file, e)
+                    logger.warning(
+                        "[DeepAgentRuntime] Failed to load skill script %s: %s", py_file, e
+                    )
 
         logger.info("[DeepAgentRuntime] Loaded %d skill tools", tool_count)

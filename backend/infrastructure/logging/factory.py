@@ -8,9 +8,6 @@
 """
 
 import logging
-import sys
-import os
-from typing import Optional
 
 # 从配置导入 loguru 的拦截处理器
 from .config import InterceptHandler
@@ -24,7 +21,7 @@ class LoggerFactory:
     _default_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
     @staticmethod
-    def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
+    def get_logger(name: str, level: int | None = None) -> logging.Logger:
         """
         获取配置好的 logger
 
@@ -45,7 +42,7 @@ class LoggerFactory:
         return logger
 
     @staticmethod
-    def _configure_logger(logger: logging.Logger, level: Optional[int] = None) -> None:
+    def _configure_logger(logger: logging.Logger, level: int | None = None) -> None:
         """配置 logger 的 formatter 和 handler"""
         # 设置日志级别
         effective_level = level or LoggerFactory._default_level
@@ -92,7 +89,7 @@ class LoggerFactory:
 
 
 # 便捷函数，用于快速导入
-def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
+def get_logger(name: str, level: int | None = None) -> logging.Logger:
     """快捷获取 logger
 
     使用方式:

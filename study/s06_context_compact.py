@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 s06_context_compact.py - 上下文压缩
@@ -40,6 +41,7 @@ import time
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
     from agents.providers import create_provider_from_env
 except ImportError:

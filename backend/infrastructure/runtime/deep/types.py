@@ -3,14 +3,16 @@
 定义 Deep Agent Runtime 使用的共享类型和数据类。
 """
 
-from typing import Any, Optional, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class DeepAgentConfig(BaseModel):
     """Deep Agent 配置"""
+
     name: str = "deep_agent"
     model: str = "claude-sonnet-4-6"
     system: str = ""
@@ -23,6 +25,7 @@ class DeepAgentConfig(BaseModel):
 @dataclass
 class ToolCache:
     """工具缓存"""
+
     handler: Callable[..., Any]
     description: str
     parameters_schema: dict[str, Any]
@@ -31,10 +34,11 @@ class ToolCache:
 @dataclass
 class StreamingState:
     """流式状态"""
+
     accumulated_content: str = ""
     accumulated_reasoning: str = ""
-    last_message_id: Optional[str] = None
-    actual_model_name: Optional[str] = None
+    last_message_id: str | None = None
+    actual_model_name: str | None = None
 
 
 __all__ = ["DeepAgentConfig", "ToolCache", "StreamingState"]

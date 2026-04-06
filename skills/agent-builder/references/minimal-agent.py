@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 Minimal Agent Template - Copy and customize this.
@@ -12,10 +13,11 @@ Usage:
     3. Type commands, 'q' to quit
 """
 
-from anthropic import Anthropic
-from pathlib import Path
-import subprocess
 import os
+import subprocess
+from pathlib import Path
+
+from anthropic import Anthropic
 
 # Configuration
 client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))

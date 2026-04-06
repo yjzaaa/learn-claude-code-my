@@ -37725,4 +37725,3 @@ CREATE INDEX idx_rate_year ON public.rate_table USING btree (year);
 --
 
 \unrestrict laHDRMa8xHGoDSdxnDj4qYLoR8j4KC2wy2T7bPvAfFAwycJVJkWpSY8BLQeCCD7
-

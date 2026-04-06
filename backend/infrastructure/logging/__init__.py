@@ -18,9 +18,9 @@
     logger = LoggerFactory.get_logger(__name__)
 """
 
+from .config import WarningRedirectHandler, setup_logging
 from .factory import LoggerFactory, get_logger
-from .mixins import LoggerMixin, ClassLoggerMixin
-from .config import setup_logging, WarningRedirectHandler
+from .mixins import ClassLoggerMixin, LoggerMixin
 
 __all__ = [
     "LoggerFactory",

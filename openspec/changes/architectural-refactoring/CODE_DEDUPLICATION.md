@@ -45,36 +45,36 @@ from typing import Optional
 
 class LoggerFactory:
     """统一日志工厂，集中管理所有 logger 配置"""
-    
+
     _configured_loggers: set[str] = set()
-    
+
     @staticmethod
     def get_logger(name: str, level: Optional[int] = None) -> logging.Logger:
         """
         获取配置好的 logger
-        
+
         Args:
             name: logger 名称，通常使用 __name__
             level: 可选的日志级别，默认使用配置中的级别
-            
+
         Returns:
             配置好的 Logger 实例
         """
         logger = logging.getLogger(name)
-        
+
         # 只配置一次
         if name not in LoggerFactory._configured_loggers:
             LoggerFactory._configure_logger(logger, level)
             LoggerFactory._configured_loggers.add(name)
-            
+
         return logger
-    
+
     @staticmethod
     def _configure_logger(logger: logging.Logger, level: Optional[int] = None) -> None:
         """配置 logger 的 formatter 和 handler"""
         if level:
             logger.setLevel(level)
-        
+
         # 如果 logger 没有 handler，添加默认 handler
         if not logger.handlers:
             handler = logging.StreamHandler()
@@ -147,27 +147,27 @@ from typing import Union
 
 class TimeUtils:
     """时间工具类，提供统一的时间戳生成方法"""
-    
+
     @staticmethod
     def timestamp_ms() -> int:
         """获取毫秒级时间戳"""
         return int(time.time() * 1000)
-    
+
     @staticmethod
     def timestamp_sec() -> int:
         """获取秒级时间戳"""
         return int(time.time())
-    
+
     @staticmethod
     def iso_timestamp() -> str:
         """获取 ISO 格式 UTC 时间戳"""
         return datetime.now(timezone.utc).isoformat()
-    
+
     @staticmethod
     def iso_timestamp_with_tz() -> str:
         """获取带时区的 ISO 时间戳"""
         return datetime.now(timezone.utc).isoformat()
-    
+
     @staticmethod
     def format_duration_ms(start_ms: int, end_ms: Optional[int] = None) -> str:
         """格式化持续时间（毫秒）"""
@@ -220,7 +220,7 @@ from backend.domain.models.dialog.session import DialogSession
 
 class SnapshotBuilder:
     """对话快照构建器，统一处理快照构建逻辑"""
-    
+
     @staticmethod
     def build_from_session(
         session: DialogSession,
@@ -230,7 +230,7 @@ class SnapshotBuilder:
         """从 DialogSession 构建快照"""
         # 合并 manager.py 和 dialog_service.py 中的构建逻辑
         messages = SnapshotBuilder._convert_messages(session)
-        
+
         return {
             "id": session.dialog_id,
             "title": session.metadata.title or "New Dialog",
@@ -242,7 +242,7 @@ class SnapshotBuilder:
             "updated_at": session.updated_at.isoformat(),
             "selected_model_id": getattr(session, 'selected_model_id', None),
         }
-    
+
     @staticmethod
     def _convert_messages(session: DialogSession) -> List[Dict]:
         """转换消息格式"""
@@ -250,7 +250,7 @@ class SnapshotBuilder:
         for msg in session.history.messages:
             role = SnapshotBuilder._get_message_role(msg)
             msg_id = getattr(msg, 'msg_id', '') or str(id(msg))[:12]
-            
+
             msg_dict = {
                 "id": msg_id,
                 "role": role,
@@ -259,7 +259,7 @@ class SnapshotBuilder:
                 "status": "completed",
                 "timestamp": session.updated_at.isoformat(),
             }
-            
+
             # 添加模型信息
             msg_metadata = getattr(msg, 'additional_kwargs', {}) or {}
             if msg_metadata.get('model'):
@@ -268,10 +268,10 @@ class SnapshotBuilder:
                 msg_dict["provider"] = msg_metadata['provider']
             if msg_metadata.get('reasoning_content'):
                 msg_dict["reasoning_content"] = msg_metadata['reasoning_content']
-                
+
             messages.append(msg_dict)
         return messages
-    
+
     @staticmethod
     def _get_message_role(msg) -> str:
         """获取消息角色"""
@@ -282,20 +282,20 @@ class SnapshotBuilder:
             return "assistant"
         else:
             return "tool"
-    
+
     @staticmethod
     def _build_metadata(session: DialogSession) -> Dict[str, Any]:
         """构建元数据"""
         import os
         from backend.infrastructure.services.provider_manager import ProviderManager
-        
+
         try:
             pm = ProviderManager()
             model_config = pm.get_model_config()
             current_model = model_config.model
         except Exception:
             current_model = os.getenv("MODEL_ID", "unknown")
-        
+
         return {
             "model": current_model,
             "agent_name": "hana",
@@ -356,15 +356,15 @@ backend/infrastructure/runtime/services/logging_mixin.py
 
 class ComparableMixin:
     """提供对象比较功能的 Mixin"""
-    
+
     def __eq__(self, other) -> bool:
         if not isinstance(other, self.__class__):
             return NotImplemented
         return self._get_comparison_key() == other._get_comparison_key()
-    
+
     def __hash__(self) -> int:
         return hash(self._get_comparison_key())
-    
+
     def _get_comparison_key(self):
         """子类需要重写此方法返回用于比较的关键字"""
         raise NotImplementedError
@@ -372,14 +372,14 @@ class ComparableMixin:
 
 class SerializableMixin:
     """提供序列化功能的 Mixin"""
-    
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
-            k: v for k, v in self.__dict__.items() 
+            k: v for k, v in self.__dict__.items()
             if not k.startswith('_')
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict):
         """从字典创建实例"""
@@ -388,11 +388,11 @@ class SerializableMixin:
 
 class ValidatableMixin:
     """提供验证功能的 Mixin"""
-    
+
     def validate(self) -> list[str]:
         """
         验证对象状态
-        
+
         Returns:
             错误信息列表，空列表表示验证通过
         """
@@ -414,17 +414,17 @@ from backend.infrastructure.logging import get_logger
 class LoggerMixin:
     """
     自动为类添加 logger 属性的 Mixin
-    
+
     使用方式：
         class MyService(LoggerMixin):
             def do_something(self):
                 self.logger.info("Doing something")
     """
-    
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls._logger_name = cls.__module__ + '.' + cls.__name__
-    
+
     @property
     def logger(self):
         if not hasattr(self, '_logger'):
@@ -488,7 +488,7 @@ backend/infrastructure/tools/toolkit.py
 
 class DomainError(Exception):
     """领域层基础异常"""
-    
+
     def __init__(self, message: str, code: str = None, details: dict = None):
         super().__init__(message)
         self.message = message

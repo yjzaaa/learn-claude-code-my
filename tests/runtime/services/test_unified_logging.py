@@ -1,10 +1,12 @@
 """测试 UnifiedLoggingMixin"""
 import asyncio
 import sys
+
 sys.path.insert(0, 'D:\\learn-claude-code-my')
 
 from backend.infrastructure.runtime.services.logging_mixin import (
-    UnifiedLoggingMixin, JsonlLogBuffer, AsyncLogBuffer
+    JsonlLogBuffer,
+    UnifiedLoggingMixin,
 )
 
 

@@ -40,4 +40,3 @@ TBD - created by archiving change async-queue-integrations. Update Purpose after
 #### Scenario: 查询队列状态
 - **WHEN** 调用 queue.get_stats()
 - **THEN** 返回等待中、执行中、已完成任务数
-

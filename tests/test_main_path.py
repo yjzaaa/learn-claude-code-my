@@ -6,7 +6,7 @@ from pathlib import Path
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -32,27 +32,29 @@ factory = AgentRuntimeFactory()
 runtime = factory.create("deep", "main-agent", config)
 
 import asyncio
+
+
 async def test():
     await runtime.initialize(config)
     print("Runtime initialized, agent type:", runtime.agent_type)
-    
+
     # 检查 _agent 的 model
     agent = runtime._agent
     # deepagents 的 create_agent 返回 CompiledGraph
     # 内部 model 可能在 graph 的 config 中
     print("Agent class:", type(agent).__name__)
-    
+
     # 直接测试 send_message
     dialog_id = await runtime.create_dialog("test")
     print("Dialog created:", dialog_id)
-    
+
     events = []
     async for event in runtime.send_message(dialog_id, "hi", stream=True):
         print("Event:", event.type, event.data)
         events.append(event)
         if len(events) > 20:
             break
-    
+
     print("Total events:", len(events))
 
 asyncio.run(test())

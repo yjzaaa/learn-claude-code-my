@@ -5,10 +5,11 @@
 
 import sys
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any
 
 from backend.infrastructure.logging import get_logger
 from backend.infrastructure.tools.toolkit import scan_tools
+
 from .types import DeepAgentConfig, ToolCache
 
 logger = get_logger(__name__)
@@ -27,7 +28,7 @@ class AgentLifecycleManager:
     def __init__(self, agent_id: str, config: DeepAgentConfig):
         self.agent_id = agent_id
         self.config = config
-        self._tools: Dict[str, ToolCache] = {}
+        self._tools: dict[str, ToolCache] = {}
 
     def load_skill_scripts(self) -> int:
         """加载技能脚本中的工具
@@ -104,11 +105,11 @@ class AgentLifecycleManager:
                 payload = json.dumps({"sql": sql, "limit": limit})
                 b64 = base64.b64encode(payload.encode()).decode()
                 cmd = (
-                    f"python -c \"import base64, json, sys; "
+                    f'python -c "import base64, json, sys; '
                     f"p=json.loads(base64.b64decode('{b64}').decode()); "
                     f"sys.path.insert(0, 'finance/scripts'); "
                     f"from sql_query import run_sql_query; "
-                    f"print(run_sql_query(**p))\""
+                    f'print(run_sql_query(**p))"'
                 )
                 result = backend.execute(cmd)
                 return result.output
@@ -121,7 +122,7 @@ class AgentLifecycleManager:
             logger.info("[AgentLifecycle] Proxied run_sql_query to sandbox")
 
     @property
-    def tools(self) -> Dict[str, ToolCache]:
+    def tools(self) -> dict[str, ToolCache]:
         """获取工具字典"""
         return self._tools
 
@@ -130,7 +131,7 @@ class AgentLifecycleManager:
         name: str,
         handler: Any,
         description: str,
-        parameters_schema: Optional[Dict] = None,
+        parameters_schema: dict | None = None,
     ) -> None:
         """注册工具"""
         self._tools[name] = ToolCache(

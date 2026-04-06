@@ -7,26 +7,29 @@ SkillService - 技能应用服务
 - 技能工具注册协调
 """
 
-from typing import Optional, Callable, Any
-from pathlib import Path
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-from backend.domain.models import Skill, SkillDefinition
 from backend.application.dto.responses import LoadSkillResult, SkillInfoDTO
+from backend.domain.models import Skill, SkillDefinition
 from backend.domain.models.events import SkillLoaded, SkillUnloaded
 
 
 @dataclass
 class ToolInfo:
     """工具信息"""
+
     name: str
     handler: Callable[..., Any]
     description: str
-    schema: Optional[Any] = None
+    schema: Any | None = None
 
 
 class SkillNotFoundError(Exception):
     """技能不存在错误"""
+
     pass
 
 
@@ -43,13 +46,7 @@ class SkillService:
         _skills_dir: 技能目录路径
     """
 
-    def __init__(
-        self,
-        skill_repo,
-        event_bus,
-        tool_manager,
-        skills_dir: Path = Path("skills")
-    ):
+    def __init__(self, skill_repo, event_bus, tool_manager, skills_dir: Path = Path("skills")):
         """初始化 SkillService
 
         Args:
@@ -63,10 +60,7 @@ class SkillService:
         self._tool_mgr = tool_manager
         self._skills_dir = skills_dir
 
-    async def load_skill_from_directory(
-        self,
-        skill_path: Path
-    ) -> LoadSkillResult:
+    async def load_skill_from_directory(self, skill_path: Path) -> LoadSkillResult:
         """从目录加载技能
 
         流程:
@@ -132,17 +126,16 @@ class SkillService:
         await self._repo.save(skill)
 
         # 6. 发射事件
-        self._event_bus.emit(SkillLoaded(
-            skill_id=skill_id,
-            name=definition.name,
-            tool_count=len(tools),
-        ))
+        self._event_bus.emit(
+            SkillLoaded(
+                skill_id=skill_id,
+                name=definition.name,
+                tool_count=len(tools),
+            )
+        )
 
         return LoadSkillResult(
-            skill_id=skill_id,
-            name=definition.name,
-            tool_count=len(tools),
-            loaded=True
+            skill_id=skill_id, name=definition.name, tool_count=len(tools), loaded=True
         )
 
     async def unload_skill(self, skill_id: str) -> bool:
@@ -194,7 +187,7 @@ class SkillService:
             for s in skills
         ]
 
-    async def get_skill(self, skill_id: str) -> Optional[Skill]:
+    async def get_skill(self, skill_id: str) -> Skill | None:
         """获取技能实体
 
         Args:
@@ -246,7 +239,7 @@ class SkillService:
             return {}, content
 
         front_matter = content[3:end].strip()
-        body = content[end + 3:].strip()
+        body = content[end + 3 :].strip()
 
         metadata = {}
         for line in front_matter.splitlines():
@@ -256,7 +249,7 @@ class SkillService:
 
         return metadata, body
 
-    def _load_tool_from_script(self, script_path: Path) -> Optional[ToolInfo]:
+    def _load_tool_from_script(self, script_path: Path) -> ToolInfo | None:
         """从 Python 脚本加载工具
 
         Args:
@@ -269,9 +262,8 @@ class SkillService:
         # 实际实现需要动态导入模块并提取 @tool 装饰的函数
         try:
             import importlib.util
-            spec = importlib.util.spec_from_file_location(
-                script_path.stem, script_path
-            )
+
+            spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
             if spec and spec.loader:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
@@ -279,12 +271,12 @@ class SkillService:
                 # 查找 @tool 装饰的函数
                 for name in dir(module):
                     obj = getattr(module, name)
-                    if callable(obj) and hasattr(obj, '_is_tool'):
+                    if callable(obj) and hasattr(obj, "_is_tool"):
                         return ToolInfo(
                             name=name,
                             handler=obj,
-                            description=getattr(obj, '_description', ''),
-                            schema=getattr(obj, '_schema', None),
+                            description=getattr(obj, "_description", ""),
+                            schema=getattr(obj, "_schema", None),
                         )
         except Exception:
             pass

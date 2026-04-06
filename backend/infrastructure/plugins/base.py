@@ -6,13 +6,9 @@ Plugin Base - 插件基类
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional
+from collections.abc import Callable
 
 from backend.infrastructure.event_bus import EventBus
-from backend.domain.models.events.base import (
-    MessageReceived, StreamDelta, MessageCompleted,
-    ToolCallStarted, ToolCallCompleted, ErrorOccurred
-)
 
 
 class AgentPlugin(ABC):
@@ -26,11 +22,11 @@ class AgentPlugin(ABC):
     description: str = "Base plugin"
     enabled: bool = True
 
-    def __init__(self, event_bus: Optional[EventBus] = None):
+    def __init__(self, event_bus: EventBus | None = None):
         self._event_bus = event_bus
-        self._unsubscribe_tokens: List[Callable] = []
+        self._unsubscribe_tokens: list[Callable] = []
 
-    def subscribe(self, callback: Callable, event_types: Optional[List[str]] = None):
+    def subscribe(self, callback: Callable, event_types: list[str] | None = None):
         """订阅事件"""
         if self._event_bus:
             unsub = self._event_bus.subscribe(callback, event_types)
@@ -55,7 +51,7 @@ class AgentPlugin(ABC):
         """停用插件"""
         self.unsubscribe_all()
 
-    def get_additional_tools(self) -> List[Callable]:
+    def get_additional_tools(self) -> list[Callable]:
         """获取插件提供的额外工具"""
         return []
 
@@ -73,7 +69,7 @@ class PluginManager:
 
     def __init__(self, event_bus: EventBus):
         self._event_bus = event_bus
-        self._plugins: List[AgentPlugin] = []
+        self._plugins: list[AgentPlugin] = []
 
     def register(self, plugin_class: type[AgentPlugin]) -> AgentPlugin:
         """
@@ -92,7 +88,7 @@ class PluginManager:
             print(f"[PluginManager] Registered plugin: {plugin.name}")
         return plugin
 
-    def register_multiple(self, plugin_classes: List[type[AgentPlugin]]) -> None:
+    def register_multiple(self, plugin_classes: list[type[AgentPlugin]]) -> None:
         """批量注册插件"""
         for cls in plugin_classes:
             self.register(cls)
@@ -109,7 +105,7 @@ class PluginManager:
             plugin.deactivate()
         self._plugins.clear()
 
-    def get_all_tools(self) -> List[Callable]:
+    def get_all_tools(self) -> list[Callable]:
         """获取所有插件提供的工具"""
         tools = []
         for plugin in self._plugins:
@@ -132,6 +128,6 @@ class PluginManager:
         return "\n".join(parts)
 
     @property
-    def plugins(self) -> List[AgentPlugin]:
+    def plugins(self) -> list[AgentPlugin]:
         """获取所有插件"""
         return self._plugins.copy()

@@ -6,15 +6,14 @@ Provider 发现测试 - 并行测试 API key 与 URL 组合
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-from dataclasses import dataclass
 
 # 加载 .env
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -31,7 +30,7 @@ class ProviderConfig:
     """Provider 配置"""
     key_name: str  # 如 ANTHROPIC_API_KEY
     api_key: str
-    base_url: Optional[str]
+    base_url: str | None
     inferred_provider: str  # 从 key_name 推断的 provider
     actual_provider: str  # 从 base_url 检测的实际 provider
 
@@ -43,8 +42,8 @@ class TestResult:
     model_name: str
     test_model_with_prefix: str  # 带 provider 前缀的模型名
     success: bool
-    error: Optional[str] = None
-    response_time_ms: Optional[float] = None
+    error: str | None = None
+    response_time_ms: float | None = None
 
 
 # Provider 默认配置
@@ -215,7 +214,7 @@ async def discover_available_providers() -> dict:
         print(f"    URL: {cfg.base_url or 'default'}")
 
     # 并行测试所有 provider
-    print(f"\n开始并行测试...")
+    print("\n开始并行测试...")
     tasks = [test_provider_connectivity(cfg) for cfg in configs]
     all_results = await asyncio.gather(*tasks)
 

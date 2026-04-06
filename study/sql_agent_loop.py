@@ -7,8 +7,9 @@ import os
 import re
 import time
 import weakref
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from loguru import logger
 
@@ -19,10 +20,12 @@ _TRANSCRIPT_DIR = Path(os.getenv("AGENT_TRANSCRIPT_DIR", ".transcripts"))  # 完
 
 try:
     from .base import BaseAgentLoop, tool
-    from .s05_skill_loading import SYSTEM as S05_SYSTEM, TOOLS as S05_TOOLS
+    from .s05_skill_loading import SYSTEM as S05_SYSTEM
+    from .s05_skill_loading import TOOLS as S05_TOOLS
 except ImportError:
     from agents.base import BaseAgentLoop, tool
-    from agents.s05_skill_loading import SYSTEM as S05_SYSTEM, TOOLS as S05_TOOLS
+    from agents.s05_skill_loading import SYSTEM as S05_SYSTEM
+    from agents.s05_skill_loading import TOOLS as S05_TOOLS
 
 _TABLE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FORBIDDEN_SQL = ("drop ", "truncate ", "alter ", "create ", "exec ", "xp_")

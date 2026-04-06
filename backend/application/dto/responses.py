@@ -7,7 +7,7 @@ Response DTOs - 响应数据传输对象
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 
 @dataclass
@@ -19,6 +19,7 @@ class CreateDialogResult:
         title: 对话标题
         created_at: 创建时间（ISO 格式字符串）
     """
+
     dialog_id: str
     title: str
     created_at: str
@@ -33,6 +34,7 @@ class SendMessageResult:
         content: 消息内容
         token_count: 消耗的 token 数
     """
+
     message_id: str
     content: str
     token_count: int
@@ -48,6 +50,7 @@ class LoadSkillResult:
         tool_count: 加载的工具数量
         loaded: 是否加载成功
     """
+
     skill_id: str
     name: str
     tool_count: int
@@ -65,10 +68,11 @@ class SkillInfoDTO:
         tools: 工具名称列表
         active: 是否已激活
     """
+
     id: str
     name: str
     description: str
-    tools: List[str]
+    tools: list[str]
     active: bool
 
 
@@ -83,11 +87,12 @@ class MessageDTO:
         created_at: 创建时间（ISO 格式字符串）
         metadata: 附加元数据
     """
+
     id: str
     role: str
     content: str
     created_at: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
     @classmethod
     def from_entity(cls, message) -> "MessageDTO":
@@ -100,41 +105,35 @@ class MessageDTO:
             MessageDTO 实例
         """
         # 处理不同类型的消息对象
-        if hasattr(message, 'id'):
+        if hasattr(message, "id"):
             msg_id = message.id
         else:
             msg_id = ""
 
-        if hasattr(message, 'role'):
+        if hasattr(message, "role"):
             role = message.role
-        elif hasattr(message, 'type'):
+        elif hasattr(message, "type"):
             role = message.type
         else:
             role = "unknown"
 
-        if hasattr(message, 'content'):
+        if hasattr(message, "content"):
             content = message.content
         else:
             content = ""
 
-        if hasattr(message, 'created_at'):
+        if hasattr(message, "created_at"):
             created_at = message.created_at
         else:
             created_at = datetime.now().isoformat()
 
         metadata = {}
-        if hasattr(message, 'additional_kwargs'):
+        if hasattr(message, "additional_kwargs"):
             metadata = message.additional_kwargs or {}
-        elif hasattr(message, 'metadata'):
+        elif hasattr(message, "metadata"):
             metadata = message.metadata or {}
 
-        return cls(
-            id=msg_id,
-            role=role,
-            content=content,
-            created_at=created_at,
-            metadata=metadata
-        )
+        return cls(id=msg_id, role=role, content=content, created_at=created_at, metadata=metadata)
 
 
 @dataclass
@@ -146,6 +145,7 @@ class MemorySummary:
         created_at: 创建时间
         dialog_count: 关联的对话数量
     """
+
     content: str
     created_at: datetime
     dialog_count: int
@@ -162,8 +162,9 @@ class ChatResponse:
         tool_calls: 工具调用列表
         tokens_used: 使用的 token 数
     """
+
     dialog_id: str
     message_id: str
     content: str
-    tool_calls: List[Dict[str, Any]]
+    tool_calls: list[dict[str, Any]]
     tokens_used: int

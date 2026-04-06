@@ -3,17 +3,18 @@ Artifact - 产物实体
 
 代码、文档等产物的领域模型。
 """
-from typing import Optional
+
 from backend.domain.models.shared.base import Entity, generate_id
 from backend.domain.models.shared.mixins import DialogRefMixin
 
 
 class Artifact(Entity, DialogRefMixin):
     """产物 (代码、文档等)"""
+
     type: str  # "code", "document", "data", etc.
     name: str
     content: str
-    language: Optional[str] = None
+    language: str | None = None
 
     @classmethod
     def create(
@@ -21,8 +22,8 @@ class Artifact(Entity, DialogRefMixin):
         type: str,
         name: str,
         content: str,
-        language: Optional[str] = None,
-        dialog_id: Optional[str] = None,
+        language: str | None = None,
+        dialog_id: str | None = None,
     ) -> "Artifact":
         """创建产物实例"""
         return cls(

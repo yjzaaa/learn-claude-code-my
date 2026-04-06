@@ -49,9 +49,9 @@ class FallbackAdapter(LLMResponseAdapter):
         elif isinstance(raw_response, dict):
             # 尝试各种可能的字段
             content = (
-                raw_response.get("content") or
-                raw_response.get("text") or
-                raw_response.get("message", {}).get("content", "")
+                raw_response.get("content")
+                or raw_response.get("text")
+                or raw_response.get("message", {}).get("content", "")
             )
             model = raw_response.get("model", "unknown")
         else:
@@ -63,15 +63,12 @@ class FallbackAdapter(LLMResponseAdapter):
             provider=self.provider_name,
             metadata={
                 "raw_type": type(raw_response).__name__,
-                "note": "Fallback adapter used - provider not recognized"
-            }
+                "note": "Fallback adapter used - provider not recognized",
+            },
         )
 
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> StreamingParseResult:
         """解析流式 chunk（回退模式）
 
@@ -95,9 +92,9 @@ class FallbackAdapter(LLMResponseAdapter):
         elif isinstance(chunk, dict):
             # 尝试从各种可能的字段提取
             content_delta = (
-                chunk.get("content") or
-                chunk.get("text") or
-                chunk.get("delta", {}).get("content", "")
+                chunk.get("content")
+                or chunk.get("text")
+                or chunk.get("delta", {}).get("content", "")
             )
         elif isinstance(chunk, str):
             content_delta = chunk
@@ -107,7 +104,7 @@ class FallbackAdapter(LLMResponseAdapter):
         return StreamingParseResult(
             content_delta=content_delta,
             accumulated_content=new_accumulated_content,
-            accumulated_reasoning=accumulated_reasoning
+            accumulated_reasoning=accumulated_reasoning,
         )
 
     def supports_reasoning(self) -> bool:

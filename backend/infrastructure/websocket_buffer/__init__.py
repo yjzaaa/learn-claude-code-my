@@ -7,6 +7,6 @@ Classes:
     BufferStrategy: 缓冲区满时的处理策略
 """
 
-from .buffer import WebSocketMessageBuffer, BufferStrategy
+from .buffer import BufferStrategy, WebSocketMessageBuffer
 
 __all__ = ["WebSocketMessageBuffer", "BufferStrategy"]

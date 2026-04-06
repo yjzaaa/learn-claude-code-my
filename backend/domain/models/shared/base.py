@@ -8,17 +8,18 @@ import time
 import uuid
 from datetime import datetime
 from enum import IntEnum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
 class EventPriority(IntEnum):
     """事件优先级"""
-    CRITICAL = 0    # 关键事件，立即处理
-    HIGH = 1        # 高优先级
-    NORMAL = 2      # 正常优先级
-    LOW = 3         # 低优先级
+
+    CRITICAL = 0  # 关键事件，立即处理
+    HIGH = 1  # 高优先级
+    NORMAL = 2  # 正常优先级
+    LOW = 3  # 低优先级
     BACKGROUND = 4  # 后台任务
 
 
@@ -35,6 +36,7 @@ class Entity(BaseModel):
     所有业务实体（Dialog, Message, Artifact, Skill 等）的基类。
     提供统一的 ID 和时间戳管理。
     """
+
     id: str = Field(default_factory=lambda: generate_id())
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -53,6 +55,7 @@ class Event(BaseModel):
 
     所有事件类型的基类。提供统一的事件字段和序列化。
     """
+
     type: str = Field(default="", description="事件类型标识")
     dialog_id: str = Field(default="", description="关联对话 ID")
     timestamp: float = Field(default_factory=time.time, description="事件时间戳")
@@ -73,6 +76,7 @@ class Response(BaseModel):
 
     所有 API 响应模型的基类，提供统一的成功/失败标识。
     """
+
     success: bool = Field(default=True, description="操作是否成功")
     message: str = Field(default="", description="响应消息")
 
@@ -95,7 +99,7 @@ class Config(BaseModel):
     """
 
     @classmethod
-    def from_dict(cls, config: Optional[Dict[str, Any]] = None) -> "Config":
+    def from_dict(cls, config: dict[str, Any] | None = None) -> "Config":
         """从字典创建配置"""
         if not config:
             return cls()

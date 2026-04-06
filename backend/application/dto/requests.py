@@ -5,7 +5,6 @@ Request DTOs - 请求数据传输对象
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
 
 
 @dataclass
@@ -22,8 +21,9 @@ class ChatRequest:
         use_memory: 是否使用记忆功能
         skill_ids: 要激活的技能 ID 列表
     """
-    dialog_id: Optional[str] = None
+
+    dialog_id: str | None = None
     user_input: str = ""
     stream: bool = True
     use_memory: bool = True
-    skill_ids: Optional[List[str]] = None
+    skill_ids: list[str] | None = None

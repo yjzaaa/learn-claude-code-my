@@ -4,13 +4,14 @@
 测试 DialogSessionManager 与 Runtime 的集成。
 """
 
-import pytest
 import asyncio
-from typing import List, Any
+
+import pytest
+
+from backend.domain.models.config import EngineConfig
 from backend.domain.models.dialog import DialogSessionManager, SessionStatus
 from backend.domain.models.dialog.session import SessionEvent
 from backend.infrastructure.runtime.simple import SimpleRuntime
-from backend.domain.models.config import EngineConfig
 
 
 @pytest.fixture
@@ -56,7 +57,7 @@ async def test_full_conversation_flow(session_manager, runtime):
     assert session.status == SessionStatus.ACTIVE
 
     # 3. 发送消息并接收流式响应
-    events: List[SessionEvent] = []
+    events: list[SessionEvent] = []
 
     async def event_handler(event: SessionEvent):
         events.append(event)

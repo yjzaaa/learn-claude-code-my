@@ -2,58 +2,45 @@
 集成测试 - 验证所有 Pydantic 模型之间的交互和集成
 """
 
-import pytest
 from datetime import datetime
-from typing import Dict, Any
 
-# 工具模型
-from backend.domain.models.tool_models import (
-    ToolSpec,
-    JSONSchema,
-    JSONSchemaProperty,
-    OpenAIFunctionSchema,
-    OpenAIToolSchema,
-    MergedToolItem,
+import pytest
+
+# 事件模型
+from backend.domain.models.event_models import (
+    TodoItemModel,
+    TodoUpdatedEventModel,
+    ToolCallStartedEventModel,
 )
 
 # 响应模型
 from backend.domain.models.response_models import (
-    ResultModel,
-    HITLResultModel,
-    APIHealthResponse,
-    APISendMessageResponse,
-    APIListDialogsResponse,
     APIAgentStatusResponse,
-    APIStopAgentResponse,
-    APISkillListResponse,
+    APIHealthResponse,
+    ResultModel,
+)
+
+# 工具模型
+from backend.domain.models.tool_models import (
+    JSONSchema,
+    OpenAIFunctionSchema,
+    OpenAIToolSchema,
+    ToolSpec,
 )
 
 # WebSocket 模型
 from backend.domain.models.websocket_models import (
-    WSDialogSnapshot,
+    WSDeltaContent,
     WSDialogMetadata,
-    WSStreamingMessage,
+    WSDialogSnapshot,
+    WSErrorDetail,
+    WSErrorEvent,
     WSSnapshotEvent,
     WSStreamDeltaEvent,
-    WSDeltaContent,
-    WSErrorEvent,
-    WSErrorDetail,
-    WSStatusChangeEvent,
-    WSToolCallUpdateEvent,
-    WSToolCall,
-    WSTodoUpdatedEvent,
     WSTodoItem,
-)
-
-# 事件模型
-from backend.domain.models.event_models import (
-    EventModel,
-    SkillEditEventModel,
-    TodoEventModel,
-    TodoItemModel,
-    TodoUpdatedEventModel,
-    ToolCallStartedEventModel,
-    ToolCallCompletedEventModel,
+    WSTodoUpdatedEvent,
+    WSToolCall,
+    WSToolCallUpdateEvent,
 )
 
 
@@ -316,7 +303,7 @@ class TestAPIResponsePatterns:
 
     def test_agent_status_response(self):
         """测试 Agent 状态响应"""
-        from backend.domain.models.response_models import APIAgentStatusItem, APIAgentStatusData
+        from backend.domain.models.response_models import APIAgentStatusData, APIAgentStatusItem
 
         response = APIAgentStatusResponse(
             success=True,

@@ -10,9 +10,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Coroutine, Literal, overload
+from typing import Any, Literal, overload
 
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
 from langchain_core.messages import SystemMessage, ToolMessage
@@ -78,9 +79,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
 
     def _micro_compact(self, messages: list[Any]) -> list[Any]:
         """Layer 1: 将除最近 keep_recent 条以外的 tool 消息内容替换为占位符。"""
-        tool_indices = [
-            (i, msg) for i, msg in enumerate(messages) if isinstance(msg, ToolMessage)
-        ]
+        tool_indices = [(i, msg) for i, msg in enumerate(messages) if isinstance(msg, ToolMessage)]
         original_count = len(tool_indices)
 
         if len(tool_indices) <= self.keep_recent:
@@ -114,8 +113,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
                 )
 
         logger.info(
-            f"[ClaudeCompression] Layer 1 completed: "
-            f"{cleared_count} tool messages compacted"
+            f"[ClaudeCompression] Layer 1 completed: " f"{cleared_count} tool messages compacted"
         )
         return messages
 
@@ -139,9 +137,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
     # Layer 2-4: Auto/Partial Compact + Session Memory
     # ═══════════════════════════════════════════════════════════
 
-    def _partition_for_compaction(
-        self, messages: list[Any]
-    ) -> tuple[list[Any], list[Any]] | None:
+    def _partition_for_compaction(self, messages: list[Any]) -> tuple[list[Any], list[Any]] | None:
         """划分消息并检查是否需要压缩。
 
         Returns:
@@ -331,9 +327,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
         try:
             response = self.model.invoke(prompt)
             return (
-                response.content.strip()
-                if hasattr(response, "content")
-                else str(response).strip()
+                response.content.strip() if hasattr(response, "content") else str(response).strip()
             )
         except Exception as e:
             return f"Error generating summary: {e}"
@@ -344,9 +338,7 @@ class ClaudeCompressionMiddleware(AgentMiddleware):
         try:
             response = await self.model.ainvoke(prompt)
             return (
-                response.content.strip()
-                if hasattr(response, "content")
-                else str(response).strip()
+                response.content.strip() if hasattr(response, "content") else str(response).strip()
             )
         except Exception as e:
             return f"Error generating summary: {e}"

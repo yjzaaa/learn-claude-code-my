@@ -28,26 +28,26 @@ SQL Agent Loop V2 - 主-子代理架构 with 自动问题总结与学习优化
 
 from __future__ import annotations
 
-import json
-import os
-import re
-import time
 import hashlib
-from pathlib import Path
-from typing import Any, Callable
+import json
+import time
+from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from collections import defaultdict
+from pathlib import Path
+from typing import Any
 
 from loguru import logger
 
 try:
     from .base import BaseAgentLoop, tool
-    from .s05_skill_loading import SYSTEM as S05_SYSTEM, TOOLS as S05_TOOLS
+    from .s05_skill_loading import SYSTEM as S05_SYSTEM
+    from .s05_skill_loading import TOOLS as S05_TOOLS
     from .websocket.bridge import WebSocketBridge
 except ImportError:
     from agents.base import BaseAgentLoop, tool
-    from agents.s05_skill_loading import SYSTEM as S05_SYSTEM, TOOLS as S05_TOOLS
+    from agents.s05_skill_loading import TOOLS as S05_TOOLS
     from agents.websocket.bridge import WebSocketBridge
 
 
@@ -149,9 +149,8 @@ class LearningMemory:
         """生成模式描述"""
         if record.success:
             return f"{record.tool_name} successful execution pattern"
-        else:
-            error = record.error_type or "unknown error"
-            return f"{record.tool_name} failure pattern: {error}"
+        error = record.error_type or "unknown error"
+        return f"{record.tool_name} failure pattern: {error}"
 
     def _generate_recommendations(self, record: ToolCallRecord) -> list[str]:
         """基于记录生成改进建议"""
@@ -192,7 +191,7 @@ class LearningMemory:
         history_file = self.memory_dir / "tool_history.jsonl"
         if history_file.exists():
             try:
-                with open(history_file, "r", encoding="utf-8") as f:
+                with open(history_file, encoding="utf-8") as f:
                     for line in f:
                         if line.strip():
                             data = json.loads(line)

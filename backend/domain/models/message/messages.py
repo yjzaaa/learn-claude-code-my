@@ -6,14 +6,13 @@
 确保与 LangChain 序列化机制兼容。
 """
 
-from typing import Any, Dict, List, Optional
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import Any
 
 from langchain_core.messages import (
-    BaseMessage,
-    HumanMessage,
     AIMessage,
+    HumanMessage,
     SystemMessage,
     ToolMessage,
 )
@@ -37,10 +36,10 @@ class CustomHumanMessage(HumanMessage):
     def __init__(
         self,
         content: str,
-        msg_id: Optional[str] = None,
-        created_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        **kwargs
+        msg_id: str | None = None,
+        created_at: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        **kwargs,
     ):
         super().__init__(content=content, **kwargs)
 
@@ -61,16 +60,13 @@ class CustomHumanMessage(HumanMessage):
         return self.additional_kwargs.get("created_at", "")
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """元数据"""
         return self.additional_kwargs.get("metadata", {})
 
     def __repr__(self) -> str:
         return (
-            f"CustomHumanMessage("
-            f"id={self.msg_id!r}, "
-            f"content={self.content[:50]!r}..."
-            f")"
+            f"CustomHumanMessage(" f"id={self.msg_id!r}, " f"content={self.content[:50]!r}..." f")"
         )
 
 
@@ -89,13 +85,13 @@ class CustomAIMessage(AIMessage):
     def __init__(
         self,
         content: str,
-        msg_id: Optional[str] = None,
-        created_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        agent_name: Optional[str] = None,
-        status: Optional[str] = None,
-        tool_calls: Optional[List[Dict[str, Any]]] = None,
-        **kwargs
+        msg_id: str | None = None,
+        created_at: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        agent_name: str | None = None,
+        status: str | None = None,
+        tool_calls: list[dict[str, Any]] | None = None,
+        **kwargs,
     ):
         super().__init__(content=content, tool_calls=tool_calls or [], **kwargs)
 
@@ -120,7 +116,7 @@ class CustomAIMessage(AIMessage):
         return self.additional_kwargs.get("created_at", "")
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """元数据"""
         return self.additional_kwargs.get("metadata", {})
 
@@ -158,10 +154,10 @@ class CustomSystemMessage(SystemMessage):
     def __init__(
         self,
         content: str,
-        msg_id: Optional[str] = None,
-        created_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        **kwargs
+        msg_id: str | None = None,
+        created_at: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        **kwargs,
     ):
         super().__init__(content=content, **kwargs)
 
@@ -182,16 +178,13 @@ class CustomSystemMessage(SystemMessage):
         return self.additional_kwargs.get("created_at", "")
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """元数据"""
         return self.additional_kwargs.get("metadata", {})
 
     def __repr__(self) -> str:
         return (
-            f"CustomSystemMessage("
-            f"id={self.msg_id!r}, "
-            f"content={self.content[:50]!r}..."
-            f")"
+            f"CustomSystemMessage(" f"id={self.msg_id!r}, " f"content={self.content[:50]!r}..." f")"
         )
 
 
@@ -211,18 +204,14 @@ class CustomToolMessage(ToolMessage):
         self,
         content: str,
         tool_call_id: str,
-        msg_id: Optional[str] = None,
-        created_at: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        tool_name: Optional[str] = None,
-        duration_ms: Optional[int] = None,
-        **kwargs
+        msg_id: str | None = None,
+        created_at: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        tool_name: str | None = None,
+        duration_ms: int | None = None,
+        **kwargs,
     ):
-        super().__init__(
-            content=content,
-            tool_call_id=tool_call_id,
-            **kwargs
-        )
+        super().__init__(content=content, tool_call_id=tool_call_id, **kwargs)
 
         # 业务字段存储在 additional_kwargs 中
         self.additional_kwargs["id"] = msg_id or _generate_id("msg")
@@ -245,7 +234,7 @@ class CustomToolMessage(ToolMessage):
         return self.additional_kwargs.get("created_at", "")
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         """元数据"""
         return self.additional_kwargs.get("metadata", {})
 
@@ -255,7 +244,7 @@ class CustomToolMessage(ToolMessage):
         return self.additional_kwargs.get("tool_name", "")
 
     @property
-    def duration_ms(self) -> Optional[int]:
+    def duration_ms(self) -> int | None:
         """执行耗时（毫秒）"""
         return self.additional_kwargs.get("duration_ms")
 
@@ -274,6 +263,7 @@ class CustomToolMessage(ToolMessage):
 # 工厂方法
 # ═══════════════════════════════════════════════════════════
 
+
 def create_human(content: str, **kwargs) -> CustomHumanMessage:
     """创建用户消息"""
     return CustomHumanMessage(content=content, **kwargs)
@@ -289,17 +279,9 @@ def create_system(content: str, **kwargs) -> CustomSystemMessage:
     return CustomSystemMessage(content=content, **kwargs)
 
 
-def create_tool(
-    content: str,
-    tool_call_id: str,
-    **kwargs
-) -> CustomToolMessage:
+def create_tool(content: str, tool_call_id: str, **kwargs) -> CustomToolMessage:
     """创建工具消息"""
-    return CustomToolMessage(
-        content=content,
-        tool_call_id=tool_call_id,
-        **kwargs
-    )
+    return CustomToolMessage(content=content, tool_call_id=tool_call_id, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════

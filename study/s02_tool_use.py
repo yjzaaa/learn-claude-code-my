@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 s02_tool_use.py - 工具调用
@@ -23,12 +24,13 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
-    from agents.providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps
+    from agents.providers import create_provider_from_env
 except ImportError:
-    from providers import create_provider_from_env
     from base import BaseAgentLoop, WorkspaceOps
+    from providers import create_provider_from_env
 
 load_dotenv(override=True)
 

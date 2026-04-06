@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 s10_team_protocols.py - 团队协议
@@ -55,12 +56,13 @@ import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
     from agents.providers import create_provider_from_env
-    from base import BaseAgentLoop, WorkspaceOps, tool, build_tools
+    from base import BaseAgentLoop, WorkspaceOps, build_tools, tool
 except ImportError:
+    from agents.base import BaseAgentLoop, WorkspaceOps, build_tools, tool
     from providers import create_provider_from_env
-    from agents.base import BaseAgentLoop, WorkspaceOps, tool, build_tools
 
 load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):

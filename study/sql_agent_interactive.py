@@ -16,18 +16,18 @@ Interactive SQL Agent - 基于新架构的 SQL Agent
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
 from .base import StreamingAgent, tool
+from .s05_skill_loading import TOOLS as S05_TOOLS
 from .sql_agent_loop_v2 import (
+    MASTER_SYSTEM,
     LearningMemory,
     ToolCallMonitor,
     WorkerSubAgent,
-    MASTER_SYSTEM,
 )
-from .s05_skill_loading import TOOLS as S05_TOOLS
 
 
 class InteractiveSQLAgent(StreamingAgent):

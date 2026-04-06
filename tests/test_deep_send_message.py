@@ -10,12 +10,9 @@ in DeepAgentRuntime, covering various scenarios including:
 - Event type validation
 """
 
-import json
 import sys
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any, AsyncIterator
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,8 +20,8 @@ import pytest
 _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from backend.infrastructure.runtime.deep import DeepAgentRuntime
 from backend.domain.models.shared import AgentEvent
+from backend.infrastructure.runtime.deep import DeepAgentRuntime
 
 
 def _has_deepagents() -> bool:
@@ -317,8 +314,8 @@ class TestDeepSendMessageIntegration:
     )
     async def test_send_message_integration_basic(self):
         """集成测试：使用真实 runtime 测试 send_message"""
-        from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
         from backend.domain.models.config import EngineConfig
+        from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 
         factory = AgentRuntimeFactory()
         config = EngineConfig.from_dict({

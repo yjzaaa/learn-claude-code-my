@@ -3,8 +3,8 @@ File Operations - 文件操作
 
 安全的文件读写编辑操作。
 """
+
 from pathlib import Path
-from typing import Optional
 
 
 def read_text_safe(path: Path) -> str:
@@ -18,7 +18,7 @@ def read_text_safe(path: Path) -> str:
     raise ValueError(f"Cannot decode file: {path}")
 
 
-def read_file(path: str, workdir: Path, limit: Optional[int] = None) -> str:
+def read_file(path: str, workdir: Path, limit: int | None = None) -> str:
     """读取文件内容。"""
     target = workdir / path
     content = read_text_safe(target)

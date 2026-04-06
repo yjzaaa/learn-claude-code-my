@@ -3,7 +3,6 @@ Skill Repository Interface - 技能仓库接口
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from backend.domain.models.agent.skill import Skill
 
@@ -32,7 +31,7 @@ class ISkillRepository(ABC):
         pass
 
     @abstractmethod
-    async def get(self, skill_id: str) -> Optional[Skill]:
+    async def get(self, skill_id: str) -> Skill | None:
         """获取技能
 
         Args:

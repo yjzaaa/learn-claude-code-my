@@ -5,7 +5,8 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Any
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -21,7 +22,7 @@ class IDialogManager(ABC):
     """对话管理器接口（能力层抽象）"""
 
     @abstractmethod
-    async def create(self, user_input: str, title: Optional[str] = None) -> str:
+    async def create(self, user_input: str, title: str | None = None) -> str:
         """
         创建新对话
 
@@ -35,7 +36,7 @@ class IDialogManager(ABC):
         pass
 
     @abstractmethod
-    def get(self, dialog_id: str) -> Optional[DialogSnapshot]:
+    def get(self, dialog_id: str) -> DialogSnapshot | None:
         """
         获取对话
 
@@ -113,7 +114,7 @@ class IToolManager(ABC):
         name: str,
         handler: Any,
         description: str,
-        parameters: Optional[BaseModel] = None,
+        parameters: BaseModel | None = None,
     ) -> None:
         """
         注册工具
@@ -175,7 +176,7 @@ class ISkillManager(ABC):
         pass
 
     @abstractmethod
-    def get_skill_prompt(self, skill_id: str) -> Optional[str]:
+    def get_skill_prompt(self, skill_id: str) -> str | None:
         """
         获取技能 Prompt
 

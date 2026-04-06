@@ -36,17 +36,21 @@ class DeepCheckpointMixin:
                 return {"dialog_id": dialog_id, "checkpoint_exists": False}
 
             checkpoint = checkpoint_tuple.checkpoint
-            metadata = checkpoint_tuple.metadata if hasattr(checkpoint_tuple, 'metadata') else {}
-            pending_writes = checkpoint_tuple.pending_writes if hasattr(checkpoint_tuple, 'pending_writes') else []
+            metadata = checkpoint_tuple.metadata if hasattr(checkpoint_tuple, "metadata") else {}
+            pending_writes = (
+                checkpoint_tuple.pending_writes
+                if hasattr(checkpoint_tuple, "pending_writes")
+                else []
+            )
 
             # 提取消息数据（通常在 "messages" channel）
             channel_values = checkpoint.get("channel_values", {})
             messages_data = []
             if "messages" in channel_values:
                 for msg in channel_values["messages"]:
-                    if hasattr(msg, 'model_dump'):
+                    if hasattr(msg, "model_dump"):
                         messages_data.append(msg.model_dump())
-                    elif hasattr(msg, '__dict__'):
+                    elif hasattr(msg, "__dict__"):
                         messages_data.append(msg.__dict__)
                     else:
                         messages_data.append({"content": str(msg)})
@@ -64,8 +68,10 @@ class DeepCheckpointMixin:
                     if k != "messages"  # 消息已单独提取
                 },
                 "pending_writes": [
-                    {"task_id": pw[0] if len(pw) > 0 else None,
-                     "channel": pw[1] if len(pw) > 1 else None}
+                    {
+                        "task_id": pw[0] if len(pw) > 0 else None,
+                        "channel": pw[1] if len(pw) > 1 else None,
+                    }
                     for pw in (pending_writes or [])[:5]  # 限制数量
                 ],
                 "metadata": {

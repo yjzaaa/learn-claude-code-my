@@ -20,12 +20,11 @@ Example:
 """
 
 import asyncio
-import json
-from backend.infrastructure.logging import get_logger
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
+from backend.infrastructure.logging import get_logger
 from backend.infrastructure.queue import InMemoryAsyncQueue, QueueFull
 
 logger = get_logger(__name__)
@@ -50,7 +49,7 @@ class WebSocketMessage:
     """
 
     data: dict
-    timestamp: Optional[float] = None
+    timestamp: float | None = None
     retry_count: int = 0
 
     def __post_init__(self):
@@ -103,12 +102,10 @@ class WebSocketMessageBuffer:
         self.strategy = strategy
         self.timeout = timeout
 
-        self._buffer: InMemoryAsyncQueue[WebSocketMessage] = InMemoryAsyncQueue(
-            maxsize=maxsize
-        )
-        self._websocket: Optional[Any] = None
+        self._buffer: InMemoryAsyncQueue[WebSocketMessage] = InMemoryAsyncQueue(maxsize=maxsize)
+        self._websocket: Any | None = None
         self._running = False
-        self._sender_task: Optional[asyncio.Task] = None
+        self._sender_task: asyncio.Task | None = None
         self._dropped_count = 0
         self._sent_count = 0
 
@@ -173,19 +170,18 @@ class WebSocketMessageBuffer:
                 await self._buffer.enqueue(message)
                 return True
 
-            elif self.strategy == BufferStrategy.DROP:
+            if self.strategy == BufferStrategy.DROP:
                 # 非阻塞，满时立即丢弃
                 await self._buffer.enqueue(message, block=False)
                 return True
 
-            elif self.strategy == BufferStrategy.TIMEOUT:
+            if self.strategy == BufferStrategy.TIMEOUT:
                 # 等待超时后丢弃
                 await self._buffer.enqueue(message, timeout=self.timeout)
                 return True
 
-            else:
-                logger.error(f"[WebSocketBuffer] Unknown strategy: {self.strategy}")
-                return False
+            logger.error(f"[WebSocketBuffer] Unknown strategy: {self.strategy}")
+            return False
 
         except QueueFull:
             self._dropped_count += 1
@@ -195,7 +191,7 @@ class WebSocketMessageBuffer:
             )
             return False
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._dropped_count += 1
             logger.warning(
                 f"[WebSocketBuffer] Message timeout for {self.client_id} "

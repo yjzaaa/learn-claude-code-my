@@ -10,13 +10,13 @@ AgentOrchestrationService - Agent 编排服务
 """
 
 import asyncio
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
 
 from backend.application.dto.requests import ChatRequest
 from backend.application.dto.responses import ChatResponse
 from backend.application.services.dialog import DialogService
-from backend.application.services.skill import SkillService
 from backend.application.services.memory import MemoryService
+from backend.application.services.skill import SkillService
 
 
 class AgentOrchestrationService:
@@ -52,10 +52,7 @@ class AgentOrchestrationService:
         self._memory_svc = memory_service
         self._runtime = runtime
 
-    async def chat(
-        self,
-        request: ChatRequest
-    ) -> AsyncIterator[str]:
+    async def chat(self, request: ChatRequest) -> AsyncIterator[str]:
         """统一聊天用例
 
         流程:
@@ -73,9 +70,7 @@ class AgentOrchestrationService:
         """
         # 1. 创建或获取对话
         if not request.dialog_id:
-            result = await self._dialog_svc.create_dialog(
-                user_input=request.user_input
-            )
+            result = await self._dialog_svc.create_dialog(user_input=request.user_input)
             dialog_id = result.dialog_id
         else:
             dialog_id = request.dialog_id
@@ -88,23 +83,16 @@ class AgentOrchestrationService:
 
         # 3. 发送消息
         async for chunk in self._dialog_svc.send_message(
-            dialog_id=dialog_id,
-            content=request.user_input,
-            stream=request.stream
+            dialog_id=dialog_id, content=request.user_input, stream=request.stream
         ):
             yield chunk
 
         # 4. 生成总结（对话结束后异步进行）
         if request.use_memory:
             # 异步生成总结，不阻塞响应
-            asyncio.create_task(
-                self._generate_summary(dialog_id)
-            )
+            asyncio.create_task(self._generate_summary(dialog_id))
 
-    async def chat_complete(
-        self,
-        request: ChatRequest
-    ) -> ChatResponse:
+    async def chat_complete(self, request: ChatRequest) -> ChatResponse:
         """非流式聊天用例
 
         与 chat() 类似，但返回完整响应而非流式输出。
@@ -117,9 +105,7 @@ class AgentOrchestrationService:
         """
         # 1. 创建或获取对话
         if not request.dialog_id:
-            result = await self._dialog_svc.create_dialog(
-                user_input=request.user_input
-            )
+            result = await self._dialog_svc.create_dialog(user_input=request.user_input)
             dialog_id = result.dialog_id
         else:
             dialog_id = request.dialog_id
@@ -134,7 +120,7 @@ class AgentOrchestrationService:
         async for chunk in self._dialog_svc.send_message(
             dialog_id=dialog_id,
             content=request.user_input,
-            stream=False  # 非流式
+            stream=False,  # 非流式
         ):
             full_content.append(chunk)
 
@@ -142,9 +128,7 @@ class AgentOrchestrationService:
 
         # 4. 异步生成总结
         if request.use_memory:
-            asyncio.create_task(
-                self._generate_summary(dialog_id)
-            )
+            asyncio.create_task(self._generate_summary(dialog_id))
 
         # 5. 构建响应
         return ChatResponse(
@@ -172,8 +156,8 @@ class AgentOrchestrationService:
     async def create_dialog_with_skills(
         self,
         user_input: str,
-        skill_ids: Optional[list[str]] = None,
-        title: Optional[str] = None,
+        skill_ids: list[str] | None = None,
+        title: str | None = None,
     ) -> str:
         """创建对话并加载技能
 
@@ -186,10 +170,7 @@ class AgentOrchestrationService:
             str: 新创建对话的 ID
         """
         # 1. 创建对话
-        result = await self._dialog_svc.create_dialog(
-            user_input=user_input,
-            title=title
-        )
+        result = await self._dialog_svc.create_dialog(user_input=user_input, title=title)
 
         # 2. 加载技能
         if skill_ids:
@@ -199,10 +180,7 @@ class AgentOrchestrationService:
         return result.dialog_id
 
     async def get_context_with_memories(
-        self,
-        dialog_id: str,
-        query: str,
-        memory_limit: int = 3
+        self, dialog_id: str, query: str, memory_limit: int = 3
     ) -> dict:
         """获取带记忆的对话上下文
 
@@ -218,10 +196,7 @@ class AgentOrchestrationService:
         messages = await self._dialog_svc.get_dialog_history(dialog_id)
 
         # 2. 获取相关记忆
-        memories = await self._memory_svc.get_relevant_memories(
-            query=query,
-            limit=memory_limit
-        )
+        memories = await self._memory_svc.get_relevant_memories(query=query, limit=memory_limit)
 
         return {
             "dialog_id": dialog_id,

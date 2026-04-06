@@ -2,6 +2,7 @@
 简单的提示词工具 - 从 .env 加载配置并生成公共提示词
 """
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)

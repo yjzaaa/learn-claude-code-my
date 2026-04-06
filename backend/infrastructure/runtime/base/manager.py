@@ -4,25 +4,25 @@
 适用于需要 DialogManager、ToolManager 等完整功能的 Runtime。
 """
 
-from typing import Optional, Any, AsyncIterator, Callable
 from abc import abstractmethod
+from collections.abc import AsyncIterator, Callable
+from typing import Any
 
 from loguru import logger
 
-from backend.infrastructure.runtime.base.runtime import AbstractAgentRuntime, ToolCache, ConfigT
-from backend.infrastructure.runtime.base.mixins import ManagerLifecycleMixin
-from backend.infrastructure.services.dialog_manager import DialogManager
-from backend.infrastructure.services.tool_manager import ToolManager
-from backend.infrastructure.services.state_manager import StateManager
-from backend.infrastructure.services.provider_manager import ProviderManager
-from backend.infrastructure.services.memory_manager import MemoryManager
-from backend.infrastructure.services.skill_manager import SkillManager
-from backend.domain.models.dialog import DialogSessionManager
-from backend.domain.models.shared.config import EngineConfig
-from backend.domain.models.dialog.dialog import Dialog
 from backend.domain.models.agent.tool import ToolInfo
+from backend.domain.models.dialog import DialogSessionManager
 from backend.domain.models.shared import AgentEvent
+from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.event_bus import EventBus
+from backend.infrastructure.runtime.base.mixins import ManagerLifecycleMixin
+from backend.infrastructure.runtime.base.runtime import AbstractAgentRuntime, ToolCache
+from backend.infrastructure.services.dialog_manager import DialogManager
+from backend.infrastructure.services.memory_manager import MemoryManager
+from backend.infrastructure.services.provider_manager import ProviderManager
+from backend.infrastructure.services.skill_manager import SkillManager
+from backend.infrastructure.services.state_manager import StateManager
+from backend.infrastructure.services.tool_manager import ToolManager
 
 
 class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMixin):
@@ -57,7 +57,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         super().__init__(agent_id)
 
         # 配置对象（子类特定）
-        self._config_obj: Optional[EngineConfig] = None
+        self._config_obj: EngineConfig | None = None
 
         # 初始化基础设施
         self._event_bus = EventBus()
@@ -65,20 +65,14 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         # 初始化 Managers（在 _do_initialize 中重新配置）
         self._state_mgr = StateManager()
         self._provider_mgr = ProviderManager()
-        self._dialog_mgr = DialogManager(
-            event_bus=self._event_bus,
-            state_manager=self._state_mgr
-        )
+        self._dialog_mgr = DialogManager(event_bus=self._event_bus, state_manager=self._state_mgr)
         self._tool_mgr = ToolManager(event_bus=self._event_bus)
         self._memory_mgr = MemoryManager(event_bus=self._event_bus)
-        self._skill_mgr = SkillManager(
-            event_bus=self._event_bus,
-            tool_manager=self._tool_mgr
-        )
+        self._skill_mgr = SkillManager(event_bus=self._event_bus, tool_manager=self._tool_mgr)
 
         # 初始化 SessionManager（新会话管理层）
         # 初始化 SessionManager（新会话管理层）
-        self._session_mgr: Optional[DialogSessionManager] = None
+        self._session_mgr: DialogSessionManager | None = None
 
         logger.debug(f"[{self.__class__.__name__}] Managers initialized")
 
@@ -95,22 +89,12 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         self._state_mgr = StateManager(config=config.state)
         self._provider_mgr = ProviderManager(config=config.provider)
         self._dialog_mgr = DialogManager(
-            event_bus=self._event_bus,
-            state_manager=self._state_mgr,
-            config=config.dialog
+            event_bus=self._event_bus, state_manager=self._state_mgr, config=config.dialog
         )
-        self._tool_mgr = ToolManager(
-            event_bus=self._event_bus,
-            config=config.tools
-        )
-        self._memory_mgr = MemoryManager(
-            event_bus=self._event_bus,
-            config=config.memory
-        )
+        self._tool_mgr = ToolManager(event_bus=self._event_bus, config=config.tools)
+        self._memory_mgr = MemoryManager(event_bus=self._event_bus, config=config.memory)
         self._skill_mgr = SkillManager(
-            event_bus=self._event_bus,
-            tool_manager=self._tool_mgr,
-            config=config.skills
+            event_bus=self._event_bus, tool_manager=self._tool_mgr, config=config.skills
         )
 
         logger.debug(f"[{self.__class__.__name__}] Managers configured")
@@ -144,7 +128,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         name: str,
         handler: Callable[..., Any],
         description: str,
-        parameters_schema: Optional[dict[str, Any]] = None
+        parameters_schema: dict[str, Any] | None = None,
     ) -> None:
         """
         注册工具（同时注册到 ToolManager 和本地缓存）
@@ -158,7 +142,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         from backend.domain.models.shared.types import JSONSchema
 
         # 注册到 ToolManager
-        json_schema: Optional[JSONSchema] = None
+        json_schema: JSONSchema | None = None
         if parameters_schema is not None:
             if isinstance(parameters_schema, dict):
                 json_schema = JSONSchema(**parameters_schema)
@@ -166,17 +150,12 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
                 json_schema = parameters_schema  # type: ignore[assignment]
 
         self._tool_mgr.register(
-            name=name,
-            handler=handler,
-            description=description,
-            parameters=json_schema
+            name=name, handler=handler, description=description, parameters=json_schema
         )
 
         # 更新本地缓存
         self._tools[name] = ToolCache(
-            handler=handler,
-            description=description,
-            parameters_schema=parameters_schema or {}
+            handler=handler, description=description, parameters_schema=parameters_schema or {}
         )
 
         logger.debug(f"[{self.__class__.__name__}] Registered tool: {name}")
@@ -209,7 +188,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
     # 技能管理
     # ═══════════════════════════════════════════════════════════
 
-    def load_skill(self, skill_path: str) -> Optional[Any]:
+    def load_skill(self, skill_path: str) -> Any | None:
         """加载技能"""
         return self._skill_mgr.load_skill_from_directory(skill_path)
 
@@ -230,10 +209,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
     # ═══════════════════════════════════════════════════════════
 
     def subscribe(
-        self,
-        callback: Callable,
-        event_types: Optional[list[str]] = None,
-        dialog_id: Optional[str] = None
+        self, callback: Callable, event_types: list[str] | None = None, dialog_id: str | None = None
     ) -> Callable:
         """订阅事件"""
         return self._event_bus.subscribe(callback, event_types, dialog_id)
@@ -247,7 +223,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
     # ═══════════════════════════════════════════════════════════
 
     @property
-    def session_manager(self) -> Optional[DialogSessionManager]:
+    def session_manager(self) -> DialogSessionManager | None:
         """获取 SessionManager 实例"""
         return self._session_mgr
 
@@ -256,7 +232,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         self._session_mgr = session_manager
         logger.debug(f"[{self.__class__.__name__}] SessionManager set")
 
-    async def create_session(self, dialog_id: str, title: Optional[str] = None) -> Any:
+    async def create_session(self, dialog_id: str, title: str | None = None) -> Any:
         """
         使用 SessionManager 创建新会话
 
@@ -271,7 +247,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
             raise RuntimeError("SessionManager not initialized")
         return await self._session_mgr.create_session(dialog_id, title)
 
-    async def get_session(self, dialog_id: str) -> Optional[Any]:
+    async def get_session(self, dialog_id: str) -> Any | None:
         """
         使用 SessionManager 获取会话
 
@@ -302,10 +278,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
 
     @abstractmethod
     async def send_message(
-        self,
-        dialog_id: str,
-        message: str,
-        stream: bool = True
+        self, dialog_id: str, message: str, stream: bool = True
     ) -> AsyncIterator[AgentEvent]:
         """
         发送消息 - 子类实现
@@ -321,7 +294,7 @@ class ManagerAwareRuntime(AbstractAgentRuntime[EngineConfig], ManagerLifecycleMi
         pass
 
     @abstractmethod
-    async def stop(self, dialog_id: Optional[str] = None) -> None:
+    async def stop(self, dialog_id: str | None = None) -> None:
         """
         停止 Agent - 子类实现
 

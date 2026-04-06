@@ -3,10 +3,10 @@
 处理 DeepSeek API 的响应格式，与 OpenAI 兼容但有独特的推理内容字段。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ..base import LLMResponseAdapter, StreamingParseResult
-from ..models import UnifiedLLMResponse, TokenUsage
+from ..models import TokenUsage, UnifiedLLMResponse
 
 
 class DeepSeekAdapter(LLMResponseAdapter):
@@ -58,7 +58,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
                 meta = raw_response.usage_metadata
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=meta.get("input_tokens"),
-                    completion_tokens=meta.get("output_tokens")
+                    completion_tokens=meta.get("output_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -67,7 +67,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 处理字典格式（OpenAI 兼容格式）
@@ -92,7 +92,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -101,7 +101,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 默认处理
@@ -109,14 +109,11 @@ class DeepSeekAdapter(LLMResponseAdapter):
             content=str(raw_response),
             model="deepseek-unknown",
             provider=self.provider_name,
-            metadata={"raw_type": type(raw_response).__name__}
+            metadata={"raw_type": type(raw_response).__name__},
         )
 
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> StreamingParseResult:
         """解析 DeepSeek 流式响应 chunk
 
@@ -166,7 +163,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
         # 更新累积内容
@@ -179,7 +176,7 @@ class DeepSeekAdapter(LLMResponseAdapter):
             accumulated_content=new_accumulated_content,
             accumulated_reasoning=new_accumulated_reasoning,
             is_finished=is_finished,
-            usage=usage
+            usage=usage,
         )
 
     def _extract_metadata(self, raw_response: Any) -> dict:

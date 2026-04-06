@@ -92,9 +92,9 @@ If table structure is unknown, run:
 
 ```sql
 -- List all tables
-SELECT table_name 
-FROM information_schema.tables 
-WHERE table_schema = 'public' 
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
 ORDER BY table_name;
 
 -- Get table structure

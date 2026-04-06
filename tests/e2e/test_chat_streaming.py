@@ -8,11 +8,11 @@ Playwright E2E 测试 - 前端流式输出验证
 4. 检查 WebSocket 连接
 """
 
-import pytest
 import asyncio
 import json
-from playwright.async_api import async_playwright, Page, BrowserContext
-from typing import List, Dict, Any
+from typing import Any
+
+from playwright.async_api import BrowserContext, Page, async_playwright
 
 
 class ChatStreamTester:
@@ -23,8 +23,8 @@ class ChatStreamTester:
         self.page: Page = None
         self.context: BrowserContext = None
         self.browser = None
-        self.received_chunks: List[str] = []
-        self.ws_messages: List[Dict] = []
+        self.received_chunks: list[str] = []
+        self.ws_messages: list[dict] = []
 
     async def setup(self):
         """初始化浏览器"""
@@ -96,7 +96,7 @@ class ChatStreamTester:
             print(f"[错误] 发送消息失败: {e}")
             return False
 
-    async def wait_for_streaming(self, timeout: int = 30) -> Dict[str, Any]:
+    async def wait_for_streaming(self, timeout: int = 30) -> dict[str, Any]:
         """等待流式输出完成"""
         start_time = asyncio.get_event_loop().time()
         chunks = []
@@ -149,7 +149,7 @@ class ChatStreamTester:
             "ws_messages": len(self.ws_messages)
         }
 
-    async def test_finance_skill_health(self) -> Dict[str, Any]:
+    async def test_finance_skill_health(self) -> dict[str, Any]:
         """测试 Finance Skill 体温检查"""
         print("\n" + "="*60)
         print("开始 Finance Skill 流式输出测试")

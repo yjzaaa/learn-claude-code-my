@@ -84,7 +84,7 @@ def agent_loop(messages):
 本仓库是一个 0->1 的学习型项目，用于从零构建 nano Claude Code-like agent。
 为保证学习路径清晰，仓库有意简化或省略了部分生产机制：
 
-- 完整事件 / Hook 总线 (例如 PreToolUse、SessionStart/End、ConfigChange)。  
+- 完整事件 / Hook 总线 (例如 PreToolUse、SessionStart/End、ConfigChange)。
   s12 仅提供教学用途的最小 append-only 生命周期事件流。
 - 基于规则的权限治理与信任流程
 - 会话生命周期控制 (resume/fork) 与更完整的 worktree 生命周期控制

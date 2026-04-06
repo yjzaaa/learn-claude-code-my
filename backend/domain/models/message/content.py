@@ -4,10 +4,11 @@ Message Models - 消息相关模型
 包含消息评分系统等功能。
 """
 
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
 import time
 import uuid
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class MessageRating(BaseModel):
@@ -16,10 +17,11 @@ class MessageRating(BaseModel):
 
     用户可以给 AI 消息打分（1-5 星），并添加可选的评论。
     """
+
     id: str = Field(default_factory=lambda: f"rating_{uuid.uuid4().hex[:12]}")
     message_id: str = Field(..., description="被评分的消息 ID")
     score: int = Field(..., ge=1, le=5, description="评分分数（1-5 星）")
-    comment: Optional[str] = Field(default=None, max_length=1000, description="可选的评论")
+    comment: str | None = Field(default=None, max_length=1000, description="可选的评论")
     created_at: float = Field(default_factory=time.time, description="评分时间戳")
 
     @field_validator("message_id")
@@ -38,17 +40,17 @@ class MessageRating(BaseModel):
             raise ValueError("score must be between 1 and 5")
         return v
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         return self.model_dump()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MessageRating":
+    def from_dict(cls, data: dict[str, Any]) -> "MessageRating":
         """从字典创建实例"""
         return cls.model_validate(data)
 
 
-def calculate_average_rating(ratings: List[Dict[str, Any]]) -> Optional[float]:
+def calculate_average_rating(ratings: list[dict[str, Any]]) -> float | None:
     """
     计算平均评分
 
@@ -69,7 +71,7 @@ def calculate_average_rating(ratings: List[Dict[str, Any]]) -> Optional[float]:
     return round(avg, 1)
 
 
-def get_rating_distribution(ratings: List[Dict[str, Any]]) -> Dict[int, int]:
+def get_rating_distribution(ratings: list[dict[str, Any]]) -> dict[int, int]:
     """
     获取评分分布
 

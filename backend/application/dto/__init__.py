@@ -2,13 +2,13 @@
 
 from .requests import ChatRequest
 from .responses import (
-    CreateDialogResult,
-    SendMessageResult,
-    LoadSkillResult,
-    SkillInfoDTO,
-    MessageDTO,
-    MemorySummary,
     ChatResponse,
+    CreateDialogResult,
+    LoadSkillResult,
+    MemorySummary,
+    MessageDTO,
+    SendMessageResult,
+    SkillInfoDTO,
 )
 
 __all__ = [

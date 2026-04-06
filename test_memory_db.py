@@ -6,13 +6,16 @@
 
 import asyncio
 import sys
+
 sys.path.insert(0, '.')
 
-from backend.domain.models.memory.types import MemoryType
-from backend.domain.models.memory.memory import Memory
 from backend.application.services.memory_service import MemoryService
+from backend.domain.models.memory.types import MemoryType
+from backend.infrastructure.persistence.memory.database import (
+    AsyncSessionLocal,
+    init_memory_database,
+)
 from backend.infrastructure.persistence.memory.postgres_repo import PostgresMemoryRepository
-from backend.infrastructure.persistence.memory.database import AsyncSessionLocal, init_memory_database
 
 
 async def test_database_storage():

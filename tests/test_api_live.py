@@ -1,8 +1,9 @@
 """
 测试本地运行的 main.py API
 """
-import requests
 import json
+
+import requests
 
 BASE = "http://127.0.0.1:8001"
 
@@ -26,5 +27,5 @@ for line in r.iter_lines():
             try:
                 data = json.loads(text[6:])
                 print("SSE:", json.dumps(data, ensure_ascii=False)[:300])
-            except Exception as e:
+            except Exception:
                 print("Raw:", text[:200])

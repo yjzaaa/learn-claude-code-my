@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 s08_background_tasks.py - 后台任务
@@ -31,12 +32,13 @@ import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
     from agents.providers import create_provider_from_env
     from base import BaseAgentLoop, WorkspaceOps, tool
 except ImportError:
-    from providers import create_provider_from_env
     from agents.base import BaseAgentLoop, WorkspaceOps, tool
+    from providers import create_provider_from_env
 
 load_dotenv(override=True)
 

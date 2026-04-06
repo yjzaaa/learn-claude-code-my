@@ -5,7 +5,9 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Callable, Optional, Any
+from collections.abc import AsyncIterator, Callable
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -22,7 +24,7 @@ class AgentEvent(BaseModel):
     data: Any
     """事件数据"""
 
-    metadata: Optional[dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
     """元数据（可选）"""
 
 
@@ -67,7 +69,7 @@ class IAgentRuntime(ABC):
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         发送消息，返回流式事件
@@ -84,7 +86,7 @@ class IAgentRuntime(ABC):
         pass
 
     @abstractmethod
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
+    async def create_dialog(self, user_input: str, title: str | None = None) -> str:
         """
         创建新对话
 
@@ -98,7 +100,7 @@ class IAgentRuntime(ABC):
         pass
 
     @abstractmethod
-    def get_dialog(self, dialog_id: str) -> Optional[BaseModel]:
+    def get_dialog(self, dialog_id: str) -> BaseModel | None:
         """
         获取对话
 
@@ -126,7 +128,7 @@ class IAgentRuntime(ABC):
         name: str,
         handler: Callable[..., Any],
         description: str,
-        parameters_schema: Optional[BaseModel] = None,
+        parameters_schema: BaseModel | None = None,
     ) -> None:
         """
         注册工具
@@ -150,7 +152,7 @@ class IAgentRuntime(ABC):
         pass
 
     @abstractmethod
-    async def stop(self, dialog_id: Optional[str] = None) -> None:
+    async def stop(self, dialog_id: str | None = None) -> None:
         """
         停止 Agent 运行
 

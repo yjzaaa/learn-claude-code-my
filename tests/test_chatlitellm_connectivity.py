@@ -12,7 +12,7 @@ from pathlib import Path
 # 手动加载项目根目录的 .env 文件（强制覆盖现有环境变量）
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -28,6 +28,7 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 # 设置日志
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def test_chatlitellm_connectivity():
     except ImportError as e:
         print(f"错误: 缺少 langchain_community: {e}")
         print("请安装: pip install langchain-community")
-        return
+        return None
 
     # 从环境变量获取配置
     model_name = os.getenv("MODEL_ID", "deepseek/deepseek-chat")
@@ -68,7 +69,7 @@ async def test_chatlitellm_connectivity():
             base_url = "https://api.openai.com/v1"
 
     print(f"\n{'='*60}")
-    print(f"测试 ChatLiteLLM 联通性")
+    print("测试 ChatLiteLLM 联通性")
     print(f"{'='*60}")
     print(f"model={model_name}")
     print(f"base_url={base_url}")
@@ -76,7 +77,7 @@ async def test_chatlitellm_connectivity():
 
     if not api_key:
         print("错误: 未找到 API key")
-        return
+        return None
 
     # 创建日志目录
     project_root = Path(__file__).resolve().parent.parent
@@ -85,7 +86,7 @@ async def test_chatlitellm_connectivity():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = logs_dir / f"chatlitellm_{ts}.jsonl"
 
-    print(f"\n初始化 ChatLiteLLM...")
+    print("\n初始化 ChatLiteLLM...")
 
     try:
         model = ChatLiteLLM(
@@ -94,16 +95,16 @@ async def test_chatlitellm_connectivity():
             api_base=base_url,
             temperature=0.7,
         )
-        print(f"✓ ChatLiteLLM 初始化成功")
+        print("✓ ChatLiteLLM 初始化成功")
     except Exception as e:
         print(f"✗ ChatLiteLLM 初始化失败: {e}")
         import traceback
         traceback.print_exc()
-        return
+        return None
 
     messages = [{"role": "user", "content": "你好，请用一句话介绍自己"}]
 
-    print(f"\n开始流式调用...")
+    print("\n开始流式调用...")
     print(f"输出文件: {output_file}")
     print(f"{'='*60}\n")
 
@@ -151,7 +152,7 @@ async def test_chatlitellm_connectivity():
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
     print(f"\n{'='*60}")
-    print(f"测试结果")
+    print("测试结果")
     print(f"{'='*60}")
     print(f"总事件数: {event_count}")
     print(f"完整回复: {full_content}")
@@ -168,13 +169,14 @@ async def test_chatlitellm_with_provider_manager():
 
     try:
         from langchain_community.chat_models import ChatLiteLLM
+
         from backend.infrastructure.services import ProviderManager
     except ImportError as e:
         print(f"错误: 缺少依赖: {e}")
-        return
+        return None
 
     print(f"\n{'='*60}")
-    print(f"使用 ProviderManager 测试 ChatLiteLLM")
+    print("使用 ProviderManager 测试 ChatLiteLLM")
     print(f"{'='*60}")
 
     provider_mgr = ProviderManager()
@@ -187,7 +189,7 @@ async def test_chatlitellm_with_provider_manager():
 
     if not model_config.api_key:
         print("错误: ProviderManager 未找到 API key")
-        return
+        return None
 
     project_root = Path(__file__).resolve().parent.parent
     logs_dir = project_root / "logs" / "connectivity"
@@ -202,16 +204,16 @@ async def test_chatlitellm_with_provider_manager():
             api_base=model_config.base_url,
             temperature=0.7,
         )
-        print(f"✓ ChatLiteLLM 初始化成功")
+        print("✓ ChatLiteLLM 初始化成功")
     except Exception as e:
         print(f"✗ ChatLiteLLM 初始化失败: {e}")
         import traceback
         traceback.print_exc()
-        return
+        return None
 
     messages = [{"role": "user", "content": "Hello, introduce yourself in one sentence"}]
 
-    print(f"\n开始流式调用...")
+    print("\n开始流式调用...")
     event_count = 0
     full_content = ""
 
@@ -232,7 +234,7 @@ async def test_chatlitellm_with_provider_manager():
                 f.write(line + "\n")
                 print(f"[{event_count}] {content!r}")
 
-        print(f"\n✓ 流式调用成功")
+        print("\n✓ 流式调用成功")
         print(f"总事件数: {event_count}")
         print(f"完整回复: {full_content}")
 
@@ -240,7 +242,7 @@ async def test_chatlitellm_with_provider_manager():
         print(f"\n✗ 流式调用失败: {e}")
         import traceback
         traceback.print_exc()
-        return
+        return None
 
     return True
 

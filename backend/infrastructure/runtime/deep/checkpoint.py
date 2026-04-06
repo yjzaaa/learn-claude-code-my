@@ -3,7 +3,7 @@
 处理 LangGraph checkpoint 的获取和快照。
 """
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from backend.infrastructure.logging import get_logger
 
@@ -22,7 +22,7 @@ class CheckpointManager:
     def __init__(self, checkpointer: Any):
         self._checkpointer = checkpointer
 
-    def get_checkpoint_snapshot(self, dialog_id: str) -> Dict[str, Any]:
+    def get_checkpoint_snapshot(self, dialog_id: str) -> dict[str, Any]:
         """获取 checkpoint 快照
 
         Args:
@@ -47,11 +47,13 @@ class CheckpointManager:
             logger.debug(f"[Checkpoint] Failed to get snapshot: {e}")
             return {"dialog_id": dialog_id, "checkpoint_exists": False, "error": str(e)}
 
-    def _build_snapshot(self, dialog_id: str, checkpoint_tuple: Any) -> Dict[str, Any]:
+    def _build_snapshot(self, dialog_id: str, checkpoint_tuple: Any) -> dict[str, Any]:
         """构建快照"""
         checkpoint = checkpoint_tuple.checkpoint
-        metadata = checkpoint_tuple.metadata if hasattr(checkpoint_tuple, 'metadata') else {}
-        pending_writes = checkpoint_tuple.pending_writes if hasattr(checkpoint_tuple, 'pending_writes') else []
+        metadata = checkpoint_tuple.metadata if hasattr(checkpoint_tuple, "metadata") else {}
+        pending_writes = (
+            checkpoint_tuple.pending_writes if hasattr(checkpoint_tuple, "pending_writes") else []
+        )
 
         channel_values = checkpoint.get("channel_values", {})
         messages_data = self._extract_messages(channel_values.get("messages", []))
@@ -69,8 +71,10 @@ class CheckpointManager:
                 if k != "messages"
             },
             "pending_writes": [
-                {"task_id": pw[0] if len(pw) > 0 else None,
-                 "channel": pw[1] if len(pw) > 1 else None}
+                {
+                    "task_id": pw[0] if len(pw) > 0 else None,
+                    "channel": pw[1] if len(pw) > 1 else None,
+                }
                 for pw in (pending_writes or [])[:5]
             ],
             "metadata": {
@@ -83,18 +87,19 @@ class CheckpointManager:
         """提取消息数据"""
         result = []
         for msg in messages:
-            if hasattr(msg, 'model_dump'):
+            if hasattr(msg, "model_dump"):
                 result.append(msg.model_dump())
-            elif hasattr(msg, '__dict__'):
+            elif hasattr(msg, "__dict__"):
                 result.append(msg.__dict__)
             else:
                 result.append({"content": str(msg)})
         return result
 
-    def save_snapshot(self, checkpoint_data: Dict[str, Any]) -> Optional[str]:
+    def save_snapshot(self, checkpoint_data: dict[str, Any]) -> str | None:
         """保存快照到 SessionManager"""
         try:
             from backend.infrastructure.container import container
+
             if container.session_manager:
                 return container.session_manager.save_checkpoint_snapshot(checkpoint_data)
         except Exception as e:

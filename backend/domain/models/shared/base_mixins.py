@@ -3,11 +3,10 @@
 提供通用的基础 Mixin 功能，其他 Mixin 可以继承这些基类获得标准行为。
 """
 
-from typing import Any, Dict, Type, TypeVar
 from abc import ABC, abstractmethod
+from typing import Any, TypeVar
 
-
-T = TypeVar('T', bound='ComparableMixin')
+T = TypeVar("T", bound="ComparableMixin")
 
 
 class ComparableMixin:
@@ -30,11 +29,11 @@ class ComparableMixin:
         """基于 id 字段的相等性比较"""
         if not isinstance(other, self.__class__):
             return NotImplemented
-        return getattr(self, 'id', None) == getattr(other, 'id', None)
+        return getattr(self, "id", None) == getattr(other, "id", None)
 
     def __hash__(self) -> int:
         """基于 id 字段的哈希值"""
-        return hash(getattr(self, 'id', id(self)))
+        return hash(getattr(self, "id", id(self)))
 
 
 class SerializableMixin(ABC):
@@ -56,27 +55,27 @@ class SerializableMixin(ABC):
                 return cls(name=data["name"])
     """
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典"""
         result = self._to_dict_impl()
         # 自动添加 id 字段（如果有）
-        if hasattr(self, 'id') and 'id' not in result:
-            result['id'] = self.id
+        if hasattr(self, "id") and "id" not in result:
+            result["id"] = self.id
         return result
 
     @abstractmethod
-    def _to_dict_impl(self) -> Dict[str, Any]:
+    def _to_dict_impl(self) -> dict[str, Any]:
         """子类实现：转换为字典的具体逻辑"""
         raise NotImplementedError
 
     @classmethod
-    def from_dict(cls: Type[T], data: Dict[str, Any]) -> T:
+    def from_dict(cls: type[T], data: dict[str, Any]) -> T:
         """从字典创建实例"""
         return cls._from_dict_impl(data)
 
     @classmethod
     @abstractmethod
-    def _from_dict_impl(cls: Type[T], data: Dict[str, Any]) -> T:
+    def _from_dict_impl(cls: type[T], data: dict[str, Any]) -> T:
         """子类实现：从字典创建实例的具体逻辑"""
         raise NotImplementedError
 
@@ -141,13 +140,14 @@ class LoggerMixin:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls._logger_name = cls.__module__ + '.' + cls.__name__
+        cls._logger_name = cls.__module__ + "." + cls.__name__
 
     @property
     def logger(self):
         """获取 logger 实例（延迟初始化）"""
-        if not hasattr(self, '_logger'):
+        if not hasattr(self, "_logger"):
             from backend.infrastructure.logging import get_logger
+
             self._logger = get_logger(self._logger_name)
         return self._logger
 

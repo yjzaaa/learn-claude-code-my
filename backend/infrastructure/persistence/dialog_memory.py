@@ -2,10 +2,8 @@
 In-Memory Dialog Repository - 内存对话仓库实现
 """
 
-from typing import Optional
-
-from backend.domain.repositories.dialog import IDialogRepository
 from backend.domain.models.dialog.dialog import Dialog
+from backend.domain.repositories.dialog import IDialogRepository
 
 
 class InMemoryDialogRepository(IDialogRepository):
@@ -30,7 +28,7 @@ class InMemoryDialogRepository(IDialogRepository):
         """
         self._dialogs[dialog.id] = dialog
 
-    async def get(self, dialog_id: str) -> Optional[Dialog]:
+    async def get(self, dialog_id: str) -> Dialog | None:
         """从内存获取对话
 
         Args:

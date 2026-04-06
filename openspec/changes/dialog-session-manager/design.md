@@ -48,7 +48,7 @@ class DialogSession:
 
 - **存储**: UserMessage (完整) → AIMessage (最终完整内容)
 - **不存储**: 流式过程中的 text_delta、tool_call 中间状态
-- **持久化时机**: 
+- **持久化时机**:
   - UserMessage: 收到用户输入立即存储
   - AIMessage: 流式完成（message_complete 事件）后存储
 
@@ -70,13 +70,13 @@ class DialogSessionManager:
     async def create_session(self, dialog_id: str, title: str | None = None) -> DialogSession
     async def get_session(self, dialog_id: str) -> DialogSession | None
     async def close_session(self, dialog_id: str) -> None
-    
+
     # 消息操作
     async def add_user_message(self, dialog_id: str, content: str) -> BaseMessage
     async def start_ai_response(self, dialog_id: str, message_id: str) -> None  # 进入 streaming 状态
     async def complete_ai_response(self, dialog_id: str, content: str) -> BaseMessage  # 保存最终消息
     async def get_messages(self, dialog_id: str) -> list[BaseMessage]
-    
+
     # 状态管理
     async def update_status(self, dialog_id: str, status: SessionStatus, error_info: dict | None = None)
     async def get_snapshot(self, dialog_id: str) -> DialogSnapshot  # 用于 WebSocket 广播
@@ -180,21 +180,21 @@ core/session/
 @dataclass
 class DialogSession:
     """单个对话的完整会话状态"""
-    
+
     # 基础信息
     dialog_id: str
     title: Optional[str] = None
     status: SessionStatus = SessionStatus.CREATING
-    
+
     # 消息存储（仅最终消息）
     messages: list[BaseMessage] = field(default_factory=list)
-    
+
     # 元数据
     metadata: SessionMetadata = field(default_factory=SessionMetadata)
-    
+
     # 流式上下文（STREAMING 状态时非 None）
     streaming_context: Optional[StreamingContext] = None
-    
+
     # 时间戳
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -222,43 +222,43 @@ class SessionStatus(str, Enum):
 class DialogSessionManager:
     def __init__(self, config: StorageConfig):
         """初始化管理器"""
-        
+
     # ========== 生命周期管理 ==========
-    
+
     async def create_session(self, dialog_id: str, title: Optional[str] = None) -> DialogSession:
         """创建新会话"""
-        
+
     async def get_session(self, dialog_id: str) -> Optional[DialogSession]:
         """获取会话状态（只读，外部不应直接修改）"""
-        
+
     async def close_session(self, dialog_id: str) -> None:
         """关闭会话并清理资源"""
-        
+
     async def transition(
-        self, 
-        dialog_id: str, 
+        self,
+        dialog_id: str,
         to_status: SessionStatus,
         context: Optional[dict] = None
     ) -> DialogSession:
         """状态转换（带验证和钩子）"""
-        
+
     # ========== 消息操作 ==========
-    
+
     async def add_user_message(
-        self, 
-        dialog_id: str, 
+        self,
+        dialog_id: str,
         content: str,
         metadata: Optional[dict] = None
     ) -> HumanMessage:
         """添加用户消息"""
-        
+
     async def start_ai_response(
         self,
         dialog_id: str,
         message_id: str
     ) -> None:
         """标记 AI 响应开始（进入 STREAMING 状态）"""
-        
+
     async def complete_ai_response(
         self,
         dialog_id: str,
@@ -267,7 +267,7 @@ class DialogSessionManager:
         metadata: Optional[dict] = None
     ) -> AIMessage:
         """完成 AI 响应，保存最终消息"""
-        
+
     async def add_tool_result(
         self,
         dialog_id: str,
@@ -275,34 +275,34 @@ class DialogSessionManager:
         content: str
     ) -> ToolMessage:
         """添加工具执行结果"""
-        
+
     async def get_messages(
         self,
         dialog_id: str,
         limit: Optional[int] = None
     ) -> list[BaseMessage]:
         """获取消息列表"""
-        
+
     async def get_messages_for_llm(
         self,
         dialog_id: str,
         max_tokens: int = 8000
     ) -> list[dict]:
         """获取 LLM 可用的消息格式"""
-        
+
     # ========== 钩子注册 ==========
-    
+
     def register_lifecycle_hook(self, hook: LifecycleHook) -> None:
         """注册生命周期钩子"""
-        
+
     def register_message_hook(self, hook: MessageHook) -> None:
         """注册消息钩子"""
-        
+
     # ========== 清理 ==========
-    
+
     async def cleanup_expired(self) -> list[str]:
         """清理过期会话"""
-        
+
     async def start_cleanup_task(self, interval_seconds: int = 300) -> None:
         """启动定时清理任务"""
 ```
@@ -316,7 +316,7 @@ class DialogSessionManager:
 async def send_message(self, dialog_id, message):
     dialog = self._dialogs[dialog_id]
     dialog.add_human_message(message)  # 直接操作 Dialog
-    
+
     # 流式处理...
     dialog.add_ai_message(content)  # 直接操作 Dialog
 ```
@@ -329,18 +329,18 @@ async def send_message(self, dialog_id, message, session_manager: DialogSessionM
     # 1. 添加用户消息
     await session_manager.add_user_message(dialog_id, message)
     yield AgentEvent(type="user_message", data=message)
-    
+
     # 2. 开始 AI 响应
     message_id = generate_id()
     await session_manager.start_ai_response(dialog_id, message_id)
     yield AgentEvent(type="ai_started", data={"message_id": message_id})
-    
+
     # 3. 流式处理（只 yield delta，不存储）
     accumulated = ""
     async for chunk in llm.stream():
         accumulated += chunk
         yield AgentEvent(type="content_delta", data=chunk)
-    
+
     # 4. 完成 AI 响应
     await session_manager.complete_ai_response(dialog_id, message_id, accumulated)
     yield AgentEvent(type="ai_complete", data={"message_id": message_id, "content": accumulated})
@@ -353,31 +353,31 @@ class EventCoordinator:
     def __init__(self, session_manager: DialogSessionManager, websocket_manager):
         self.sessions = session_manager
         self.ws = websocket_manager
-        
+
     async def handle_agent_event(self, dialog_id: str, event: AgentEvent):
         """处理 Runtime 产出的 AgentEvent"""
-        
+
         if event.type == "user_message":
             # 已存储，只需广播
             await self.ws.broadcast(dialog_id, event)
-            
+
         elif event.type == "content_delta":
             # 透传给前端，不存储
             await self.ws.broadcast(dialog_id, event)
-            
+
         elif event.type == "ai_complete":
             # 已存储，广播并触发 snapshot
             await self.ws.broadcast(dialog_id, event)
-            
+
             # 生成并广播 snapshot
             session = await self.sessions.get_session(dialog_id)
             snapshot = self._create_snapshot(session)
             await self.ws.broadcast(dialog_id, snapshot)
-            
+
         elif event.type == "tool_call":
             # 透传，不存储（等待 tool_result）
             await self.ws.broadcast(dialog_id, event)
-            
+
         elif event.type == "tool_result":
             # 存储并广播
             await self.sessions.add_tool_result(dialog_id, event.tool_call_id, event.content)
@@ -390,21 +390,21 @@ class EventCoordinator:
 @dataclass
 class SessionManagerConfig:
     """会话管理器配置"""
-    
+
     # TTL 设置
     session_ttl_seconds: int = 1800  # 30 分钟
-    
+
     # 容量限制
     max_sessions: int = 100
     max_messages_per_session: int = 1000
-    
+
     # 上下文窗口
     max_context_turns: int = 20
     max_context_tokens: int = 8000
-    
+
     # 清理任务
     cleanup_interval_seconds: int = 300  # 5 分钟
-    
+
     # 钩子
     enable_logging_hook: bool = True
     enable_metrics_hook: bool = False

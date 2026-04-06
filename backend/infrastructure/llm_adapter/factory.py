@@ -4,10 +4,9 @@
 """
 
 import re
-from typing import Optional, Type
 
+from .adapters import ClaudeAdapter, DeepSeekAdapter, FallbackAdapter, KimiAdapter, OpenAIAdapter
 from .base import LLMResponseAdapter
-from .adapters import ClaudeAdapter, DeepSeekAdapter, KimiAdapter, OpenAIAdapter, FallbackAdapter
 
 
 class LLMResponseAdapterFactory:
@@ -27,7 +26,7 @@ class LLMResponseAdapterFactory:
     """
 
     # 模型名称到适配器的映射规则
-    _PROVIDER_PATTERNS: dict[str, Type[LLMResponseAdapter]] = {
+    _PROVIDER_PATTERNS: dict[str, type[LLMResponseAdapter]] = {
         # Anthropic / Claude
         r"claude": ClaudeAdapter,
         # OpenAI
@@ -79,7 +78,7 @@ class LLMResponseAdapterFactory:
         Returns:
             LLMResponseAdapter: 对应提供商的适配器实例
         """
-        provider_mapping: dict[str, Type[LLMResponseAdapter]] = {
+        provider_mapping: dict[str, type[LLMResponseAdapter]] = {
             "anthropic": ClaudeAdapter,
             "claude": ClaudeAdapter,
             "openai": OpenAIAdapter,
@@ -91,7 +90,7 @@ class LLMResponseAdapterFactory:
         adapter_class = provider_mapping.get(provider.lower(), FallbackAdapter)
         return adapter_class()
 
-    def detect_provider(self, model_name: str) -> Optional[str]:
+    def detect_provider(self, model_name: str) -> str | None:
         """检测模型所属的提供商
 
         Args:
@@ -155,7 +154,7 @@ def create_adapter(model_name: str) -> LLMResponseAdapter:
     return default_factory.create_adapter(model_name)
 
 
-def detect_provider(model_name: str) -> Optional[str]:
+def detect_provider(model_name: str) -> str | None:
     """快捷函数：检测模型所属的提供商
 
     Args:

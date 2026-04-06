@@ -4,16 +4,16 @@
 
 import asyncio
 import json
-import websockets
-import aiohttp
-from typing import List, Dict, Any
 import time
+from typing import Any
+
+import websockets
 
 
 async def test_chat_streaming(
     base_url: str = "ws://localhost:8001",
     message: str = "执行 finance skill 体温测试"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     测试聊天流式输出
 
@@ -24,7 +24,7 @@ async def test_chat_streaming(
     4. 统计 chunk 数量和延迟
     """
 
-    chunks: List[Dict] = []
+    chunks: list[dict] = []
     start_time = time.time()
 
     print(f"[测试] 连接到 {base_url}/ws/chat")
@@ -82,10 +82,10 @@ async def test_chat_streaming(
 
                     # 检查是否完成
                     if data.get("type") == "complete" or data.get("done"):
-                        print(f"[完成] 收到完成信号")
+                        print("[完成] 收到完成信号")
                         break
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     print("[超时] 30秒内没有收到消息")
                     break
 
@@ -147,7 +147,7 @@ async def main():
     with open("test_stream_report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
-    print(f"\n[报告] 已保存到 test_stream_report.json")
+    print("\n[报告] 已保存到 test_stream_report.json")
 
     return result1
 

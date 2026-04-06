@@ -12,7 +12,7 @@ from pathlib import Path
 # 加载 .env
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -26,14 +26,15 @@ if env_path.exists():
 os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def _try_chatlitellm(model_name: str, api_key: str, base_url: str):
     """尝试使用 ChatLiteLLM"""
-    from langchain_community.chat_models import ChatLiteLLM
     import litellm
+    from langchain_community.chat_models import ChatLiteLLM
     litellm.suppress_debug_info = True
 
     kwargs = {
@@ -103,9 +104,9 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
     # 步骤 1: 尝试 ChatLiteLLM
     model = None
     try:
-        print(f"    尝试 ChatLiteLLM...")
+        print("    尝试 ChatLiteLLM...")
         model = await _try_chatlitellm(model_name, api_key, base_url)
-        print(f"    ✓ ChatLiteLLM 初始化成功")
+        print("    ✓ ChatLiteLLM 初始化成功")
     except Exception as e:
         print(f"    ✗ ChatLiteLLM 初始化失败: {e}")
         # 初始化失败，直接尝试 ChatAnthropic
@@ -114,7 +115,7 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
     # 如果初始化成功，尝试流式调用
     if model:
         try:
-            print(f"    发送测试消息 (ChatLiteLLM)...")
+            print("    发送测试消息 (ChatLiteLLM)...")
             success, response = await _test_model_streaming(model)
             if success:
                 print(f"    ✓ 收到响应: {response[:50]}...")
@@ -122,11 +123,10 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
                 result["test_message"] = response
                 result["client_type"] = "ChatLiteLLM"
                 return result
-            else:
-                print(f"    ✗ 响应为空，尝试 ChatAnthropic...")
+            print("    ✗ 响应为空，尝试 ChatAnthropic...")
         except Exception as e:
             print(f"    ✗ ChatLiteLLM 流式调用失败: {e}")
-            print(f"    尝试 ChatAnthropic...")
+            print("    尝试 ChatAnthropic...")
 
     # 步骤 2: 尝试 ChatAnthropic（适用于 anthropic 格式或 kimi）
     should_try_anthropic = (
@@ -137,9 +137,9 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
 
     if should_try_anthropic:
         try:
-            print(f"    尝试 ChatAnthropic...")
+            print("    尝试 ChatAnthropic...")
             model = await _try_chatanthropic(model_name, api_key, base_url)
-            print(f"    ✓ ChatAnthropic 初始化成功")
+            print("    ✓ ChatAnthropic 初始化成功")
         except Exception as e:
             print(f"    ✗ ChatAnthropic 初始化失败: {e}")
             result["error"] = f"ChatLiteLLM failed, ChatAnthropic init failed: {e}"
@@ -147,7 +147,7 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
 
         # 尝试流式调用
         try:
-            print(f"    发送测试消息 (ChatAnthropic)...")
+            print("    发送测试消息 (ChatAnthropic)...")
             success, response = await _test_model_streaming(model)
             if success:
                 print(f"    ✓ 收到响应: {response[:50]}...")
@@ -155,10 +155,9 @@ async def test_model_in_deep_context(model_config: dict) -> dict:
                 result["test_message"] = response
                 result["client_type"] = "ChatAnthropic"
                 return result
-            else:
-                print(f"    ✗ 响应为空")
-                result["error"] = "Empty response from ChatAnthropic"
-                return result
+            print("    ✗ 响应为空")
+            result["error"] = "Empty response from ChatAnthropic"
+            return result
         except Exception as e:
             print(f"    ✗ ChatAnthropic 流式调用失败: {e}")
             result["error"] = f"ChatAnthropic streaming failed: {e}"
@@ -184,7 +183,10 @@ async def test_all_discovered_models():
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-    from tests.test_freeform_provider_discovery import discover_all_credentials, detect_api_format_from_url
+    from tests.test_freeform_provider_discovery import (
+        detect_api_format_from_url,
+        discover_all_credentials,
+    )
 
     credentials = discover_all_credentials()
     print(f"  发现 {len(credentials)} 个 API key")

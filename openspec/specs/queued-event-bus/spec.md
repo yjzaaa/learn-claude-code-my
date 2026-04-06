@@ -39,4 +39,3 @@ TBD - created by archiving change async-queue-integrations. Update Purpose after
 #### Scenario: 自定义并发消费者数
 - **WHEN** 创建 QueuedEventBus(num_consumers=3)
 - **THEN** 系统启动 3 个并发消费者处理事件
-

@@ -4,7 +4,6 @@ Test Memory Domain Models - 记忆领域模型测试
 测试 Memory, MemoryMetadata, MemoryType 的核心功能。
 """
 
-import pytest
 from datetime import datetime, timedelta
 
 from backend.domain.models.memory import Memory, MemoryMetadata, MemoryType

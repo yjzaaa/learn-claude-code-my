@@ -3,7 +3,7 @@
 处理动态模型切换逻辑。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from backend.infrastructure.logging import get_logger
 
@@ -44,10 +44,11 @@ class ModelSwitchManager:
         await self._rebuild_agent(selected_model)
         return True
 
-    async def _get_selected_model(self, dialog_id: str) -> Optional[str]:
+    async def _get_selected_model(self, dialog_id: str) -> str | None:
         """获取对话选择的模型"""
         try:
             from backend.infrastructure.container import container
+
             if not container.session_manager:
                 return None
 
@@ -55,7 +56,7 @@ class ModelSwitchManager:
             if not session:
                 return None
 
-            return getattr(session, 'selected_model_id', None)
+            return getattr(session, "selected_model_id", None)
         except Exception as e:
             logger.debug(f"[ModelSwitch] Could not get selected model: {e}")
             return None
@@ -115,7 +116,7 @@ class ModelSwitchManager:
             builder.with_human_in_the_loop(interrupt_on=self.runtime._config.interrupt_on)
 
         self.runtime._agent = builder.build()
-        logger.info(f"[ModelSwitch] Agent rebuilt with new model")
+        logger.info("[ModelSwitch] Agent rebuilt with new model")
 
 
 __all__ = ["ModelSwitchManager"]

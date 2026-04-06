@@ -11,25 +11,24 @@ DialogService - 对话应用服务
 - DialogService: 高层编排，面向用例
 """
 
-from typing import AsyncIterator, Optional
-from datetime import datetime
+from collections.abc import AsyncIterator
 
-from backend.domain.models.dialog.dialog import Dialog
 from backend.application.dto.responses import (
     CreateDialogResult,
-    SendMessageResult,
     MessageDTO,
 )
+from backend.domain.models.dialog.dialog import Dialog
 from backend.domain.models.events import (
-    DialogCreated,
-    MessageReceived,
-    MessageCompleted,
     DialogClosed,
+    DialogCreated,
+    MessageCompleted,
+    MessageReceived,
 )
 
 
 class DialogNotFoundError(Exception):
     """对话不存在错误"""
+
     pass
 
 
@@ -62,11 +61,7 @@ class DialogService:
         self._event_bus = event_bus
         self._runtime = runtime
 
-    async def create_dialog(
-        self,
-        user_input: str,
-        title: Optional[str] = None
-    ) -> CreateDialogResult:
+    async def create_dialog(self, user_input: str, title: str | None = None) -> CreateDialogResult:
         """创建对话用例
 
         流程:
@@ -91,22 +86,21 @@ class DialogService:
         await self._repo.save(dialog)
 
         # 3. 发射事件
-        self._event_bus.emit(DialogCreated(
-            dialog_id=dialog.id,
-            user_input=user_input,
-        ))
+        self._event_bus.emit(
+            DialogCreated(
+                dialog_id=dialog.id,
+                user_input=user_input,
+            )
+        )
 
         return CreateDialogResult(
             dialog_id=dialog.id,
             title=dialog.title or "New Dialog",
-            created_at=dialog.created_at.isoformat()
+            created_at=dialog.created_at.isoformat(),
         )
 
     async def send_message(
-        self,
-        dialog_id: str,
-        content: str,
-        stream: bool = True
+        self, dialog_id: str, content: str, stream: bool = True
     ) -> AsyncIterator[str]:
         """发送消息用例
 
@@ -138,16 +132,18 @@ class DialogService:
         await self._repo.save(dialog)
 
         # 3. 发射事件
-        self._event_bus.emit(MessageReceived(
-            dialog_id=dialog_id,
-            message_id=user_msg.id if hasattr(user_msg, 'id') else "",
-            content=content,
-        ))
+        self._event_bus.emit(
+            MessageReceived(
+                dialog_id=dialog_id,
+                message_id=user_msg.id if hasattr(user_msg, "id") else "",
+                content=content,
+            )
+        )
 
         # 4. 调用 Runtime 生成回复
         full_content = []
         async for event in self._runtime.send_message(dialog_id, content, stream=stream):
-            if hasattr(event, 'data') and event.data:
+            if hasattr(event, "data") and event.data:
                 chunk = str(event.data)
                 full_content.append(chunk)
                 if stream:
@@ -160,18 +156,16 @@ class DialogService:
             await self._repo.save(dialog)
 
             # 6. 发射完成事件
-            self._event_bus.emit(MessageCompleted(
-                dialog_id=dialog_id,
-                message_id=assistant_msg.id if hasattr(assistant_msg, 'id') else "",
-                content=assistant_content,
-                token_count=dialog.estimate_tokens(),
-            ))
+            self._event_bus.emit(
+                MessageCompleted(
+                    dialog_id=dialog_id,
+                    message_id=assistant_msg.id if hasattr(assistant_msg, "id") else "",
+                    content=assistant_content,
+                    token_count=dialog.estimate_tokens(),
+                )
+            )
 
-    async def get_dialog_history(
-        self,
-        dialog_id: str,
-        limit: int = 100
-    ) -> list[MessageDTO]:
+    async def get_dialog_history(self, dialog_id: str, limit: int = 100) -> list[MessageDTO]:
         """获取对话历史
 
         Args:
@@ -207,12 +201,14 @@ class DialogService:
         # 标记对话为关闭状态（可以扩展 Dialog 实体添加状态字段）
         await self._repo.save(dialog)
 
-        self._event_bus.emit(DialogClosed(
-            dialog_id=dialog_id,
-            reason="completed",
-        ))
+        self._event_bus.emit(
+            DialogClosed(
+                dialog_id=dialog_id,
+                reason="completed",
+            )
+        )
 
-    async def get_dialog(self, dialog_id: str) -> Optional[Dialog]:
+    async def get_dialog(self, dialog_id: str) -> Dialog | None:
         """获取对话实体
 
         Args:

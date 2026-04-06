@@ -12,7 +12,7 @@ from pathlib import Path
 # 手动加载项目根目录的 .env 文件（强制覆盖现有环境变量）
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -28,6 +28,7 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 # 设置日志
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 # 统一配置来源：ProviderManager（可选导入，失败时回退到环境变量）
@@ -126,7 +127,7 @@ async def test_model_connectivity():
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
-    print(f"\n流结束")
+    print("\n流结束")
     print(f"总事件数: {event_count}")
     print(f"完整回复: {full_content}")
     print(f"输出文件: {output_file.name}")

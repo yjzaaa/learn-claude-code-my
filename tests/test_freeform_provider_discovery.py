@@ -6,12 +6,10 @@
 import asyncio
 import json
 import os
-import re
 import warnings
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
-from dataclasses import dataclass, asdict
 
 # 忽略 LangChain 弃用警告
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -19,13 +17,14 @@ warnings.filterwarnings("ignore", message=".*ChatLiteLLM.*deprecated.*")
 
 # 设置日志级别减少输出
 import logging
+
 logging.getLogger("litellm").setLevel(logging.ERROR)
 logging.getLogger("langchain").setLevel(logging.WARNING)
 
 # 加载 .env
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -42,8 +41,8 @@ class Credential:
     """API 凭证"""
     key_var: str          # 环境变量名，如 MY_CUSTOM_API_KEY
     api_key: str          # key 值
-    url_var: Optional[str]  # 对应的 URL 变量名
-    base_url: Optional[str]  # URL 值
+    url_var: str | None  # 对应的 URL 变量名
+    base_url: str | None  # URL 值
 
 
 @dataclass
@@ -59,8 +58,8 @@ class TestResult:
     """测试结果"""
     config: TestConfig
     success: bool
-    error: Optional[str] = None
-    response_time_ms: Optional[float] = None
+    error: str | None = None
+    response_time_ms: float | None = None
 
 
 def discover_all_credentials() -> list[Credential]:
@@ -72,7 +71,7 @@ def discover_all_credentials() -> list[Credential]:
     configured_keys = {}  # key_name -> (value, is_commented)
 
     if env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             for line in f:
                 line_stripped = line.strip()
                 if not line_stripped or "=" not in line:
@@ -106,7 +105,7 @@ def discover_all_credentials() -> list[Credential]:
         # 从 .env 读取对应的 URL（也检查是否注释）
         base_url = None
         if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
+            with open(env_path, encoding="utf-8") as f:
                 for line in f:
                     line_stripped = line.strip()
                     if line_stripped.startswith(url_var + "="):
@@ -114,7 +113,7 @@ def discover_all_credentials() -> list[Credential]:
                         _, url_val = line_stripped.split("=", 1)
                         base_url = url_val.strip().strip('"').strip("'")
                         break
-                    elif line_stripped.startswith("#" + url_var + "=") or line_stripped.startswith("# " + url_var + "="):
+                    if line_stripped.startswith("#" + url_var + "=") or line_stripped.startswith("# " + url_var + "="):
                         # 注释掉的 URL，跳过
                         continue
 
@@ -168,7 +167,7 @@ def generate_test_models() -> list[tuple[str, str]]:
     return test_cases
 
 
-def detect_api_format_from_url(base_url: Optional[str]) -> Optional[str]:
+def detect_api_format_from_url(base_url: str | None) -> str | None:
     """从 URL 检测 API 格式"""
     if not base_url:
         return None
@@ -191,8 +190,8 @@ async def test_single_config(config: TestConfig) -> TestResult:
 
     try:
         # 导入并设置 verbose=False 减少输出
-        from langchain_community.chat_models import ChatLiteLLM
         import litellm
+        from langchain_community.chat_models import ChatLiteLLM
         litellm.suppress_debug_info = True
         litellm.set_verbose = False
 
@@ -256,7 +255,7 @@ async def discover_all_working_configs() -> dict:
         if cred.base_url:
             print(f"    URL: {cred.base_url}")
         else:
-            print(f"    URL: (default)")
+            print("    URL: (default)")
 
     # 生成测试配置组合
     test_models = generate_test_models()
@@ -396,10 +395,10 @@ async def main():
         print(f"{key}={os.getenv(key)}")
         if configs[0]['base_url']:
             print(f"{key.replace('_API_KEY', '_BASE_URL')}={configs[0]['base_url']}")
-        print(f"# 可用模型列表:")
+        print("# 可用模型列表:")
         for cfg in configs:
             print(f"#   - {cfg['working_model']}")
-        print(f"# 推荐配置 (最快响应):")
+        print("# 推荐配置 (最快响应):")
         print(f"MODEL_ID={configs[0]['working_model']}")
 
     print("\n" + "=" * 70)

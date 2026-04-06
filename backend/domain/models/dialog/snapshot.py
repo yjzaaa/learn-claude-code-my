@@ -3,7 +3,7 @@
 使用 SnapshotBuilder 构建前端快照。
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 from backend.domain.utils import SnapshotBuilder
 from backend.infrastructure.logging import get_logger
@@ -22,7 +22,7 @@ class SnapshotManager:
     def __init__(self):
         self._builder = SnapshotBuilder()
 
-    def build_snapshot(self, session) -> Optional[Dict[str, Any]]:
+    def build_snapshot(self, session) -> dict[str, Any] | None:
         """构建前端快照
 
         Args:

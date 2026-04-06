@@ -36,6 +36,7 @@ class AgentBuildContext:
         skill_sources: 技能路径列表（与 backend 的 virtual_root 一致）
         interrupt_on: HITL 配置（可选）
     """
+
     agent_id: str
     model: Any
     tools: list[Any]
@@ -118,9 +119,7 @@ class AgentFactory:
         Returns:
             使用新模型重建的 Agent
         """
-        logger.info(
-            f"[AgentFactory] Rebuilding agent {context.agent_id} with new model"
-        )
+        logger.info(f"[AgentFactory] Rebuilding agent {context.agent_id} with new model")
         new_context = AgentBuildContext(
             agent_id=context.agent_id,
             name=context.name,

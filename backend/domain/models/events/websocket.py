@@ -4,7 +4,8 @@ WebSocket 事件模型 - Pydantic BaseModel 版本
 定义 WebSocket 事件相关的 Pydantic 模型，替代 TypedDict。
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -21,11 +22,11 @@ class WSStreamingMessage(BaseModel):
     """流式推送占位消息模型"""
 
     id: str
-    message: Dict[str, Any]  # LangChain 格式消息
+    message: dict[str, Any]  # LangChain 格式消息
     status: str
     timestamp: str
     agent_name: str
-    reasoning_content: Optional[str] = None
+    reasoning_content: str | None = None
 
 
 class WSDialogSnapshot(BaseModel):
@@ -34,8 +35,8 @@ class WSDialogSnapshot(BaseModel):
     id: str
     title: str
     status: str
-    messages: List[Dict[str, Any]]  # LangChain 格式消息列表
-    streaming_message: Optional[WSStreamingMessage] = None
+    messages: list[dict[str, Any]]  # LangChain 格式消息列表
+    streaming_message: WSStreamingMessage | None = None
     metadata: WSDialogMetadata
     created_at: str
     updated_at: str
@@ -89,7 +90,7 @@ class WSHitlRequestEvent(BaseModel):
 
     type: str = "hitl:request"
     dialog_id: str
-    data: Dict[str, Any]
+    data: dict[str, Any]
     timestamp: int
 
 
@@ -111,11 +112,11 @@ class WSToolCall(BaseModel):
 
     id: str
     name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
     status: str  # "pending" | "running" | "completed" | "error"
-    result: Optional[str] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    result: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 class WSToolCallUpdateEvent(BaseModel):
@@ -140,7 +141,7 @@ class WSTodoUpdatedEvent(BaseModel):
 
     type: str = "todo:updated"
     dialog_id: str
-    todos: List[WSTodoItem]
+    todos: list[WSTodoItem]
     rounds_since_todo: int = 0
     timestamp: int
 
@@ -161,7 +162,7 @@ class WSStreamStartEvent(BaseModel):
     type: str = "stream:start"
     dialog_id: str
     message_id: str
-    message: Optional[Dict[str, Any]] = None  # LangChain 格式消息
+    message: dict[str, Any] | None = None  # LangChain 格式消息
     timestamp: int
 
 
@@ -171,7 +172,7 @@ class WSStreamEndEvent(BaseModel):
     type: str = "stream:end"
     dialog_id: str
     message_id: str
-    message: Optional[Dict[str, Any]] = None  # LangChain 格式消息
+    message: dict[str, Any] | None = None  # LangChain 格式消息
     final_content: str = ""
     timestamp: int
 
@@ -192,8 +193,8 @@ class WSAckEvent(BaseModel):
     type: str = "ack"
     dialog_id: str
     client_id: str
-    server_id: Optional[str] = None
-    message: Optional[Dict[str, Any]] = None  # LangChain 格式消息
+    server_id: str | None = None
+    message: dict[str, Any] | None = None  # LangChain 格式消息
     timestamp: int
 
 
@@ -202,7 +203,7 @@ class WSMessageAddedEvent(BaseModel):
 
     type: str = "message:added"
     dialog_id: str
-    message: Dict[str, Any]  # LangChain 格式消息
+    message: dict[str, Any]  # LangChain 格式消息
     timestamp: int
 
 
@@ -212,7 +213,7 @@ class WSNodeUpdateEvent(BaseModel):
     type: str = "node:update"
     dialog_id: str
     node: str
-    messages: List[Dict[str, Any]]  # LangChain 格式消息列表
+    messages: list[dict[str, Any]]  # LangChain 格式消息列表
     timestamp: int
 
 

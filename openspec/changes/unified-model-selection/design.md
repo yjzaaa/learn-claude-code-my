@@ -25,7 +25,7 @@
 ### 1. 简化 Provider 检测逻辑
 **Decision**: 移除 `_detect_provider_from_env()` 的优先级检查，改为检测所有配置了 API key 的 provider。
 
-**Rationale**: 
+**Rationale**:
 - 原逻辑按固定优先级（anthropic > deepseek > openai > kimi）只返回第一个匹配的 provider
 - 无法支持多 provider 同时配置的场景
 - 新逻辑返回所有配置了 key 的 provider，由 MODEL_ID 决定使用哪个
@@ -112,7 +112,7 @@
 1. **Dialog 级别模型存储**: Dialog 模型添加 `selected_model_id` 字段
 2. **动态模型实例创建**: ProviderManager 提供 `get_model_for_dialog(dialog_id)` 方法
 3. **切换模型流程**:
-   - 前端选择模型 → POST `/api/dialogs/{id}/model` 
+   - 前端选择模型 → POST `/api/dialogs/{id}/model`
    - 后端更新 dialog 的 `selected_model_id`
    - 后续对话使用新选择的模型
 4. **默认模型**: 新对话使用 MODEL_ID 作为默认模型
@@ -161,9 +161,9 @@
 
 ## Open Questions (Answered by Testing)
 
-- ~~是否需要支持用户在前端切换 model（而非仅由 MODEL_ID 决定）？~~ 
+- ~~是否需要支持用户在前端切换 model（而非仅由 MODEL_ID 决定）？~~
   - **Answered**: Yes, 后端返回所有可用模型，前端让用户选择，每个 Dialog 独立存储选择
-  
+
 - ~~如何处理同一 provider 的多个模型（如 DeepSeek V3 和 R1）？~~
   - **Answered**: 每个模型独立测试连通性，分别返回，用户可在前端切换
 

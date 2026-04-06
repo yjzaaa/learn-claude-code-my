@@ -2,19 +2,21 @@
 事件模型测试 - 验证 Pydantic 事件模型的创建、验证和序列化
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
+
 from backend.domain.models.event_models import (
-    TodoStatus,
     EventModel,
     SkillEditEventModel,
     TodoEventModel,
     TodoItemModel,
-    TodoUpdatedEventModel,
     TodoReminderEventModel,
+    TodoStatus,
+    TodoUpdatedEventModel,
+    ToolCallCompletedEventModel,
     ToolCallEventModel,
     ToolCallStartedEventModel,
-    ToolCallCompletedEventModel,
 )
 
 

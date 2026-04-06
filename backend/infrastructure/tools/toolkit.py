@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import inspect
 import types
-from typing import Optional, Any, Callable, get_args, get_origin
+from collections.abc import Callable
+from typing import Any, get_args, get_origin
 
 from backend.domain.models.shared.types import (
-    ToolSpec,
+    JSONSchema,
+    MergedToolItem,
     OpenAIFunctionSchema,
     OpenAIToolSchema,
-    MergedToolItem,
-    JSONSchemaProperty,
-    JSONSchema,
+    ToolSpec,
 )
 
 
@@ -66,7 +66,10 @@ def _build_parameters_from_signature(func: Callable[..., Any]) -> JSONSchema:
     required: list[str] = []
 
     for param in sig.parameters.values():
-        if param.kind not in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+        if param.kind not in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        ):
             raise ToolDefinitionError(
                 f"Tool function '{func.__name__}' contains unsupported parameter kind: {param.kind}"
             )
@@ -95,9 +98,9 @@ def _summary_from_docstring(func: Callable[..., Any]) -> str:
 def tool(
     _func: Callable[..., Any] | None = None,
     *,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    parameters: Optional[dict[str, Any]] = None,
+    name: str | None = None,
+    description: str | None = None,
+    parameters: dict[str, Any] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]] | Callable[..., Any]:
     """将普通函数标记为工具（OpenAI 格式）。
 
@@ -118,14 +121,8 @@ def tool(
             required=params.get("required", []),
         )
 
-        setattr(
-            func,
-            "__tool_spec__",
-            ToolSpec(
-                name=tool_name,
-                description=tool_description,
-                parameters=json_schema,
-            ),
+        func.__tool_spec__ = ToolSpec(
+            name=tool_name, description=tool_description, parameters=json_schema
         )
         return func
 
@@ -134,7 +131,9 @@ def tool(
     return decorator
 
 
-def build_tools_and_handlers(functions: list[Callable[..., Any]]) -> tuple[list[OpenAIToolSchema], dict[str, Callable[..., Any]]]:
+def build_tools_and_handlers(
+    functions: list[Callable[..., Any]],
+) -> tuple[list[OpenAIToolSchema], dict[str, Callable[..., Any]]]:
     """从工具函数列表自动构建 TOOLS 和 TOOL_HANDLERS（OpenAI 格式）。"""
     merged_tools = build_tools(functions)
     tools: list[OpenAIToolSchema] = []
@@ -144,14 +143,16 @@ def build_tools_and_handlers(functions: list[Callable[..., Any]]) -> tuple[list[
         name = item["name"]
         handler = item["handler"]
         # OpenAI format
-        tools.append(OpenAIToolSchema(
-            type="function",
-            function=OpenAIFunctionSchema(
-                name=item["name"],
-                description=item["description"],
-                parameters=item["parameters"],
+        tools.append(
+            OpenAIToolSchema(
+                type="function",
+                function=OpenAIFunctionSchema(
+                    name=item["name"],
+                    description=item["description"],
+                    parameters=item["parameters"],
+                ),
             )
-        ))
+        )
         handlers[name] = handler
 
     return tools, handlers
@@ -163,7 +164,7 @@ def build_tools(functions: list[Callable[..., Any]]) -> list[MergedToolItem]:
     names: set[str] = set()
 
     for func in functions:
-        spec: Optional[ToolSpec] = getattr(func, "__tool_spec__", None)
+        spec: ToolSpec | None = getattr(func, "__tool_spec__", None)
         if not spec:
             raise ToolDefinitionError(
                 f"Function '{func.__name__}' is not a tool. Add @tool decorator first."
@@ -174,17 +175,21 @@ def build_tools(functions: list[Callable[..., Any]]) -> list[MergedToolItem]:
             raise ToolDefinitionError(f"Duplicate tool name: '{name}'")
         names.add(name)
 
-        tools.append(MergedToolItem(
-            name=name,
-            description=spec["description"],
-            parameters=spec["parameters"],
-            handler=func,
-        ))
+        tools.append(
+            MergedToolItem(
+                name=name,
+                description=spec["description"],
+                parameters=spec["parameters"],
+                handler=func,
+            )
+        )
 
     return tools
 
 
-def scan_tools_and_handlers(namespace: dict[str, Any] | types.ModuleType) -> tuple[list[OpenAIToolSchema], dict[str, Callable[..., Any]]]:
+def scan_tools_and_handlers(
+    namespace: dict[str, Any] | types.ModuleType,
+) -> tuple[list[OpenAIToolSchema], dict[str, Callable[..., Any]]]:
     """自动扫描命名空间中被 @tool 标记的函数并构建 TOOLS/handlers。"""
     if isinstance(namespace, types.ModuleType):
         values = vars(namespace).values()

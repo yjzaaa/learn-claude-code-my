@@ -6,9 +6,10 @@ EventBus - 统一事件总线
 """
 
 import asyncio
-from typing import Callable, Optional, List, Dict, Any
-from dataclasses import dataclass
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from typing import Any
 
 from backend.domain.models.events import BaseEvent, EventPriority
 from backend.domain.models.shared.types import EventBusStatsDict
@@ -20,8 +21,9 @@ logger = get_logger(__name__)
 @dataclass
 class EventFilter:
     """事件过滤器"""
-    event_types: Optional[List[str]] = None
-    dialog_id: Optional[str] = None
+
+    event_types: list[str] | None = None
+    dialog_id: str | None = None
     min_priority: EventPriority = EventPriority.BACKGROUND
 
     def matches(self, event: BaseEvent) -> bool:
@@ -37,7 +39,7 @@ class EventFilter:
 
         # 检查对话 ID (事件无 dialog_id 字段时放行)
         if self.dialog_id:
-            event_dialog_id: Optional[str] = getattr(event, 'dialog_id', None)
+            event_dialog_id: str | None = getattr(event, "dialog_id", None)
             if event_dialog_id is not None and event_dialog_id != self.dialog_id:
                 return False
 
@@ -55,8 +57,8 @@ class EventBus:
     """
 
     def __init__(self, max_workers: int = 4):
-        self._subscribers: Dict[str, List[tuple[int, Callable, EventFilter]]] = {}
-        self._global_subscribers: List[tuple[int, Callable, EventFilter]] = []
+        self._subscribers: dict[str, list[tuple[int, Callable, EventFilter]]] = {}
+        self._global_subscribers: list[tuple[int, Callable, EventFilter]] = []
         self._next_id = 0
         self._lock = asyncio.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -65,9 +67,9 @@ class EventBus:
     def subscribe(
         self,
         callback: Callable[[BaseEvent], Any],
-        event_types: Optional[List[str]] = None,
-        dialog_id: Optional[str] = None,
-        min_priority: EventPriority = EventPriority.BACKGROUND
+        event_types: list[str] | None = None,
+        dialog_id: str | None = None,
+        min_priority: EventPriority = EventPriority.BACKGROUND,
     ) -> Callable:
         """
         订阅事件
@@ -85,9 +87,7 @@ class EventBus:
         sub_id = self._next_id
 
         filter_obj = EventFilter(
-            event_types=event_types,
-            dialog_id=dialog_id,
-            min_priority=min_priority
+            event_types=event_types, dialog_id=dialog_id, min_priority=min_priority
         )
 
         # 如果有特定类型，按类型索引；否则加入全局订阅者
@@ -99,7 +99,9 @@ class EventBus:
         else:
             self._global_subscribers.append((sub_id, callback, filter_obj))
 
-        logger.debug(f"[EventBus] Subscriber {sub_id} registered for types={event_types}, dialog={dialog_id}")
+        logger.debug(
+            f"[EventBus] Subscriber {sub_id} registered for types={event_types}, dialog={dialog_id}"
+        )
 
         # 返回取消订阅函数
         def unsubscribe():
@@ -107,7 +109,7 @@ class EventBus:
 
         return unsubscribe
 
-    def _unsubscribe(self, sub_id: int, event_types: Optional[List[str]]):
+    def _unsubscribe(self, sub_id: int, event_types: list[str] | None):
         """取消订阅"""
         if event_types and len(event_types) == 1:
             event_type = event_types[0]
@@ -116,9 +118,7 @@ class EventBus:
                     s for s in self._subscribers[event_type] if s[0] != sub_id
                 ]
         else:
-            self._global_subscribers = [
-                s for s in self._global_subscribers if s[0] != sub_id
-            ]
+            self._global_subscribers = [s for s in self._global_subscribers if s[0] != sub_id]
         logger.debug(f"[EventBus] Subscriber {sub_id} unregistered")
 
     def emit(self, event: BaseEvent) -> None:
@@ -145,7 +145,7 @@ class EventBus:
         event_type = event.event_type
 
         # 收集匹配的订阅者
-        callbacks: List[tuple[Callable, BaseEvent]] = []
+        callbacks: list[tuple[Callable, BaseEvent]] = []
 
         # 特定类型订阅者
         if event_type in self._subscribers:
@@ -192,7 +192,7 @@ class EventBus:
         except Exception as e:
             logger.exception(f"[EventBus] Error in event handler: {e}")
 
-    async def emit_and_wait(self, event: BaseEvent, timeout: Optional[float] = None) -> None:
+    async def emit_and_wait(self, event: BaseEvent, timeout: float | None = None) -> None:
         """
         发射事件并等待所有处理器完成
 
@@ -224,9 +224,8 @@ class EventBus:
         """获取统计信息"""
         return EventBusStatsDict(
             running=self._running,
-            typed_subscribers={
-                k: len(v) for k, v in self._subscribers.items()
-            },
+            typed_subscribers={k: len(v) for k, v in self._subscribers.items()},
             global_subscribers=len(self._global_subscribers),
-            total_subscribers=sum(len(v) for v in self._subscribers.values()) + len(self._global_subscribers),
+            total_subscribers=sum(len(v) for v in self._subscribers.values())
+            + len(self._global_subscribers),
         )

@@ -5,18 +5,17 @@ Dialog Session Exceptions
 保持向后兼容的导入路径和构造函数。
 """
 
-from typing import Optional
-
 from backend.domain.exceptions.base import (
-    NotFoundError,
     AlreadyExistsError,
-    StateError,
     LimitExceededError,
+    NotFoundError,
+    StateError,
 )
 
 
 class SessionError(Exception):
     """会话基础异常（向后兼容）"""
+
     pass
 
 
@@ -27,9 +26,11 @@ class SessionNotFoundError(NotFoundError, SessionError):
     保留 SessionError 继承以保持向后兼容。
     """
 
-    def __init__(self, dialog_id: Optional[str] = None, message: Optional[str] = None):
+    def __init__(self, dialog_id: str | None = None, message: str | None = None):
         # 优先使用传入的消息，否则使用默认
-        msg = message or (f"Dialog session not found: {dialog_id}" if dialog_id else "Session not found")
+        msg = message or (
+            f"Dialog session not found: {dialog_id}" if dialog_id else "Session not found"
+        )
         super().__init__(
             resource_type="DialogSession",
             resource_id=dialog_id,
@@ -45,8 +46,10 @@ class SessionAlreadyExistsError(AlreadyExistsError, SessionError):
     保留 SessionError 继承以保持向后兼容。
     """
 
-    def __init__(self, dialog_id: Optional[str] = None, message: Optional[str] = None):
-        msg = message or (f"Dialog session already exists: {dialog_id}" if dialog_id else "Session already exists")
+    def __init__(self, dialog_id: str | None = None, message: str | None = None):
+        msg = message or (
+            f"Dialog session already exists: {dialog_id}" if dialog_id else "Session already exists"
+        )
         super().__init__(
             resource_type="DialogSession",
             resource_id=dialog_id,
@@ -62,7 +65,7 @@ class StreamingStateError(StateError, SessionError):
     保留 SessionError 继承以保持向后兼容。
     """
 
-    def __init__(self, message: str = "Streaming state error", current_state: Optional[str] = None):
+    def __init__(self, message: str = "Streaming state error", current_state: str | None = None):
         super().__init__(
             message=message,
             current_state=current_state,
@@ -97,7 +100,7 @@ class SessionFullError(LimitExceededError, SessionError):
     保留 SessionError 继承和原有构造函数以保持向后兼容。
     """
 
-    def __init__(self, max_sessions: int, current: Optional[int] = None):
+    def __init__(self, max_sessions: int, current: int | None = None):
         self.max_sessions = max_sessions
 
         message = f"Maximum number of sessions ({max_sessions}) reached"

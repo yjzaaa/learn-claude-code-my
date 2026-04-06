@@ -1,4 +1,5 @@
 from loguru import logger
+
 #!/usr/bin/env python3
 """
 Agent Scaffold Script - Create a new agent project with best practices.
@@ -242,11 +243,11 @@ def create_agent(name: str, level: int, output_dir: Path):
     gitignore.write_text(".env\n__pycache__/\n*.pyc\n")
     logger.info(f"Created: {gitignore}")
     logger.info(f"\nAgent '{name}' created at {agent_dir}")
-    logger.info(f"\nNext steps:")
+    logger.info("\nNext steps:")
     logger.info(f"  1. cd {agent_dir}")
-    logger.info(f"  2. cp .env.example .env")
-    logger.info(f"  3. Edit .env with your API key")
-    logger.info(f"  4. pip install anthropic python-dotenv")
+    logger.info("  2. cp .env.example .env")
+    logger.info("  3. Edit .env with your API key")
+    logger.info("  4. pip install anthropic python-dotenv")
     logger.info(f"  5. python {name}.py")
 def main():
     parser = argparse.ArgumentParser(
@@ -273,4 +274,3 @@ Levels:
 
 if __name__ == "__main__":
     main()
-

@@ -4,11 +4,11 @@
 """
 
 import asyncio
+
 from backend.infrastructure.llm_adapter import (
     LLMResponseAdapterFactory,
-    create_adapter,
-    detect_provider,
     StreamingParser,
+    create_adapter,
 )
 
 

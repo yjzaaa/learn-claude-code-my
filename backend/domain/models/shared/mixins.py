@@ -5,15 +5,15 @@ Mixins - 可复用模型组件
 """
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .base_mixins import (
     ComparableMixin,
+    LoggerMixin,
     SerializableMixin,
     ValidatableMixin,
-    LoggerMixin,
 )
 
 
@@ -23,6 +23,7 @@ class TimestampMixin(BaseModel):
 
     添加创建时间和更新时间字段。
     """
+
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -37,6 +38,7 @@ class DialogRefMixin(BaseModel):
 
     添加对话 ID 引用字段。
     """
+
     dialog_id: str = Field(default="", description="关联对话 ID")
 
 
@@ -46,10 +48,8 @@ class MetadataMixin(BaseModel):
 
     添加通用元数据容器字段。
     """
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="通用元数据容器"
-    )
+
+    metadata: dict[str, Any] = Field(default_factory=dict, description="通用元数据容器")
 
 
 class IdMixin(BaseModel):
@@ -58,6 +58,7 @@ class IdMixin(BaseModel):
 
     添加 ID 字段。
     """
+
     id: str = Field(default="", description="唯一标识符")
 
 

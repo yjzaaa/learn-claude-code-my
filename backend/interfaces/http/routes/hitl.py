@@ -4,9 +4,8 @@ HITL Routes - 人工介入管理
 提供 Skill 编辑审核和 Todo 管理的端点。
 """
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
 
 from backend.domain.models.api import TodoResult
 
@@ -16,6 +15,7 @@ router = APIRouter(tags=["hitl"])
 # ═══════════════════════════════════════════════════════════
 # Skill Edit HITL
 # ═══════════════════════════════════════════════════════════
+
 
 class SkillEditProposalResponse(BaseModel):
     approval_id: str
@@ -29,32 +29,24 @@ class SkillEditProposalResponse(BaseModel):
 
 class DecideSkillEditRequest(BaseModel):
     decision: str  # accept | reject | edit_accept
-    edited_content: Optional[str] = None
+    edited_content: str | None = None
 
 
-@router.get("/skill-edits/pending", response_model=List[SkillEditProposalResponse])
-async def list_pending_skill_edits(request: Request, dialog_id: Optional[str] = None):
+@router.get("/skill-edits/pending", response_model=list[SkillEditProposalResponse])
+async def list_pending_skill_edits(request: Request, dialog_id: str | None = None):
     """列出待处理的 Skill 编辑提案"""
     engine = request.app.state.engine
-    
+
     proposals = engine.get_skill_edit_proposals(dialog_id)
     return proposals
 
 
 @router.post("/skill-edits/{approval_id}/decide")
-async def decide_skill_edit(
-    request: Request,
-    approval_id: str,
-    body: DecideSkillEditRequest
-):
+async def decide_skill_edit(request: Request, approval_id: str, body: DecideSkillEditRequest):
     """处理 Skill 编辑审核决定"""
     engine = request.app.state.engine
-    
-    result = engine.decide_skill_edit(
-        approval_id,
-        body.decision,
-        body.edited_content
-    )
+
+    result = engine.decide_skill_edit(approval_id, body.decision, body.edited_content)
 
     if not result.success:
         raise HTTPException(status_code=400, detail=result.message)
@@ -66,6 +58,7 @@ async def decide_skill_edit(
 # Todo HITL
 # ═══════════════════════════════════════════════════════════
 
+
 class TodoItem(BaseModel):
     id: str
     text: str
@@ -73,12 +66,12 @@ class TodoItem(BaseModel):
 
 
 class UpdateTodosRequest(BaseModel):
-    items: List[TodoItem]
+    items: list[TodoItem]
 
 
 class TodosResponse(BaseModel):
     dialog_id: str
-    items: List[TodoItem]
+    items: list[TodoItem]
     rounds_since_todo: int
     updated_at: float
 
@@ -87,7 +80,7 @@ class TodosResponse(BaseModel):
 async def get_todos(request: Request, dialog_id: str):
     """获取对话的 Todo 列表"""
     engine = request.app.state.engine
-    
+
     result = engine.get_todos(dialog_id)
     return TodosResponse(
         dialog_id=result.dialog_id,
@@ -98,14 +91,10 @@ async def get_todos(request: Request, dialog_id: str):
 
 
 @router.post("/todos/{dialog_id}/update")
-async def update_todos(
-    request: Request,
-    dialog_id: str,
-    body: UpdateTodosRequest
-):
+async def update_todos(request: Request, dialog_id: str, body: UpdateTodosRequest):
     """更新对话的 Todo 列表"""
     engine = request.app.state.engine
-    
+
     items = [item.dict() for item in body.items]
     success, message = engine.update_todos(dialog_id, items)
 

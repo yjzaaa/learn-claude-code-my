@@ -4,8 +4,8 @@ Runtime Mixins - 可复用的 Runtime 功能组件
 提供可组合的功能模块，通过 Mixin 模式减少代码重复。
 """
 
-from typing import Optional, Any
 from abc import ABC
+from typing import Any
 
 
 class ManagerLifecycleMixin(ABC):
@@ -16,12 +16,12 @@ class ManagerLifecycleMixin(ABC):
     适用于需要完整 Manager 集成的 Runtime。
     """
 
-    _dialog_mgr: Optional[Any] = None
-    _tool_mgr: Optional[Any] = None
-    _state_mgr: Optional[Any] = None
-    _provider_mgr: Optional[Any] = None
-    _memory_mgr: Optional[Any] = None
-    _skill_mgr: Optional[Any] = None
+    _dialog_mgr: Any | None = None
+    _tool_mgr: Any | None = None
+    _state_mgr: Any | None = None
+    _provider_mgr: Any | None = None
+    _memory_mgr: Any | None = None
+    _skill_mgr: Any | None = None
 
     def _initialize_managers_lifecycle(self) -> None:
         """初始化所有 Manager 的引用"""
@@ -45,6 +45,7 @@ class ManagerLifecycleMixin(ABC):
 
 class EventMixin:
     """Event Mixin - 事件相关功能"""
+
     _event_bus: Any = None
 
     def _emit_system_started(self) -> None:
@@ -63,6 +64,7 @@ class EventMixin:
 
 class MemoryMixin:
     """Memory Mixin - 记忆管理功能"""
+
     _memory_mgr: Any = None
 
     def _load_memory(self) -> str:
@@ -79,6 +81,7 @@ class MemoryMixin:
 
 class SkillMixin:
     """Skill Mixin - 技能管理功能"""
+
     _skill_mgr: Any = None
 
     def _load_skill_scripts(self) -> None:
@@ -88,6 +91,7 @@ class SkillMixin:
 
 class ToolMixin:
     """Tool Mixin - 工具管理功能"""
+
     _tool_mgr: Any = None
 
     def _adapt_tools(self, tools: dict[str, Any]) -> list[Any]:
@@ -110,23 +114,27 @@ class LifecycleMixin:
 class HitlMixin:
     """HITL Mixin - 人机交互功能"""
 
-    def get_skill_edit_proposals(self, dialog_id: Optional[str] = None) -> list[Any]:
+    def get_skill_edit_proposals(self, dialog_id: str | None = None) -> list[Any]:
         """获取待处理的 Skill 编辑提案"""
         return []
 
-    def decide_skill_edit(self, approval_id: str, decision: str, edited_content: Optional[str] = None) -> Any:
+    def decide_skill_edit(
+        self, approval_id: str, decision: str, edited_content: str | None = None
+    ) -> Any:
         """处理 Skill 编辑审核决定"""
         pass
 
 
 class DialogMixin:
     """Dialog Mixin - 对话管理功能"""
+
     _dialog_mgr: Any = None
     _session_mgr: Any = None
 
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
+    async def create_dialog(self, user_input: str, title: str | None = None) -> str:
         """创建对话"""
         import uuid
+
         return str(uuid.uuid4())
 
 

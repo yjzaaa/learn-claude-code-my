@@ -1,9 +1,10 @@
 """测试 AsyncQueue 改造的 DeepLoggingMixin"""
 import asyncio
 import sys
+
 sys.path.insert(0, 'D:\\learn-claude-code-my')
 
-from backend.infrastructure.runtime.services.logging_mixin import DeepLoggingMixin, AsyncLogBuffer, LogEntry
+from backend.infrastructure.runtime.services.logging_mixin import AsyncLogBuffer, DeepLoggingMixin
 
 
 class TestRuntime(DeepLoggingMixin):
@@ -115,7 +116,7 @@ async def test_high_load():
     await asyncio.sleep(0.6)
 
     stats = buffer.get_stats()
-    print(f"  Total messages: 200")
+    print("  Total messages: 200")
     print(f"  Successfully buffered: {success_count}")
     print(f"  Dropped: {stats['dropped']}")
     print(f"  Flushed: {stats['flushed']}")

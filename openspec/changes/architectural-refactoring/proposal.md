@@ -10,7 +10,7 @@ The codebase has accumulated significant technical debt: 3 backend files exceed 
 - **Abstract logging**: Create a shared logger factory to eliminate 22 duplicate logger definitions
 - **Unify configuration**: Consolidate model configuration logic scattered across multiple files
 
-### Frontend Improvements  
+### Frontend Improvements
 - **Split InputArea.tsx**: Extract model selector, slash commands, and file upload into separate components
 - **Organize stores**: Separate agent-store.ts into domain-specific stores (dialog, message, status)
 - **Abstract WebSocket handling**: Create reusable hooks for WebSocket operations

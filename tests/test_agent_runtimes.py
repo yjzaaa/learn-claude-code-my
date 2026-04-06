@@ -5,9 +5,7 @@ Test Agent Runtimes - Agent 运行时测试
 """
 
 import json
-import os
 import sys
-import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -18,10 +16,10 @@ from pydantic import BaseModel
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
 from backend.domain.models.config import EngineConfig
-from backend.runtime.interfaces import IAgentRuntime, AgentEvent
 from backend.domain.models.dialog import DialogSessionManager
+from backend.infrastructure.runtime.runtime_factory import AgentRuntimeFactory
+from backend.runtime.interfaces import AgentEvent
 
 
 def _has_deepagents() -> bool:
@@ -346,7 +344,7 @@ class TestDeepAgentRuntime:
                     elif event.type == "error":
                         print(f"\n[ERROR] {event.data}\n")
 
-            print(f"\n[test_deep_send_message] 流结束")
+            print("\n[test_deep_send_message] 流结束")
             print(f"总事件数: {event_count}")
             print(f"完整回复: {full_text}")
             print(f"日志文件: {events_file}")

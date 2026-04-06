@@ -6,8 +6,8 @@ Usage:
     python scripts/sync_versions.py
 """
 
-import subprocess
 import re
+import subprocess
 from pathlib import Path
 
 

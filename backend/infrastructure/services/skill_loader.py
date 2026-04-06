@@ -3,8 +3,9 @@ Skill Loader - 技能脚本加载器
 
 处理技能脚本的懒加载和工具注册。
 """
-import sys
+
 import importlib.util
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 

@@ -10,13 +10,15 @@ Compact Plugin - 上下文压缩插件
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any
 
 from loguru import logger
 
-from .base import AgentPlugin
 from backend.infrastructure.tools import tool
+
+from .base import AgentPlugin
 
 TRANSCRIPT_DIR = Path(".transcripts")
 KEEP_RECENT = 3
@@ -42,26 +44,23 @@ class CompactPlugin(AgentPlugin):
     def __init__(self, event_bus=None):
         super().__init__(event_bus)
         self._manual_compact_triggered = False
-        self._messages_buffer: List[Dict] = []
+        self._messages_buffer: list[dict] = []
 
     def activate(self) -> None:
         """激活插件，订阅事件"""
         # 订阅消息接收事件进行压缩
-        self.subscribe(
-            self._on_message_received,
-            event_types=['MessageReceived']
-        )
+        self.subscribe(self._on_message_received, event_types=["MessageReceived"])
 
     def _on_message_received(self, event: Any) -> None:
         """处理消息接收事件"""
         # 这里可以进行微压缩
         pass
 
-    def should_compact(self, messages: List[Dict]) -> bool:
+    def should_compact(self, messages: list[dict]) -> bool:
         """检查是否需要压缩"""
         return estimate_tokens(messages) > THRESHOLD
 
-    def micro_compact(self, messages: List[Dict]) -> None:
+    def micro_compact(self, messages: list[dict]) -> None:
         """
         第 1 层：微压缩
 
@@ -98,7 +97,7 @@ class CompactPlugin(AgentPlugin):
         if to_clear:
             logger.debug(f"[CompactPlugin] Micro-compacted {len(to_clear)} tool results")
 
-    async def auto_compact(self, messages: List[Dict]) -> None:
+    async def auto_compact(self, messages: list[dict]) -> None:
         """
         第 2 层：自动压缩
 
@@ -120,11 +119,11 @@ class CompactPlugin(AgentPlugin):
         messages[:] = [
             {
                 "role": "user",
-                "content": f"[Conversation compressed. Transcript: {transcript_path}]"
+                "content": f"[Conversation compressed. Transcript: {transcript_path}]",
             },
             {
                 "role": "assistant",
-                "content": "Understood. I have the context from the summary. Continuing."
+                "content": "Understood. I have the context from the summary. Continuing.",
             },
         ]
         logger.info("[CompactPlugin] Auto-compact completed")
@@ -134,7 +133,7 @@ class CompactPlugin(AgentPlugin):
         self._manual_compact_triggered = True
         logger.info("[CompactPlugin] Manual compact triggered")
 
-    def get_additional_tools(self) -> List[Callable]:
+    def get_additional_tools(self) -> list[Callable]:
         """返回 compact 工具"""
         return [self.compact_tool]
 
@@ -148,7 +147,10 @@ When the conversation becomes too long:
 - Use it proactively when you feel the context is getting cluttered
 """
 
-    @tool(name="compact", description="Manually trigger conversation compression to reduce context size.")
+    @tool(
+        name="compact",
+        description="Manually trigger conversation compression to reduce context size.",
+    )
     def compact_tool(self, focus: str = "") -> str:
         """
         手动触发上下文压缩

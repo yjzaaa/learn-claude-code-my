@@ -3,10 +3,10 @@
 处理 Claude API 的响应格式，支持思考过程提取。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ..base import LLMResponseAdapter, StreamingParseResult
-from ..models import UnifiedLLMResponse, TokenUsage
+from ..models import TokenUsage, UnifiedLLMResponse
 
 
 class ClaudeAdapter(LLMResponseAdapter):
@@ -57,8 +57,7 @@ class ClaudeAdapter(LLMResponseAdapter):
             if hasattr(raw_response, "usage_metadata") and raw_response.usage_metadata:
                 meta = raw_response.usage_metadata
                 usage = TokenUsage.from_anthropic_format(
-                    input_tokens=meta.get("input_tokens"),
-                    output_tokens=meta.get("output_tokens")
+                    input_tokens=meta.get("input_tokens"), output_tokens=meta.get("output_tokens")
                 )
 
             return UnifiedLLMResponse(
@@ -67,7 +66,7 @@ class ClaudeAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 处理字典格式
@@ -97,7 +96,7 @@ class ClaudeAdapter(LLMResponseAdapter):
             if usage_data:
                 usage = TokenUsage.from_anthropic_format(
                     input_tokens=usage_data.get("input_tokens"),
-                    output_tokens=usage_data.get("output_tokens")
+                    output_tokens=usage_data.get("output_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -106,7 +105,7 @@ class ClaudeAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 默认处理
@@ -114,14 +113,11 @@ class ClaudeAdapter(LLMResponseAdapter):
             content=str(raw_response),
             model="claude-unknown",
             provider=self.provider_name,
-            metadata={"raw_type": type(raw_response).__name__}
+            metadata={"raw_type": type(raw_response).__name__},
         )
 
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> StreamingParseResult:
         """解析 Claude 流式响应 chunk
 
@@ -175,7 +171,7 @@ class ClaudeAdapter(LLMResponseAdapter):
             if usage_data:
                 usage = TokenUsage.from_anthropic_format(
                     input_tokens=usage_data.get("input_tokens"),
-                    output_tokens=usage_data.get("output_tokens")
+                    output_tokens=usage_data.get("output_tokens"),
                 )
 
         # 更新累积内容
@@ -188,7 +184,7 @@ class ClaudeAdapter(LLMResponseAdapter):
             accumulated_content=new_accumulated_content,
             accumulated_reasoning=new_accumulated_reasoning,
             is_finished=is_finished,
-            usage=usage
+            usage=usage,
         )
 
     def _extract_metadata(self, raw_response: Any) -> dict:

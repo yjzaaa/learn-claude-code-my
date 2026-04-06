@@ -3,16 +3,16 @@
 直接测试记忆系统的核心功能。
 """
 
-import sys
 import asyncio
+import sys
 from datetime import datetime, timedelta
 
 # 添加项目路径
 sys.path.insert(0, '.')
 
-from backend.domain.models.memory.types import MemoryType
-from backend.domain.models.memory.memory_metadata import MemoryMetadata
 from backend.domain.models.memory.memory import Memory
+from backend.domain.models.memory.memory_metadata import MemoryMetadata
+from backend.domain.models.memory.types import MemoryType
 
 
 def test_memory_type():
@@ -192,9 +192,8 @@ async def test_memory_service():
     print("\n=== Test MemoryService ===")
 
     # 直接读取文件避免循环导入
-    import sys
     from abc import ABC, abstractmethod
-    from typing import List, Optional
+    from typing import Optional
 
     # 定义接口
     class IMemoryRepository(ABC):
@@ -239,7 +238,7 @@ async def test_memory_service():
         'Memory': Memory,
         'MemoryType': MemoryType,
         'IMemoryRepository': IMemoryRepository,
-        'List': List,
+        'List': list,
         'Optional': Optional,
     }
     exec(service_code, exec_globals)

@@ -12,10 +12,10 @@ Provider Manager - Provider 管理器
 
 # 向后兼容导入 - 所有实现已迁移到子模块
 from backend.infrastructure.services.provider import (
-    ProviderManager,
     ModelConfig,
-    discover_available_models,
+    ProviderManager,
     create_model_instance,
+    discover_available_models,
 )
 
 __all__ = [

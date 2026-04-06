@@ -4,7 +4,8 @@
 """
 
 import asyncio
-from typing import AsyncIterator, Generic, TypeVar
+from collections.abc import AsyncIterator
+from typing import Generic, TypeVar
 
 from .base import AsyncQueue, QueueFull
 
@@ -38,9 +39,7 @@ class InMemoryAsyncQueue(AsyncQueue[T], Generic[T]):
         """
         self._queue: asyncio.Queue[T] = asyncio.Queue(maxsize=maxsize)
 
-    async def enqueue(
-        self, item: T, block: bool = True, timeout: float | None = None
-    ) -> None:
+    async def enqueue(self, item: T, block: bool = True, timeout: float | None = None) -> None:
         """将元素异步加入队列。
 
         Args:
@@ -71,10 +70,12 @@ class InMemoryAsyncQueue(AsyncQueue[T], Generic[T]):
             每次调用都返回新的独立迭代器。
             元素只会被其中一个消费者获取（竞争消费模式）。
         """
+
         async def _generator() -> AsyncIterator[T]:
             while True:
                 item = await self._queue.get()
                 yield item
+
         return _generator()
 
     def full(self) -> bool:

@@ -23,12 +23,12 @@ class LoggerMixin:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        cls._logger_name = cls.__module__ + '.' + cls.__name__
+        cls._logger_name = cls.__module__ + "." + cls.__name__
 
     @property
     def logger(self):
         """获取 logger 实例（延迟初始化）"""
-        if not hasattr(self, '_logger'):
+        if not hasattr(self, "_logger"):
             self._logger = get_logger(self._logger_name)
         return self._logger
 
@@ -49,5 +49,5 @@ class ClassLoggerMixin:
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        logger_name = cls.__module__ + '.' + cls.__name__
+        logger_name = cls.__module__ + "." + cls.__name__
         cls.class_logger = get_logger(logger_name)

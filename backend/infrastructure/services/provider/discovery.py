@@ -5,10 +5,10 @@
 
 import asyncio
 import json
-from dataclasses import dataclass, asdict
-from pathlib import Path
-from typing import List, Optional
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 from backend.infrastructure.logging import get_logger
 
@@ -18,10 +18,11 @@ logger = get_logger(__name__)
 @dataclass
 class ModelConfig:
     """发现的模型配置"""
+
     model_id: str
     key_var: str
     api_key: str
-    base_url: Optional[str]
+    base_url: str | None
     client_type: str
     provider: str
 
@@ -29,34 +30,36 @@ class ModelConfig:
 class ModelDiscoveryCache:
     """模型发现缓存管理"""
 
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(self, cache_dir: Path | None = None):
         if cache_dir is None:
             cache_dir = Path(__file__).resolve().parent.parent.parent.parent / ".cache"
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_dir / "discovered_models.json"
 
-    def load(self) -> List[ModelConfig]:
+    def load(self) -> list[ModelConfig]:
         """从缓存加载模型配置"""
         if not self.cache_file.exists():
             return []
 
         try:
-            with open(self.cache_file, "r", encoding="utf-8") as f:
+            with open(self.cache_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             configs = []
             for item in data.get("models", []):
                 # 过滤掉 api_key 显示，只保留前几位
                 api_key = item.get("api_key", "")
-                configs.append(ModelConfig(
-                    model_id=item["model_id"],
-                    key_var=item["key_var"],
-                    api_key=api_key,
-                    base_url=item.get("base_url"),
-                    client_type=item["client_type"],
-                    provider=item["provider"],
-                ))
+                configs.append(
+                    ModelConfig(
+                        model_id=item["model_id"],
+                        key_var=item["key_var"],
+                        api_key=api_key,
+                        base_url=item.get("base_url"),
+                        client_type=item["client_type"],
+                        provider=item["provider"],
+                    )
+                )
 
             logger.info(f"[ModelDiscovery] Loaded {len(configs)} models from cache")
             return configs
@@ -64,7 +67,7 @@ class ModelDiscoveryCache:
             logger.warning(f"[ModelDiscovery] Failed to load cache: {e}")
             return []
 
-    def save(self, configs: List[ModelConfig]) -> None:
+    def save(self, configs: list[ModelConfig]) -> None:
         """保存模型配置到缓存"""
         try:
             data = {
@@ -80,7 +83,7 @@ class ModelDiscoveryCache:
                         "provider": c.provider,
                     }
                     for c in configs
-                ]
+                ],
             }
 
             with open(self.cache_file, "w", encoding="utf-8") as f:
@@ -108,32 +111,30 @@ class AsyncModelDiscovery:
             return
 
         self._cache = ModelDiscoveryCache()
-        self._cached_configs: List[ModelConfig] = []
-        self._discovery_task: Optional[asyncio.Task] = None
+        self._cached_configs: list[ModelConfig] = []
+        self._discovery_task: asyncio.Task | None = None
         self._initialized = True
 
     @property
-    def cached_models(self) -> List[ModelConfig]:
+    def cached_models(self) -> list[ModelConfig]:
         """获取缓存的模型列表"""
         return self._cached_configs.copy()
 
-    def load_cache(self) -> List[ModelConfig]:
+    def load_cache(self) -> list[ModelConfig]:
         """加载缓存（同步调用，启动时使用）"""
         self._cached_configs = self._cache.load()
         return self._cached_configs
 
-    def start_discovery(self, project_root: Optional[Path] = None) -> None:
+    def start_discovery(self, project_root: Path | None = None) -> None:
         """启动后台异步发现（不阻塞）"""
         if self._discovery_task is not None and not self._discovery_task.done():
             logger.info("[ModelDiscovery] Discovery already running, skipping")
             return
 
         logger.info("[ModelDiscovery] Starting background discovery...")
-        self._discovery_task = asyncio.create_task(
-            self._background_discover(project_root)
-        )
+        self._discovery_task = asyncio.create_task(self._background_discover(project_root))
 
-    async def _background_discover(self, project_root: Optional[Path] = None) -> None:
+    async def _background_discover(self, project_root: Path | None = None) -> None:
         """后台执行发现任务"""
         try:
             from backend.infrastructure.services import model_discovery
@@ -157,26 +158,28 @@ class AsyncModelDiscovery:
             self._cached_configs = configs
             self._cache.save(configs)
 
-            logger.info(f"[ModelDiscovery] Background discovery complete: {len(configs)} models found")
+            logger.info(
+                f"[ModelDiscovery] Background discovery complete: {len(configs)} models found"
+            )
 
         except Exception as e:
             logger.error(f"[ModelDiscovery] Background discovery failed: {e}")
 
-    async def wait_for_discovery(self, timeout: float = 60.0) -> List[ModelConfig]:
+    async def wait_for_discovery(self, timeout: float = 60.0) -> list[ModelConfig]:
         """等待发现完成（用于需要立即可用模型的场景）"""
         if self._discovery_task is None:
             return self._cached_configs
 
         try:
             await asyncio.wait_for(self._discovery_task, timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("[ModelDiscovery] Discovery timeout, returning cached models")
 
         return self._cached_configs
 
 
 # 全局发现实例
-_discovery_instance: Optional[AsyncModelDiscovery] = None
+_discovery_instance: AsyncModelDiscovery | None = None
 
 
 def get_discovery() -> AsyncModelDiscovery:
@@ -187,7 +190,7 @@ def get_discovery() -> AsyncModelDiscovery:
     return _discovery_instance
 
 
-async def discover_available_models(project_root: Optional[Path] = None) -> List[ModelConfig]:
+async def discover_available_models(project_root: Path | None = None) -> list[ModelConfig]:
     """
     发现所有可用的模型配置（后台异步版本）
 

@@ -4,14 +4,13 @@ Agent Runtime Factory - 运行时工厂
 根据配置创建不同的 AgentRuntime 实例。
 """
 
-from typing import Optional
 from backend.infrastructure.runtime.simple import SimpleRuntime
-from backend.infrastructure.runtime.base.manager import ManagerAwareRuntime
 from backend.infrastructure.services import ProviderManager
 
 # DeepRuntime 是可选的，需要额外的依赖
 try:
     from backend.infrastructure.runtime.deep import DeepAgentRuntime
+
     DeepRuntime = DeepAgentRuntime  # 别名兼容
     DEEP_RUNTIME_AVAILABLE = True
 except ImportError:
@@ -26,8 +25,8 @@ class AgentRuntimeFactory:
         self,
         agent_type: str,
         agent_id: str,
-        config: Optional[dict] = None,
-        provider_manager: Optional[ProviderManager] = None,
+        config: dict | None = None,
+        provider_manager: ProviderManager | None = None,
     ):
         """
         创建 AgentRuntime 实例
@@ -44,7 +43,7 @@ class AgentRuntimeFactory:
         if agent_type == "simple":
             runtime = SimpleRuntime(agent_id=agent_id)
             return runtime
-        elif agent_type == "deep":
+        if agent_type == "deep":
             if not DEEP_RUNTIME_AVAILABLE or DeepRuntime is None:
                 raise ImportError(
                     "DeepRuntime is not available. "
@@ -52,5 +51,4 @@ class AgentRuntimeFactory:
                 )
             runtime = DeepRuntime(agent_id=agent_id, provider_manager=provider_manager)
             return runtime
-        else:
-            raise ValueError(f"Unknown agent type: {agent_type}")
+        raise ValueError(f"Unknown agent type: {agent_type}")

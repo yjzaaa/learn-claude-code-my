@@ -5,9 +5,9 @@
 
 from .claude import ClaudeAdapter
 from .deepseek import DeepSeekAdapter
+from .fallback import FallbackAdapter
 from .kimi import KimiAdapter
 from .openai import OpenAIAdapter
-from .fallback import FallbackAdapter
 
 __all__ = [
     "ClaudeAdapter",

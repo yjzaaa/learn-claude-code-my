@@ -4,9 +4,10 @@ Tools Routes - 工具管理
 提供工具查询、执行等端点。
 """
 
-from fastapi import APIRouter, Request, HTTPException
+from typing import Any
+
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
 
 from backend.domain.models.agent.tool import ToolExecutionResult
 
@@ -16,19 +17,19 @@ router = APIRouter(tags=["tools"])
 class ToolResponse(BaseModel):
     name: str
     description: str
-    parameters: Dict[str, Any]
+    parameters: dict[str, Any]
 
 
 class ExecuteToolRequest(BaseModel):
     name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
 
 
-@router.get("/list", response_model=List[ToolResponse])
+@router.get("/list", response_model=list[ToolResponse])
 async def list_tools(request: Request):
     """列出所有工具"""
     engine = request.app.state.engine
-    
+
     tools = engine.list_tools()
     return [
         ToolResponse(
@@ -44,17 +45,14 @@ async def list_tools(request: Request):
 async def execute_tool(request: Request, body: ExecuteToolRequest):
     """执行工具"""
     engine = request.app.state.engine
-    
+
     # 创建 ToolCall 并执行
     from backend.domain.models import ToolCall
-    
-    tool_call = ToolCall.create(
-        name=body.name,
-        arguments=body.arguments
-    )
-    
+
+    tool_call = ToolCall.create(name=body.name, arguments=body.arguments)
+
     result = await engine.tool_manager.execute("manual", tool_call)
-    
+
     return ToolExecutionResult(
         tool_call_id=tool_call.id,
         tool_name=body.name,

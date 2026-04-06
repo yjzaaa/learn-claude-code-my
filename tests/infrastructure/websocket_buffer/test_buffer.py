@@ -1,6 +1,7 @@
 """WebSocketMessageBuffer 测试"""
 import asyncio
-from backend.infrastructure.websocket_buffer import WebSocketMessageBuffer, BufferStrategy
+
+from backend.infrastructure.websocket_buffer import BufferStrategy, WebSocketMessageBuffer
 
 
 class MockWebSocket:

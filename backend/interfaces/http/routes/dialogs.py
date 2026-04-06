@@ -9,12 +9,10 @@ from backend.infrastructure.container import container
 from backend.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
+from backend.domain.models.types import CreateDialogBody
 from backend.domain.services.dialog_service import (
     DialogService,
-    build_dialog_snapshot,
-    generate_dialog_id,
 )
-from backend.domain.models.types import CreateDialogBody
 
 router = APIRouter()
 
@@ -112,6 +110,7 @@ async def switch_model(dialog_id: str, body: dict):
 
     # 验证模型是否可用
     from backend.infrastructure.services import ProviderManager
+
     provider_manager = ProviderManager()
     try:
         # 确保模型已发现
@@ -129,7 +128,7 @@ async def switch_model(dialog_id: str, body: dict):
             available = [m["id"] for m in provider_manager._discovered_models or []]
             raise HTTPException(
                 status_code=400,
-                detail=f"Model '{parsed.model_id}' is not available. Available models: {available}"
+                detail=f"Model '{parsed.model_id}' is not available. Available models: {available}",
             )
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -146,5 +145,5 @@ async def switch_model(dialog_id: str, body: dict):
         "data": {
             "dialog_id": dialog_id,
             "selected_model_id": parsed.model_id,
-        }
+        },
     }

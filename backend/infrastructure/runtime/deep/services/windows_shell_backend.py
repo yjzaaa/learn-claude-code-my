@@ -25,7 +25,7 @@ class WindowsShellBackend(LocalShellBackend):
         self,
         root_dir: str,
         virtual_mode: bool = True,  # noqa: FBT001,FBT002
-        inherit_env: bool = True,   # noqa: FBT001,FBT002
+        inherit_env: bool = True,  # noqa: FBT001,FBT002
     ) -> None:
         super().__init__(
             root_dir=root_dir,

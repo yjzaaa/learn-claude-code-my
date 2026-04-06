@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 # 全局缓存，避免重复扫描
 _schemas_cache: dict[frozenset[str], str] | None = None
 
@@ -40,7 +39,7 @@ def extract_model_fields_from_schemas(schemas_path: Path) -> dict[frozenset[str]
                 if isinstance(base, ast.Name) and base.id == 'BaseModel':
                     is_pydantic = True
                     break
-                elif isinstance(base, ast.Subscript):
+                if isinstance(base, ast.Subscript):
                     if isinstance(base.value, ast.Name) and base.value.id == 'BaseModel':
                         is_pydantic = True
                         break

@@ -5,7 +5,8 @@ Base Provider - Provider 抽象基类
 """
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, List, Optional
+from collections.abc import AsyncIterator
+
 from backend.domain.models.shared import StreamChunk
 from backend.domain.models.shared.types import MessageDict
 
@@ -13,22 +14,22 @@ from backend.domain.models.shared.types import MessageDict
 class BaseProvider(ABC):
     """
     LLM Provider 抽象基类
-    
+
     所有 Provider 实现必须继承此类
     """
-    
+
     @property
     @abstractmethod
     def default_model(self) -> str:
         """默认模型名称"""
         pass
-    
+
     @abstractmethod
     async def chat_stream(
         self,
-        messages: List[MessageDict],
-        model: Optional[str] = None,
-        tools: Optional[list] = None,
+        messages: list[MessageDict],
+        model: str | None = None,
+        tools: list | None = None,
         max_tokens: int = 8000,
         temperature: float = 0.7,
     ) -> AsyncIterator[StreamChunk]:
@@ -48,18 +49,18 @@ class BaseProvider(ABC):
         # yield makes this an async generator so callers can use `async for` directly.
         # Subclasses must override this method.
         yield  # type: ignore[misc]
-    
+
     async def chat(
         self,
-        messages: List[MessageDict],
-        model: Optional[str] = None,
-        tools: Optional[list] = None,
+        messages: list[MessageDict],
+        model: str | None = None,
+        tools: list | None = None,
         max_tokens: int = 8000,
         temperature: float = 0.7,
     ) -> str:
         """
         非流式聊天（默认实现通过收集流式输出）
-        
+
         子类可以覆盖此方法以提供更高效的实现
         """
         result = []

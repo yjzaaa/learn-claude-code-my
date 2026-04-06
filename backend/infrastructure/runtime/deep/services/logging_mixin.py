@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 
@@ -19,9 +19,10 @@ from backend.infrastructure.queue import InMemoryAsyncQueue
 @dataclass
 class LogEntry:
     """日志条目"""
+
     level: str
     message: str
-    dialog_id: Optional[str] = None
+    dialog_id: str | None = None
     timestamp: datetime = field(default_factory=datetime.now)
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -38,11 +39,7 @@ class AsyncLogBuffer:
     """
 
     def __init__(
-        self,
-        name: str,
-        maxsize: int = 1000,
-        flush_interval: float = 1.0,
-        batch_size: int = 10
+        self, name: str, maxsize: int = 1000, flush_interval: float = 1.0, batch_size: int = 10
     ):
         self.name = name
         self.maxsize = maxsize
@@ -52,7 +49,7 @@ class AsyncLogBuffer:
         self._queue: InMemoryAsyncQueue[LogEntry] = InMemoryAsyncQueue(maxsize=maxsize)
         self._logger = logger.bind(name=name)
         self._running = False
-        self._flush_task: Optional[asyncio.Task[Any]] = None
+        self._flush_task: asyncio.Task[Any] | None = None
         self._stats = {
             "buffered": 0,
             "flushed": 0,
@@ -87,13 +84,7 @@ class AsyncLogBuffer:
 
         logger.debug(f"[AsyncLogBuffer:{self.name}] Stopped")
 
-    async def log(
-        self,
-        level: str,
-        message: str,
-        dialog_id: Optional[str] = None,
-        **extra
-    ) -> bool:
+    async def log(self, level: str, message: str, dialog_id: str | None = None, **extra) -> bool:
         """异步记录日志
 
         Args:
@@ -105,12 +96,7 @@ class AsyncLogBuffer:
         Returns:
             True 表示成功缓冲，False 表示队列满
         """
-        entry = LogEntry(
-            level=level,
-            message=message,
-            dialog_id=dialog_id,
-            extra=extra
-        )
+        entry = LogEntry(level=level, message=message, dialog_id=dialog_id, extra=extra)
 
         try:
             await self._queue.enqueue(entry, block=False)
@@ -145,7 +131,7 @@ class AsyncLogBuffer:
                 iterator = self._queue.consume()
                 entry = await asyncio.wait_for(iterator.__anext__(), timeout=0.1)
                 batch.append(entry)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # 超时，没有更多元素
                 break
             except StopAsyncIteration:
@@ -209,9 +195,9 @@ class DeepLoggingMixin:
     """
 
     def __init__(self):
-        self._msg_log_buffer: Optional[AsyncLogBuffer] = None
-        self._update_log_buffer: Optional[AsyncLogBuffer] = None
-        self._value_log_buffer: Optional[AsyncLogBuffer] = None
+        self._msg_log_buffer: AsyncLogBuffer | None = None
+        self._update_log_buffer: AsyncLogBuffer | None = None
+        self._value_log_buffer: AsyncLogBuffer | None = None
 
     async def _init_async_loggers(self) -> None:
         """初始化异步日志记录器"""
@@ -220,19 +206,13 @@ class DeepLoggingMixin:
             name="deep_messages",
             maxsize=1000,
             flush_interval=0.5,  # 500ms 刷新一次
-            batch_size=10
+            batch_size=10,
         )
         self._update_log_buffer = AsyncLogBuffer(
-            name="deep_updates",
-            maxsize=500,
-            flush_interval=1.0,
-            batch_size=5
+            name="deep_updates", maxsize=500, flush_interval=1.0, batch_size=5
         )
         self._value_log_buffer = AsyncLogBuffer(
-            name="deep_values",
-            maxsize=500,
-            flush_interval=1.0,
-            batch_size=5
+            name="deep_values", maxsize=500, flush_interval=1.0, batch_size=5
         )
 
         # 启动所有缓冲区
@@ -254,10 +234,7 @@ class DeepLoggingMixin:
         logger.debug("[DeepLoggingMixin] Async loggers stopped")
 
     async def _alog_message_chunk(
-        self,
-        message_chunk: Any,
-        dialog_id: str,
-        accumulated: str
+        self, message_chunk: Any, dialog_id: str, accumulated: str
     ) -> bool:
         """异步记录消息块
 
@@ -272,14 +249,10 @@ class DeepLoggingMixin:
         if not self._msg_log_buffer:
             return False
 
-        content = str(getattr(message_chunk, 'content', ''))[:100]
+        content = str(getattr(message_chunk, "content", ""))[:100]
         message = f"Message chunk: content={content}, accumulated_len={len(accumulated)}"
 
-        return await self._msg_log_buffer.log(
-            level="debug",
-            message=message,
-            dialog_id=dialog_id
-        )
+        return await self._msg_log_buffer.log(level="debug", message=message, dialog_id=dialog_id)
 
     async def _alog_update(self, update_type: str, data: dict[str, Any], dialog_id: str) -> bool:
         """异步记录更新
@@ -296,10 +269,7 @@ class DeepLoggingMixin:
             return False
 
         return await self._update_log_buffer.log(
-            level="info",
-            message=f"Update: type={update_type}",
-            dialog_id=dialog_id,
-            data=data
+            level="info", message=f"Update: type={update_type}", dialog_id=dialog_id, data=data
         )
 
     async def _alog_value(self, key: str, value: Any, dialog_id: str) -> bool:
@@ -317,10 +287,7 @@ class DeepLoggingMixin:
             return False
 
         return await self._value_log_buffer.log(
-            level="debug",
-            message=f"Value: {key}={str(value)[:50]}",
-            dialog_id=dialog_id,
-            key=key
+            level="debug", message=f"Value: {key}={str(value)[:50]}", dialog_id=dialog_id, key=key
         )
 
     def get_log_stats(self) -> dict[str, Any]:
@@ -354,7 +321,7 @@ class JsonlLogBuffer:
         log_dir: str = "logs/deep",
         maxsize: int = 1000,
         flush_interval: float = 2.0,
-        batch_size: int = 50
+        batch_size: int = 50,
     ):
         self.log_dir = Path(log_dir)
         self.maxsize = maxsize
@@ -363,7 +330,7 @@ class JsonlLogBuffer:
 
         self._queues: dict[str, InMemoryAsyncQueue[dict[str, Any]]] = {}
         self._running = False
-        self._flush_task: Optional[asyncio.Task[Any]] = None
+        self._flush_task: asyncio.Task[Any] | None = None
         self._stats: dict[str, dict[str, Any]] = {}
 
     async def start(self) -> None:
@@ -396,7 +363,7 @@ class JsonlLogBuffer:
             except asyncio.CancelledError:
                 pass
 
-        logger.debug(f"[JsonlLogBuffer] Stopped")
+        logger.debug("[JsonlLogBuffer] Stopped")
 
     async def write(self, log_type: str, data: dict[str, Any]) -> bool:
         """异步写入 JSONL 日志
@@ -504,12 +471,12 @@ class UnifiedLoggingMixin:
 
     def __init__(self):
         # 普通日志缓冲区
-        self._msg_log_buffer: Optional[AsyncLogBuffer] = None
-        self._update_log_buffer: Optional[AsyncLogBuffer] = None
-        self._value_log_buffer: Optional[AsyncLogBuffer] = None
+        self._msg_log_buffer: AsyncLogBuffer | None = None
+        self._update_log_buffer: AsyncLogBuffer | None = None
+        self._value_log_buffer: AsyncLogBuffer | None = None
 
         # JSONL 文件日志缓冲区
-        self._jsonl_buffer: Optional[JsonlLogBuffer] = None
+        self._jsonl_buffer: JsonlLogBuffer | None = None
 
         # 同步日志记录器 (兼容旧代码)
         self._msg_logger = logger.bind(name="deep_messages")
@@ -520,30 +487,18 @@ class UnifiedLoggingMixin:
         """初始化统一日志记录器"""
         # 初始化普通日志缓冲区
         self._msg_log_buffer = AsyncLogBuffer(
-            name="deep_messages",
-            maxsize=1000,
-            flush_interval=0.5,
-            batch_size=10
+            name="deep_messages", maxsize=1000, flush_interval=0.5, batch_size=10
         )
         self._update_log_buffer = AsyncLogBuffer(
-            name="deep_updates",
-            maxsize=500,
-            flush_interval=1.0,
-            batch_size=5
+            name="deep_updates", maxsize=500, flush_interval=1.0, batch_size=5
         )
         self._value_log_buffer = AsyncLogBuffer(
-            name="deep_values",
-            maxsize=500,
-            flush_interval=1.0,
-            batch_size=5
+            name="deep_values", maxsize=500, flush_interval=1.0, batch_size=5
         )
 
         # 初始化 JSONL 缓冲区
         self._jsonl_buffer = JsonlLogBuffer(
-            log_dir=log_dir,
-            maxsize=2000,
-            flush_interval=2.0,
-            batch_size=100
+            log_dir=log_dir, maxsize=2000, flush_interval=2.0, batch_size=100
         )
 
         # 启动所有缓冲区
@@ -577,11 +532,11 @@ class UnifiedLoggingMixin:
         """异步记录消息块"""
         if not self._msg_log_buffer:
             return False
-        content = str(getattr(message_chunk, 'content', ''))[:100]
+        content = str(getattr(message_chunk, "content", ""))[:100]
         return await self._msg_log_buffer.log(
             level="debug",
             message=f"Message chunk: content={content}, accumulated_len={len(accumulated)}",
-            dialog_id=dialog_id
+            dialog_id=dialog_id,
         )
 
     async def _alog_update(self, update_type: str, data: dict[str, Any], dialog_id: str) -> bool:
@@ -589,10 +544,7 @@ class UnifiedLoggingMixin:
         if not self._update_log_buffer:
             return False
         return await self._update_log_buffer.log(
-            level="info",
-            message=f"Update: type={update_type}",
-            dialog_id=dialog_id,
-            data=data
+            level="info", message=f"Update: type={update_type}", dialog_id=dialog_id, data=data
         )
 
     async def _alog_value(self, key: str, value: Any, dialog_id: str) -> bool:
@@ -600,17 +552,16 @@ class UnifiedLoggingMixin:
         if not self._value_log_buffer:
             return False
         return await self._value_log_buffer.log(
-            level="debug",
-            message=f"Value: {key}={str(value)[:50]}",
-            dialog_id=dialog_id,
-            key=key
+            level="debug", message=f"Value: {key}={str(value)[:50]}", dialog_id=dialog_id, key=key
         )
 
     # ═════════════════════════════════════════════════════════════════
     # JSONL 日志接口（集中管理所有 jsonl 写入）
     # ═════════════════════════════════════════════════════════════════
 
-    async def _log_event(self, event_type: str, data: dict[str, Any], dialog_id: Optional[str] = None) -> bool:
+    async def _log_event(
+        self, event_type: str, data: dict[str, Any], dialog_id: str | None = None
+    ) -> bool:
         """记录事件到 raw_event.jsonl
 
         替代 deep.py 中的直接文件写入
@@ -622,7 +573,7 @@ class UnifiedLoggingMixin:
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
             "dialog_id": dialog_id,
-            **data
+            **data,
         }
         return await self._jsonl_buffer.write("raw_event", entry)
 
@@ -632,7 +583,7 @@ class UnifiedLoggingMixin:
         arguments: dict,
         result: Any,
         dialog_id: str,
-        duration_ms: Optional[int] = None
+        duration_ms: int | None = None,
     ) -> bool:
         """记录工具调用结果到 tool_results.jsonl
 
@@ -659,58 +610,62 @@ class UnifiedLoggingMixin:
         if not self._jsonl_buffer:
             return False
 
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            "messages": messages,
-            **metadata
-        }
+        entry = {"timestamp": datetime.now().isoformat(), "messages": messages, **metadata}
         return await self._jsonl_buffer.write("transcript", entry)
 
     # ═════════════════════════════════════════════════════════════════
     # Fire-and-Forget 日志接口（同步调用，不阻塞主流程）
     # ═════════════════════════════════════════════════════════════════
 
-    def _fire_log_msg(self, level: str, message: str, dialog_id: Optional[str] = None) -> None:
+    def _fire_log_msg(self, level: str, message: str, dialog_id: str | None = None) -> None:
         """Fire-and-forget 记录消息日志（同步调用，不阻塞）"""
         if not self._msg_log_buffer:
             return
         import asyncio
+
         try:
             asyncio.create_task(self._msg_log_buffer.log(level, message, dialog_id))
         except Exception:
             pass
 
-    def _fire_log_update(self, level: str, message: str, dialog_id: Optional[str] = None, **extra) -> None:
+    def _fire_log_update(
+        self, level: str, message: str, dialog_id: str | None = None, **extra
+    ) -> None:
         """Fire-and-forget 记录更新日志（同步调用，不阻塞）"""
         if not self._update_log_buffer:
             return
         import asyncio
+
         try:
             asyncio.create_task(self._update_log_buffer.log(level, message, dialog_id, **extra))
         except Exception:
             pass
 
-    def _fire_log_value(self, level: str, message: str, dialog_id: Optional[str] = None, **extra) -> None:
+    def _fire_log_value(
+        self, level: str, message: str, dialog_id: str | None = None, **extra
+    ) -> None:
         """Fire-and-forget 记录值日志（同步调用，不阻塞）"""
         if not self._value_log_buffer:
             return
         import asyncio
+
         try:
             asyncio.create_task(self._value_log_buffer.log(level, message, dialog_id, **extra))
         except Exception:
             pass
 
-    def _fire_log_event(self, event_type: str, data: dict, dialog_id: Optional[str] = None) -> None:
+    def _fire_log_event(self, event_type: str, data: dict, dialog_id: str | None = None) -> None:
         """Fire-and-forget 记录事件到 raw_event.jsonl（同步调用，不阻塞）"""
         if not self._jsonl_buffer:
             return
         import asyncio
         from datetime import datetime
+
         entry = {
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
             "dialog_id": dialog_id,
-            **data
+            **data,
         }
         try:
             asyncio.create_task(self._jsonl_buffer.write("raw_event", entry))
@@ -723,13 +678,14 @@ class UnifiedLoggingMixin:
         arguments: dict,
         result: Any,
         dialog_id: str,
-        duration_ms: Optional[int] = None
+        duration_ms: int | None = None,
     ) -> None:
         """Fire-and-forget 记录工具调用结果到 tool_results.jsonl（同步调用，不阻塞）"""
         if not self._jsonl_buffer:
             return
         import asyncio
         from datetime import datetime
+
         entry = {
             "timestamp": datetime.now().isoformat(),
             "dialog_id": dialog_id,
@@ -763,5 +719,5 @@ __all__ = [
     "DeepLoggingMixin",
     "AsyncLogBuffer",
     "JsonlLogBuffer",
-    "LogEntry"
+    "LogEntry",
 ]

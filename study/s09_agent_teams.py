@@ -7,29 +7,25 @@ s09_agent_teams.py - 简化版 TeamLeadAgent (使用 BaseAgentLoop + 插件系�
 支持真正的子 Agent spawn
 """
 
-import json
-import os
 import threading
-import time
-import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional, List, Type, Dict, Callable
+from typing import Any
 
 from dotenv import load_dotenv
 from loguru import logger
 
 try:
-    from .base import PluginEnabledAgent, WorkspaceOps, tool, build_tools_and_handlers
-    from .models import ChatMessage, ChatEvent
+    from .base import PluginEnabledAgent, WorkspaceOps, build_tools_and_handlers, tool
+    from .models import ChatEvent, ChatMessage
     from .plugins import AgentPlugin
-    from .plugins.skill_plugin import SkillPlugin
     from .plugins.compact_plugin import CompactPlugin
+    from .plugins.skill_plugin import SkillPlugin
 except ImportError:
-    from agents.base import PluginEnabledAgent, WorkspaceOps, tool, build_tools_and_handlers
-    from agents.models import ChatMessage, ChatEvent
+    from agents.base import PluginEnabledAgent, WorkspaceOps, build_tools_and_handlers, tool
     from agents.plugins import AgentPlugin
-    from agents.plugins.skill_plugin import SkillPlugin
     from agents.plugins.compact_plugin import CompactPlugin
+    from agents.plugins.skill_plugin import SkillPlugin
 
 load_dotenv(override=True)
 
@@ -44,7 +40,7 @@ class SubAgentManager:
     """
 
     def __init__(self):
-        self._subagents: Dict[str, Dict[str, Any]] = {}
+        self._subagents: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
     def spawn(
@@ -53,7 +49,7 @@ class SubAgentManager:
         role: str,
         prompt: str,
         dialog_id: str,
-        get_hook_kwargs: Callable[[str], Dict[str, Callable]]
+        get_hook_kwargs: Callable[[str], dict[str, Callable]]
     ) -> str:
         """
         创建并启动一个子 Agent
@@ -100,7 +96,7 @@ class SubAgentManager:
         role: str,
         prompt: str,
         dialog_id: str,
-        get_hook_kwargs: Callable[[str], Dict[str, Callable]]
+        get_hook_kwargs: Callable[[str], dict[str, Callable]]
     ):
         """在独立线程中运行子 Agent（带插件支持）"""
         try:
@@ -141,7 +137,7 @@ class SubAgentManager:
         self,
         name: str,
         role: str,
-        hooks: Dict[str, Callable]
+        hooks: dict[str, Callable]
     ) -> 'SubAgentWithPlugins':
         """创建带插件支持的子 Agent"""
         logger.info(f"[SubAgentManager] Creating subagent '{name}' with role '{role}'")
@@ -153,13 +149,13 @@ class SubAgentManager:
         logger.info(f"[SubAgentManager] Subagent '{name}' created with {len(subagent.tools)} tools")
         return subagent
 
-    def get_status(self, name: str) -> Optional[str]:
+    def get_status(self, name: str) -> str | None:
         """获取子 Agent 状态"""
         with self._lock:
             subagent = self._subagents.get(name)
             return subagent["status"] if subagent else None
 
-    def list_all(self) -> List[Dict[str, Any]]:
+    def list_all(self) -> list[dict[str, Any]]:
         """列出所有子 Agent"""
         with self._lock:
             return [
@@ -228,7 +224,7 @@ class TeamLeadAgent(PluginEnabledAgent):
     def __init__(
         self,
         dialog_id: str,
-        plugins: Optional[List[Type[AgentPlugin]]] = None,
+        plugins: list[type[AgentPlugin]] | None = None,
         **kwargs,
     ):
         self.dialog_id = dialog_id
@@ -295,7 +291,7 @@ class TeamLeadAgent(PluginEnabledAgent):
 
         return tools, handlers
 
-    def _get_subagent_hooks(self, agent_name: str) -> Dict[str, Callable]:
+    def _get_subagent_hooks(self, agent_name: str) -> dict[str, Callable]:
         """
         为子 Agent 生成 WebSocket 钩子
 

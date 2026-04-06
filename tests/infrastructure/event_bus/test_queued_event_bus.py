@@ -1,5 +1,6 @@
 """QueuedEventBus 测试"""
 import asyncio
+
 from backend.infrastructure.event_bus import QueuedEventBus
 
 

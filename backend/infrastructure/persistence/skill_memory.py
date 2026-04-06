@@ -2,10 +2,8 @@
 In-Memory Skill Repository - 内存技能仓库实现
 """
 
-from typing import Optional
-
-from backend.domain.repositories.skill import ISkillRepository
 from backend.domain.models.agent.skill import Skill
+from backend.domain.repositories.skill import ISkillRepository
 
 
 class InMemorySkillRepository(ISkillRepository):
@@ -30,7 +28,7 @@ class InMemorySkillRepository(ISkillRepository):
         """
         self._skills[skill.id] = skill
 
-    async def get(self, skill_id: str) -> Optional[Skill]:
+    async def get(self, skill_id: str) -> Skill | None:
         """从内存获取技能
 
         Args:

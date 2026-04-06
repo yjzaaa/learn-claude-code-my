@@ -4,14 +4,13 @@
 """
 
 import uuid
-from typing import Optional
 
 from backend.domain.models.types import (
+    WSDialogSnapshot,
     WSMessageItem,
     WSStreamingMessage,
-    WSDialogSnapshot,
 )
-from backend.domain.utils import timestamp_ms, iso_timestamp, SnapshotBuilder
+from backend.domain.utils import SnapshotBuilder, iso_timestamp, timestamp_ms
 
 
 def make_message_item(m) -> WSMessageItem:
@@ -24,18 +23,18 @@ def make_message_item(m) -> WSMessageItem:
         WSMessageItem
     """
     # 使用 SnapshotBuilder 的转换逻辑
-    if hasattr(m, 'type'):
+    if hasattr(m, "type"):
         # LangChain 消息使用 type 属性 (human/ai/system/tool)
         msg_type = m.type
-        role_map = {'human': 'user', 'ai': 'assistant', 'system': 'system', 'tool': 'tool'}
+        role_map = {"human": "user", "ai": "assistant", "system": "system", "tool": "tool"}
         role = role_map.get(msg_type, msg_type)
-        msg_id = getattr(m, 'msg_id', '') or getattr(m, 'id', '')
-        content = getattr(m, 'content', '') or ""
+        msg_id = getattr(m, "msg_id", "") or getattr(m, "id", "")
+        content = getattr(m, "content", "") or ""
     else:
         # 字典格式
-        role = m.get('role', 'unknown')
-        msg_id = m.get('id', '')
-        content = m.get('content', '')
+        role = m.get("role", "unknown")
+        msg_id = m.get("id", "")
+        content = m.get("content", "")
 
     return WSMessageItem(
         id=msg_id,
@@ -74,8 +73,8 @@ def build_dialog_snapshot(
     dialog_id: str,
     session_manager,
     status: str = "idle",
-    streaming_msg: Optional[WSStreamingMessage] = None,
-) -> Optional[WSDialogSnapshot]:
+    streaming_msg: WSStreamingMessage | None = None,
+) -> WSDialogSnapshot | None:
     """构建对话快照
 
     Args:
@@ -93,14 +92,13 @@ def build_dialog_snapshot(
 
     # 使用 SnapshotBuilder 转换消息列表
     messages = [
-        SnapshotBuilder.transform_message_for_ws(m)
-        for m in session_snap.get("messages", [])
+        SnapshotBuilder.transform_message_for_ws(m) for m in session_snap.get("messages", [])
     ]
 
     metadata = session_snap.get("metadata", {})
 
     # 从 session_snap 获取 selected_model_id（已由 manager.build_snapshot 提供）
-    selected_model_id = session_snap.get('selected_model_id')
+    selected_model_id = session_snap.get("selected_model_id")
 
     return {
         "id": session_snap["id"],
@@ -157,7 +155,7 @@ class DialogService:
 
         return dialog_id
 
-    async def get_dialog(self, dialog_id: str) -> Optional[WSDialogSnapshot]:
+    async def get_dialog(self, dialog_id: str) -> WSDialogSnapshot | None:
         """获取对话信息
 
         Args:
@@ -172,7 +170,7 @@ class DialogService:
             dialog_id,
             self.session_manager,
             container.get_status(dialog_id),
-            container.get_streaming_message(dialog_id)
+            container.get_streaming_message(dialog_id),
         )
 
     async def list_dialogs(self) -> list:
@@ -185,7 +183,7 @@ class DialogService:
                 session.dialog_id,
                 self.session_manager,
                 container.get_status(session.dialog_id),
-                container.get_streaming_message(session.dialog_id)
+                container.get_streaming_message(session.dialog_id),
             )
             if snap:
                 dialogs.append(snap)
@@ -204,12 +202,7 @@ class DialogService:
 
     def get_messages(self, dialog_id: str) -> list:
         """获取对话消息列表"""
-        snap = build_dialog_snapshot(
-            dialog_id,
-            self.session_manager,
-            "idle",
-            None
-        )
+        snap = build_dialog_snapshot(dialog_id, self.session_manager, "idle", None)
         if snap:
             return snap.get("messages", [])
         return []

@@ -1,8 +1,7 @@
-from tkinter import BOTH
-
-from loguru import logger
 
 from agents.prompts import with_base_prompt
+from loguru import logger
+
 #!/usr/bin/env python3
 """
 s03_todo_write.py - 任务清单写入
@@ -35,17 +34,22 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 try:
     from agents.providers import create_provider_from_env
 except ImportError:
     from providers import create_provider_from_env
 try:
+    from agents.s05_skill_loading import SYSTEM as SKILL_SYSTEM
+    from agents.s05_skill_loading import load_skill, load_skill_reference, load_skill_script
     from base import BaseAgentLoop, WorkspaceOps, tool
-    from agents.s05_skill_loading  import SYSTEM as SKILL_SYSTEM, load_skill, load_skill_reference, load_skill_script
 except ImportError:
-    from .s05_skill_loading  import SYSTEM as SKILL_SYSTEM, load_skill, load_skill_reference, load_skill_script
     from agents.base import BaseAgentLoop, WorkspaceOps, tool
+
+    from .s05_skill_loading import SYSTEM as SKILL_SYSTEM
+    from .s05_skill_loading import load_skill, load_skill_reference, load_skill_script
 from .base import build_tools_and_handlers
+
 load_dotenv(override=True)
 
 if os.getenv("ANTHROPIC_BASE_URL"):
@@ -134,7 +138,7 @@ class TodoAgent(BaseAgentLoop):
 
     def _build_toolkit(self) -> tuple[list, dict]:
         """构建工具集"""
-        
+
 
         @tool(name="todo", description="Update task list. Track progress on multi-step tasks.")
         def todo(items: list) -> str:

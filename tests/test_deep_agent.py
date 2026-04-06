@@ -14,7 +14,7 @@ from pathlib import Path
 # 手动加载项目根目录的 .env 文件（强制覆盖现有环境变量）
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -30,6 +30,7 @@ os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
 # 设置日志
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -64,9 +65,9 @@ async def test_deep_agent():
     try:
         from deepagents import create_deep_agent
         from deepagents.backends import FilesystemBackend
+        from langchain_anthropic import ChatAnthropic
         from langgraph.checkpoint.memory import MemorySaver
         from langgraph.store.memory import InMemoryStore
-        from langchain_anthropic import ChatAnthropic
     except ImportError as e:
         print(f"错误: 缺少依赖: {e}")
         return
@@ -138,7 +139,7 @@ async def test_deep_agent():
                             msgs = _serialize_messages(raw_msgs)
                     print(f"[{event_count}] node={node_name} messages_count={len(msgs) if isinstance(msgs, list) else 'N/A'}")
 
-    print(f"流结束")
+    print("流结束")
     print(f"总事件数: {event_count}")
     print(f"输出文件: {events_file.name}")
 

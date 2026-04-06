@@ -1,7 +1,8 @@
 """Config Adapter - 配置适配器"""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
-from typing import Any, Optional
 
 
 class DeepAgentConfig(BaseModel):
@@ -11,7 +12,9 @@ class DeepAgentConfig(BaseModel):
     """
 
     name: str = Field(default="agent", description="Agent 名称")
-    model: Optional[str] = Field(default=None, description="模型名称（None 表示使用 ProviderManager 配置）")
+    model: str | None = Field(
+        default=None, description="模型名称（None 表示使用 ProviderManager 配置）"
+    )
     system: str = Field(default="", description="系统提示词")
     system_prompt: str = Field(default="", description="系统提示词（别名）")
     skills: list[str] = Field(default_factory=list, description="技能列表")
@@ -20,6 +23,7 @@ class DeepAgentConfig(BaseModel):
 
     class Config:
         """Pydantic 配置"""
+
         populate_by_name = True
 
 

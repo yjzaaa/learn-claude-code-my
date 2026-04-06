@@ -4,15 +4,14 @@ Test MemoryMiddleware Integration - 记忆中间件集成测试
 测试 MemoryMiddleware 与 DeepAgentRuntime 的集成。
 """
 
-import sys
 import asyncio
-from datetime import datetime
-from typing import Any, List, Dict, Optional
+import sys
+from typing import Any, Optional
 
 sys.path.insert(0, '.')
 
-from backend.domain.models.memory.types import MemoryType
 from backend.domain.models.memory.memory import Memory
+from backend.domain.models.memory.types import MemoryType
 
 
 def test_memory_prompt_injection():
@@ -37,7 +36,7 @@ def test_memory_prompt_injection():
     ]
 
     # 构建记忆提示词
-    def build_memory_prompt(memories: List[Memory]) -> str:
+    def build_memory_prompt(memories: list[Memory]) -> str:
         if not memories:
             return ""
         lines = ["<memories>"]
@@ -52,7 +51,7 @@ def test_memory_prompt_injection():
         lines.append("</memories>")
         return "\n".join(lines)
 
-    def inject_memory_prompt(messages: List[Dict], memory_prompt: str) -> List[Dict]:
+    def inject_memory_prompt(messages: list[dict], memory_prompt: str) -> list[dict]:
         new_messages = list(messages)
         # 查找 system message
         for i, msg in enumerate(new_messages):
@@ -78,7 +77,7 @@ def test_get_last_user_message():
     """测试提取最后一条用户消息"""
     print("\n=== Test Get Last User Message ===")
 
-    def get_last_user_message(messages: List[Dict]) -> Optional[str]:
+    def get_last_user_message(messages: list[dict]) -> str | None:
         for msg in reversed(messages):
             if msg.get("role") in ("user", "human"):
                 return msg.get("content")
@@ -144,21 +143,21 @@ async def test_memory_service_with_mock_repo():
             pass
 
         @abstractmethod
-        async def find_by_id(self, memory_id: str, user_id: str) -> Optional[Memory]:
+        async def find_by_id(self, memory_id: str, user_id: str) -> Memory | None:
             pass
 
         @abstractmethod
         async def list_by_user(
-            self, user_id: str, project_path: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None, limit: int = 20, offset: int = 0
-        ) -> List[Memory]:
+            self, user_id: str, project_path: str | None = None,
+            memory_type: MemoryType | None = None, limit: int = 20, offset: int = 0
+        ) -> list[Memory]:
             pass
 
         @abstractmethod
         async def search(
             self, user_id: str, query: str,
-            project_path: Optional[str] = None, limit: int = 5
-        ) -> List[Memory]:
+            project_path: str | None = None, limit: int = 5
+        ) -> list[Memory]:
             pass
 
         @abstractmethod
@@ -172,21 +171,21 @@ async def test_memory_service_with_mock_repo():
     # Mock Repository
     class MockMemoryRepository(IMemoryRepository):
         def __init__(self):
-            self._memories: Dict[str, Memory] = {}
+            self._memories: dict[str, Memory] = {}
 
         async def save(self, memory: Memory) -> None:
             self._memories[memory.id] = memory
 
-        async def find_by_id(self, memory_id: str, user_id: str) -> Optional[Memory]:
+        async def find_by_id(self, memory_id: str, user_id: str) -> Memory | None:
             memory = self._memories.get(memory_id)
             if memory and memory.user_id == user_id:
                 return memory
             return None
 
         async def list_by_user(
-            self, user_id: str, project_path: Optional[str] = None,
-            memory_type: Optional[MemoryType] = None, limit: int = 20, offset: int = 0
-        ) -> List[Memory]:
+            self, user_id: str, project_path: str | None = None,
+            memory_type: MemoryType | None = None, limit: int = 20, offset: int = 0
+        ) -> list[Memory]:
             results = [m for m in self._memories.values() if m.user_id == user_id]
             if project_path is not None:
                 results = [m for m in results if m.project_path == project_path]
@@ -196,8 +195,8 @@ async def test_memory_service_with_mock_repo():
 
         async def search(
             self, user_id: str, query: str,
-            project_path: Optional[str] = None, limit: int = 5
-        ) -> List[Memory]:
+            project_path: str | None = None, limit: int = 5
+        ) -> list[Memory]:
             results = [
                 m for m in self._memories.values()
                 if m.user_id == user_id and (
@@ -239,7 +238,7 @@ async def test_memory_service_with_mock_repo():
         'Memory': Memory,
         'MemoryType': MemoryType,
         'IMemoryRepository': IMemoryRepository,
-        'List': List,
+        'List': list,
         'Optional': Optional,
     }
     exec(service_code, exec_globals)
@@ -324,11 +323,11 @@ def test_middleware_chain_order():
 
         async def abefore_model(self, state, runtime):
             execution_order.append(f"{self.name}.abefore_model")
-            return None
+            return
 
         async def aafter_model(self, state, runtime, output):
             execution_order.append(f"{self.name}.aafter_model")
-            return None
+            return
 
     # 模拟中间件链
     middlewares = [

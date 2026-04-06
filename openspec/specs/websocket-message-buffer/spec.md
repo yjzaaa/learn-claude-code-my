@@ -41,4 +41,3 @@ TBD - created by archiving change async-queue-integrations. Update Purpose after
 - **GIVEN** 客户端 A 和客户端 B 同时连接
 - **WHEN** 向客户端 A 发送大量消息
 - **THEN** 客户端 B 不受影响，正常收发消息
-

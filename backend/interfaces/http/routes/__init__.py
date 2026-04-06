@@ -9,10 +9,8 @@ HTTP Routes - API 路由
 """
 
 # 新路由模块（基于拆分后的 main.py）
-from . import dialogs, messages, agent
-
 # 原有路由模块
-from . import health, dialog, skills, tools, hitl
+from . import agent, dialog, dialogs, health, hitl, messages, skills, tools
 
 __all__ = [
     # 新路由

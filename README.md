@@ -1,9 +1,9 @@
-[English](./README.md) | [中文](./README-zh.md) | [日本語](./README-ja.md)  
+[English](./README.md) | [中文](./README-zh.md) | [日本語](./README-ja.md)
 # Learn Claude Code -- A nano Claude Code-like agent, built from 0 to 1
 <img width="260" src="https://github.com/user-attachments/assets/fe8b852b-97da-4061-a467-9694906b5edf" /><br>
 
-Scan with Wechat to fellow us,  
-or fellow on X: [shareAI-Lab](https://x.com/baicai003)  
+Scan with Wechat to fellow us,
+or fellow on X: [shareAI-Lab](https://x.com/baicai003)
 
 
 ```
@@ -88,7 +88,7 @@ Every session layers one mechanism on top of this loop -- without changing the l
 This repository is a 0->1 learning project for building a nano Claude Code-like agent.
 It intentionally simplifies or omits several production mechanisms:
 
-- Full event/hook buses (for example PreToolUse, SessionStart/End, ConfigChange).  
+- Full event/hook buses (for example PreToolUse, SessionStart/End, ConfigChange).
   s12 includes only a minimal append-only lifecycle event stream for teaching.
 - Rule-based permission governance and trust workflows
 - Session lifecycle controls (resume/fork) and advanced worktree lifecycle controls

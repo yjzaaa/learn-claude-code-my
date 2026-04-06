@@ -3,7 +3,7 @@
 提供统一的异常层次结构，消除代码中分散的异常定义。
 """
 
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 class DomainError(Exception):
@@ -30,9 +30,9 @@ class DomainError(Exception):
 
     def __init__(
         self,
-        message: Optional[str] = None,
-        code: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        message: str | None = None,
+        code: str | None = None,
+        details: dict[str, Any] | None = None,
     ):
         self.message = message or self.message
         self.code = code or self.code
@@ -44,7 +44,7 @@ class DomainError(Exception):
             return f"[{self.code}] {self.message} - {self.details}"
         return f"[{self.code}] {self.message}"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典格式"""
         return {
             "code": self.code,
@@ -60,12 +60,7 @@ class NotFoundError(DomainError):
     message = "Resource not found"
     status_code = 404
 
-    def __init__(
-        self,
-        resource_type: str = "Resource",
-        resource_id: Optional[str] = None,
-        **kwargs
-    ):
+    def __init__(self, resource_type: str = "Resource", resource_id: str | None = None, **kwargs):
         message = f"{resource_type} not found"
         if resource_id:
             message = f"{resource_type} '{resource_id}' not found"
@@ -85,12 +80,7 @@ class AlreadyExistsError(DomainError):
     message = "Resource already exists"
     status_code = 409
 
-    def __init__(
-        self,
-        resource_type: str = "Resource",
-        resource_id: Optional[str] = None,
-        **kwargs
-    ):
+    def __init__(self, resource_type: str = "Resource", resource_id: str | None = None, **kwargs):
         message = f"{resource_type} already exists"
         if resource_id:
             message = f"{resource_type} '{resource_id}' already exists"
@@ -111,10 +101,7 @@ class StateError(DomainError):
     status_code = 400
 
     def __init__(
-        self,
-        current_state: Optional[str] = None,
-        expected_state: Optional[str] = None,
-        **kwargs
+        self, current_state: str | None = None, expected_state: str | None = None, **kwargs
     ):
         message = "Invalid state"
         if current_state and expected_state:
@@ -139,12 +126,7 @@ class ValidationError(DomainError):
     message = "Validation failed"
     status_code = 400
 
-    def __init__(
-        self,
-        field: Optional[str] = None,
-        reason: Optional[str] = None,
-        **kwargs
-    ):
+    def __init__(self, field: str | None = None, reason: str | None = None, **kwargs):
         message = "Validation failed"
         if field and reason:
             message = f"Field '{field}': {reason}"
@@ -173,9 +155,9 @@ class LimitExceededError(DomainError):
     def __init__(
         self,
         limit_type: str = "Resource",
-        current: Optional[int] = None,
-        maximum: Optional[int] = None,
-        **kwargs
+        current: int | None = None,
+        maximum: int | None = None,
+        **kwargs,
     ):
         message = f"{limit_type} limit exceeded"
         if current and maximum:
@@ -207,10 +189,7 @@ class ExternalServiceError(DomainError):
     status_code = 502
 
     def __init__(
-        self,
-        service: str = "External service",
-        original_error: Optional[str] = None,
-        **kwargs
+        self, service: str = "External service", original_error: str | None = None, **kwargs
     ):
         message = f"{service} error"
         if original_error:

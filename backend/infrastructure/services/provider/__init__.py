@@ -7,9 +7,10 @@
 - manager: Facade 入口
 """
 
-from .discovery import discover_available_models, ModelConfig as DiscoveredModelConfig
+from .discovery import ModelConfig as DiscoveredModelConfig
+from .discovery import discover_available_models
 from .factory import create_model_instance
-from .manager import ProviderManager, ModelConfig
+from .manager import ModelConfig, ProviderManager
 
 __all__ = [
     "ProviderManager",

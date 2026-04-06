@@ -4,12 +4,12 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from .models import (
-    UnifiedLLMResponse,
-    StreamTextDeltaEvent,
     StreamReasoningDeltaEvent,
+    StreamTextDeltaEvent,
+    UnifiedLLMResponse,
 )
 
 
@@ -63,10 +63,7 @@ class LLMResponseAdapter(ABC):
 
     @abstractmethod
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> "StreamingParseResult":
         """解析流式响应的单个 chunk
 
@@ -82,7 +79,7 @@ class LLMResponseAdapter(ABC):
         """
         pass
 
-    def detect_model(self, raw_response: Any) -> Optional[str]:
+    def detect_model(self, raw_response: Any) -> str | None:
         """检测响应中的模型名称
 
         默认实现尝试从常见字段中提取模型名称。
@@ -97,7 +94,7 @@ class LLMResponseAdapter(ABC):
         # 尝试从常见字段中提取
         if isinstance(raw_response, dict):
             return raw_response.get("model")
-        elif hasattr(raw_response, "model"):
+        if hasattr(raw_response, "model"):
             return getattr(raw_response, "model", None)
         return None
 
@@ -131,7 +128,7 @@ class StreamingParseResult:
         accumulated_content: str = "",
         accumulated_reasoning: str = "",
         is_finished: bool = False,
-        usage: Optional[Any] = None
+        usage: Any | None = None,
     ):
         self.content_delta = content_delta
         self.reasoning_delta = reasoning_delta
@@ -140,7 +137,7 @@ class StreamingParseResult:
         self.is_finished = is_finished
         self.usage = usage
 
-    def to_text_event(self) -> Optional[StreamTextDeltaEvent]:
+    def to_text_event(self) -> StreamTextDeltaEvent | None:
         """转换为文本增量事件
 
         Returns:
@@ -151,11 +148,11 @@ class StreamingParseResult:
                 type="stream:text_delta",
                 delta=self.content_delta,
                 accumulated=self.accumulated_content,
-                accumulated_length=len(self.accumulated_content)
+                accumulated_length=len(self.accumulated_content),
             )
         return None
 
-    def to_reasoning_event(self) -> Optional[StreamReasoningDeltaEvent]:
+    def to_reasoning_event(self) -> StreamReasoningDeltaEvent | None:
         """转换为推理增量事件
 
         Returns:
@@ -166,7 +163,7 @@ class StreamingParseResult:
                 type="stream:reasoning_delta",
                 delta=self.reasoning_delta,
                 accumulated=self.accumulated_reasoning,
-                accumulated_length=len(self.accumulated_reasoning)
+                accumulated_length=len(self.accumulated_reasoning),
             )
         return None
 

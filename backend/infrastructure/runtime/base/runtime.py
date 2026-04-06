@@ -5,17 +5,16 @@ AbstractAgentRuntime - Runtime 抽象基类
 子类只需实现特定的初始化、消息处理和停止逻辑。
 """
 
-from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, Any, Callable, AsyncIterator, Optional, Dict, List, Union
-from datetime import datetime
 import uuid
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Callable
+from typing import Any, Generic, TypeVar
 
 from loguru import logger
 from pydantic import BaseModel, Field
 
 from backend.domain.models.dialog.dialog import Dialog
 from backend.domain.models.events.agent import AgentEvent
-
 
 ConfigT = TypeVar("ConfigT", bound=BaseModel)
 
@@ -32,7 +31,7 @@ class ToolCache(BaseModel):
 
     handler: Any = None
     description: str = ""
-    parameters_schema: Dict[str, Any] = Field(default_factory=dict)
+    parameters_schema: dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
@@ -70,8 +69,8 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             agent_id: 运行时唯一标识
         """
         self._agent_id = agent_id
-        self._config: Optional[ConfigT] = None
-        self._tools: Dict[str, ToolCache] = {}
+        self._config: ConfigT | None = None
+        self._tools: dict[str, ToolCache] = {}
 
         logger.debug(f"[{self.__class__.__name__}] Created: {agent_id}")
 
@@ -93,7 +92,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
 
     @property
     @abstractmethod
-    def session_manager(self) -> Optional[Any]:
+    def session_manager(self) -> Any | None:
         """
         获取 SessionManager 实例
 
@@ -102,7 +101,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         """
         pass
 
-    def _validate_config(self, config: Union[ConfigT, Dict[str, Any]]) -> ConfigT:
+    def _validate_config(self, config: ConfigT | dict[str, Any]) -> ConfigT:
         """
         验证并转换配置
 
@@ -121,7 +120,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             )
         return config
 
-    async def initialize(self, config: Union[ConfigT, Dict[str, Any]]) -> None:  # type: ignore[override]
+    async def initialize(self, config: ConfigT | dict[str, Any]) -> None:  # type: ignore[override]
         """
         初始化 Runtime - 模板方法
 
@@ -187,7 +186,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         dialog_id: str,
         message: str,
         stream: bool = True,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """
         发送消息到 Agent - 子类实现
@@ -203,7 +202,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         """
         pass
 
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
+    async def create_dialog(self, user_input: str, title: str | None = None) -> str:
         """
         创建新对话（仅通过 DialogSessionManager）
 
@@ -216,13 +215,15 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         """
         dialog_id = str(uuid.uuid4())
 
-        dialog_title = title if title else (
-            user_input[:50] + "..." if len(user_input) > 50 else user_input
+        dialog_title = (
+            title if title else (user_input[:50] + "..." if len(user_input) > 50 else user_input)
         )
 
         session_mgr = self.session_manager
         if session_mgr is None:
-            raise RuntimeError("SessionManager not set. Cannot create dialog without session manager.")
+            raise RuntimeError(
+                "SessionManager not set. Cannot create dialog without session manager."
+            )
 
         await session_mgr.create_session(dialog_id, title=dialog_title)
         if user_input:
@@ -231,7 +232,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         logger.info(f"[{self.__class__.__name__}] Created dialog: {dialog_id}")
         return dialog_id
 
-    def get_dialog(self, dialog_id: str) -> Optional[Dialog]:
+    def get_dialog(self, dialog_id: str) -> Dialog | None:
         """
         获取对话（通过 DialogSessionManager）
 
@@ -255,7 +256,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             updated_at=session.updated_at,
         )
 
-    def list_dialogs(self) -> List[Dialog]:
+    def list_dialogs(self) -> list[Dialog]:
         """
         列出所有对话（通过 DialogSessionManager）
 
@@ -267,13 +268,15 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             return []
         dialogs = []
         for session in session_mgr.list_sessions():
-            dialogs.append(Dialog(
-                id=session.dialog_id,
-                title=session.metadata.title or "New Dialog",
-                messages=list(session.history.messages),
-                created_at=session.created_at,
-                updated_at=session.updated_at,
-            ))
+            dialogs.append(
+                Dialog(
+                    id=session.dialog_id,
+                    title=session.metadata.title or "New Dialog",
+                    messages=list(session.history.messages),
+                    created_at=session.created_at,
+                    updated_at=session.updated_at,
+                )
+            )
         return dialogs
 
     def register_tool(
@@ -281,7 +284,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
         name: str,
         handler: Callable[..., Any],
         description: str,
-        parameters_schema: Optional[Dict[str, Any]] = None
+        parameters_schema: dict[str, Any] | None = None,
     ) -> None:
         """
         注册工具
@@ -293,9 +296,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             parameters_schema: 参数 JSON Schema
         """
         self._tools[name] = ToolCache(
-            handler=handler,
-            description=description,
-            parameters_schema=parameters_schema or {}
+            handler=handler, description=description, parameters_schema=parameters_schema or {}
         )
         logger.debug(f"[{self.__class__.__name__}] Registered tool: {name}")
 
@@ -311,7 +312,7 @@ class AbstractAgentRuntime(Generic[ConfigT], ABC):
             logger.debug(f"[{self.__class__.__name__}] Unregistered tool: {name}")
 
     @abstractmethod
-    async def stop(self, dialog_id: Optional[str] = None) -> None:
+    async def stop(self, dialog_id: str | None = None) -> None:
         """
         停止 Agent - 子类实现
 

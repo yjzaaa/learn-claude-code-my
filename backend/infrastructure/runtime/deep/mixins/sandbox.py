@@ -6,6 +6,7 @@
 import base64
 import json
 from typing import Any
+
 from loguru import logger
 
 from backend.infrastructure.runtime.base.runtime import ToolCache
@@ -32,8 +33,8 @@ class DeepSandboxMixin:
                 # 使用绝对路径，因为容器工作目录是 /workspace/skills
                 cmd = (
                     f"python -c 'import base64, json, sys; "
-                    f"p=json.loads(base64.b64decode(\"{b64}\").decode()); "
-                    f"sys.path.insert(0, \"/workspace/skills/finance/scripts\"); "
+                    f'p=json.loads(base64.b64decode("{b64}").decode()); '
+                    f'sys.path.insert(0, "/workspace/skills/finance/scripts"); '
                     f"from sql_query import run_sql_query; "
                     f"print(run_sql_query(**p))'"
                 )

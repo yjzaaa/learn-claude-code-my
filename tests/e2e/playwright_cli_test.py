@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Playwright CLI 流式输出测试
 
@@ -10,10 +9,10 @@ Playwright CLI 流式输出测试
 
 import argparse
 import asyncio
-import json
-import sys
-import os
 import io
+import json
+import os
+import sys
 
 # 设置 UTF-8 编码
 os.environ['PYTHONIOENCODING'] = 'utf-8'
@@ -184,11 +183,11 @@ async def run_stream_test(headed: bool = False, slow_mo: int = 100):
                         # 尝试直接获取页面上的所有文本
                         body_text = await page.evaluate('() => document.body.innerText')
                         if 'Hana' in body_text:
-                            print(f"  [调试] 页面包含 'Hana'，但选择器未匹配")
+                            print("  [调试] 页面包含 'Hana'，但选择器未匹配")
                             # 尝试查找包含 Hana 的元素
                             hana_divs = await page.query_selector_all('div:has-text("Hana")')
                             print(f"  [调试] 找到 {len(hana_divs)} 个包含 Hana 的 div")
-                    except Exception as e:
+                    except Exception:
                         pass
 
                 if current_content and current_content != last_content:
@@ -272,9 +271,8 @@ def main():
         else:
             print("[WARN] 只有单块输出，可能不是流式")
         return 0
-    else:
-        print("\n[FAIL] 测试失败")
-        return 1
+    print("\n[FAIL] 测试失败")
+    return 1
 
 
 if __name__ == "__main__":

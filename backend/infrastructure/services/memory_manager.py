@@ -5,14 +5,14 @@ Memory Manager - 记忆管理器
 追加写入 memory.md，供后续对话注入 system prompt。
 """
 
-from typing import Any, Optional, List, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
 
-from backend.infrastructure.logging import get_logger
-from backend.domain.models.shared.config import MemoryConfig
 from backend.domain.models.api import MemoryStats
+from backend.domain.models.shared.config import MemoryConfig
 from backend.domain.models.shared.types import MessageDict
+from backend.infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
     from backend.infrastructure.event_bus import EventBus
@@ -40,8 +40,8 @@ class MemoryManager:
 
     def __init__(
         self,
-        event_bus: Optional['EventBus'] = None,
-        config: Optional[MemoryConfig] = None,
+        event_bus: Optional["EventBus"] = None,
+        config: MemoryConfig | None = None,
         memory_file: str = "memory.md",
     ):
         self._config = config or MemoryConfig()
@@ -60,7 +60,7 @@ class MemoryManager:
         dialog_id: str,
         messages: list[MessageDict],
         provider: Any = None,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         总结一次对话并追加到 memory.md。
 
@@ -73,10 +73,7 @@ class MemoryManager:
             写入的摘要文本，或 None（无内容可总结时）
         """
         # 过滤出用户/助手消息，跳过 system / tool
-        turns = [
-            m for m in messages
-            if m.get("role") in ("user", "assistant") and m.get("content")
-        ]
+        turns = [m for m in messages if m.get("role") in ("user", "assistant") and m.get("content")]
         if not turns:
             return None
 

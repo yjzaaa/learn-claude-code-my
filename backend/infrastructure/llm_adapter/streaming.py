@@ -3,14 +3,16 @@
 处理流式 LLM 响应的增量解析，支持内容累积、推理内容提取和统一事件发射。
 """
 
+from collections.abc import Callable
+from typing import Any
+
 from backend.infrastructure.logging import get_logger
-from typing import Any, Optional, Callable
 
 from .base import LLMResponseAdapter, StreamingParseResult
 from .models import (
-    StreamTextDeltaEvent,
-    StreamReasoningDeltaEvent,
     StreamMetadataEvent,
+    StreamReasoningDeltaEvent,
+    StreamTextDeltaEvent,
     TokenUsage,
 )
 
@@ -43,8 +45,8 @@ class StreamingParser:
         self._accumulated_content = ""
         self._accumulated_reasoning = ""
         self._is_finished = False
-        self._final_usage: Optional[TokenUsage] = None
-        self._model: Optional[str] = None
+        self._final_usage: TokenUsage | None = None
+        self._model: str | None = None
         self._metadata: dict = {}
         self._chunk_count = 0
 
@@ -77,14 +79,12 @@ class StreamingParser:
             return StreamingParseResult(
                 accumulated_content=self._accumulated_content,
                 accumulated_reasoning=self._accumulated_reasoning,
-                is_finished=True
+                is_finished=True,
             )
 
         try:
             result = self._adapter.parse_streaming_chunk(
-                chunk,
-                self._accumulated_content,
-                self._accumulated_reasoning
+                chunk, self._accumulated_content, self._accumulated_reasoning
             )
 
             # 更新累积状态
@@ -108,7 +108,7 @@ class StreamingParser:
                 reasoning_delta="",
                 accumulated_content=self._accumulated_content,
                 accumulated_reasoning=self._accumulated_reasoning,
-                is_finished=self._is_finished
+                is_finished=self._is_finished,
             )
 
     def parse_chunk_to_events(self, chunk: Any) -> list:
@@ -136,7 +136,7 @@ class StreamingParser:
 
         return events
 
-    def get_final_metadata(self) -> Optional[StreamMetadataEvent]:
+    def get_final_metadata(self) -> StreamMetadataEvent | None:
         """获取最终的元数据事件
 
         Returns:
@@ -150,10 +150,7 @@ class StreamingParser:
             model=self._model or "unknown",
             provider=self._adapter.provider_name,
             usage=self._final_usage,
-            metadata={
-                "chunk_count": self._chunk_count,
-                **self._metadata
-            }
+            metadata={"chunk_count": self._chunk_count, **self._metadata},
         )
 
     def set_model(self, model: str) -> None:
@@ -216,10 +213,7 @@ class StreamingEventEmitter:
         self._sequence = 0
 
     def emit_text_delta(
-        self,
-        delta: str,
-        accumulated: str,
-        broadcast_func: Optional[Callable] = None
+        self, delta: str, accumulated: str, broadcast_func: Callable | None = None
     ) -> StreamTextDeltaEvent:
         """发射文本增量事件
 
@@ -236,7 +230,7 @@ class StreamingEventEmitter:
             type="stream:text_delta",
             delta=delta,
             accumulated=accumulated,
-            accumulated_length=len(accumulated)
+            accumulated_length=len(accumulated),
         )
 
         if broadcast_func:
@@ -245,10 +239,7 @@ class StreamingEventEmitter:
         return event
 
     def emit_reasoning_delta(
-        self,
-        delta: str,
-        accumulated: str,
-        broadcast_func: Optional[Callable] = None
+        self, delta: str, accumulated: str, broadcast_func: Callable | None = None
     ) -> StreamReasoningDeltaEvent:
         """发射推理增量事件
 
@@ -265,7 +256,7 @@ class StreamingEventEmitter:
             type="stream:reasoning_delta",
             delta=delta,
             accumulated=accumulated,
-            accumulated_length=len(accumulated)
+            accumulated_length=len(accumulated),
         )
 
         if broadcast_func:
@@ -277,9 +268,9 @@ class StreamingEventEmitter:
         self,
         model: str,
         provider: str,
-        usage: Optional[TokenUsage],
+        usage: TokenUsage | None,
         metadata: dict,
-        broadcast_func: Optional[Callable] = None
+        broadcast_func: Callable | None = None,
     ) -> StreamMetadataEvent:
         """发射元数据事件
 
@@ -302,8 +293,8 @@ class StreamingEventEmitter:
                 "dialog_id": self._dialog_id,
                 "message_id": self._message_id,
                 "sequence": self._sequence,
-                **metadata
-            }
+                **metadata,
+            },
         )
 
         if broadcast_func:

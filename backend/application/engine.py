@@ -5,27 +5,27 @@ AgentEngine - Agent 核心引擎 (Facade)
 所有外部交互都通过此类，内部委托给各 Manager。
 """
 
-from typing import Any, Optional
+from typing import Any
 
+from backend.domain.models.shared.config import EngineConfig
 from backend.infrastructure.event_bus import EventBus
 from backend.infrastructure.logging import get_logger
-from backend.infrastructure.services.dialog_manager import DialogManager
-from backend.infrastructure.services.tool_manager import ToolManager
-from backend.infrastructure.services.state_manager import StateManager
-from backend.infrastructure.services.provider_manager import ProviderManager
-from backend.infrastructure.services.memory_manager import MemoryManager
-from backend.infrastructure.services.skill_manager import SkillManager
-from backend.domain.models.shared.config import EngineConfig
-from backend.infrastructure.plugins import PluginManager, CompactPlugin
+from backend.infrastructure.plugins import CompactPlugin, PluginManager
 from backend.infrastructure.runtime.base.mixins import (
+    DialogMixin,
     EventMixin,
+    HitlMixin,
+    LifecycleMixin,
     MemoryMixin,
     SkillMixin,
     ToolMixin,
-    LifecycleMixin,
-    HitlMixin,
-    DialogMixin,
 )
+from backend.infrastructure.services.dialog_manager import DialogManager
+from backend.infrastructure.services.memory_manager import MemoryManager
+from backend.infrastructure.services.provider_manager import ProviderManager
+from backend.infrastructure.services.skill_manager import SkillManager
+from backend.infrastructure.services.state_manager import StateManager
+from backend.infrastructure.services.tool_manager import ToolManager
 
 logger = get_logger(__name__)
 
@@ -61,7 +61,7 @@ class AgentEngine(
         await engine.shutdown()
     """
 
-    def __init__(self, config: Optional[dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         初始化引擎
 
@@ -86,39 +86,25 @@ class AgentEngine(
         # ═══════════════════════════════════════════════════
 
         # 状态管理器
-        self._state_mgr = StateManager(
-            config=self._config_obj.state
-        )
+        self._state_mgr = StateManager(config=self._config_obj.state)
 
         # Provider 管理器
-        self._provider_mgr = ProviderManager(
-            config=self._config_obj.provider
-        )
+        self._provider_mgr = ProviderManager(config=self._config_obj.provider)
 
         # 对话管理器
         self._dialog_mgr = DialogManager(
-            event_bus=self._event_bus,
-            state_manager=self._state_mgr,
-            config=self._config_obj.dialog
+            event_bus=self._event_bus, state_manager=self._state_mgr, config=self._config_obj.dialog
         )
 
         # 工具管理器
-        self._tool_mgr = ToolManager(
-            event_bus=self._event_bus,
-            config=self._config_obj.tools
-        )
+        self._tool_mgr = ToolManager(event_bus=self._event_bus, config=self._config_obj.tools)
 
         # 记忆管理器
-        self._memory_mgr = MemoryManager(
-            event_bus=self._event_bus,
-            config=self._config_obj.memory
-        )
+        self._memory_mgr = MemoryManager(event_bus=self._event_bus, config=self._config_obj.memory)
 
         # 技能管理器
         self._skill_mgr = SkillManager(
-            event_bus=self._event_bus,
-            tool_manager=self._tool_mgr,
-            config=self._config_obj.skills
+            event_bus=self._event_bus, tool_manager=self._tool_mgr, config=self._config_obj.skills
         )
 
         # 插件管理器
@@ -134,7 +120,7 @@ class AgentEngine(
                 name=spec.get("name", getattr(tool, "__name__", "")),
                 handler=tool,
                 description=spec.get("description", ""),
-                parameters=spec.get("parameters", {})
+                parameters=spec.get("parameters", {}),
             )
 
         logger.info("[AgentEngine] Initialized with all managers and plugins")

@@ -3,7 +3,6 @@ Dialog Repository Interface - 对话仓库接口
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from backend.domain.models.dialog.dialog import Dialog
 
@@ -32,7 +31,7 @@ class IDialogRepository(ABC):
         pass
 
     @abstractmethod
-    async def get(self, dialog_id: str) -> Optional[Dialog]:
+    async def get(self, dialog_id: str) -> Dialog | None:
         """获取对话
 
         Args:

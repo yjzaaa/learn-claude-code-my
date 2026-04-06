@@ -11,68 +11,67 @@ API Models - API 请求/响应模型
 """
 
 # 统计模型
-from .stats import MemoryStats, SkillStats, EventBusStats
+# 向后兼容别名
+from .compat import *  # noqa: F401,F403
 
 # 数据容器
 from .containers import (
-    ResultData,
-    ProposalData,
-    TodoListData,
-    Metadata,
     ItemData,
+    Metadata,
+    ProposalData,
+    ResultData,
+    TodoListData,
     ToolItem,
 )
 
 # 消息 DTOs
-from .messages import ToolCallFunctionDTO, ToolCallDTO, MessageDTO
+from .messages import MessageDTO, ToolCallDTO, ToolCallFunctionDTO
 
 # API 响应模型
+# Todo 相关
+# Skill 相关
+# 其他
 from .responses import (
+    AgentStatusData,
+    AgentStatusItem,
+    AgentStatusResponse,
+    CreateDialogResponse,
+    DecideSkillEditResponse,
+    DeleteDialogResponse,
+    GetDialogResponse,
+    GetMessagesResponse,
+    HealthResponse,
+    ListDialogsResponse,
+    PendingProposalsResponse,
+    PendingSkillEditsResponse,
+    ProviderSummary,
     ResultModel,
-    SendMessageData,
-    SendMessageResponse,
     ResumeData,
     ResumeDialogResponse,
-    AgentStatusItem,
-    AgentStatusData,
-    AgentStatusResponse,
-    StopAgentData,
-    StopAgentResponse,
+    SendMessageData,
+    SendMessageResponse,
+    SkillDetailResponse,
+    SkillEditProposalDTO,
     SkillItem,
     SkillListResponse,
-    PendingSkillEditsResponse,
-    DecideSkillEditResponse,
-    HealthResponse,
-    GetMessagesResponse,
-    ListDialogsResponse,
-    CreateDialogResponse,
-    GetDialogResponse,
-    DeleteDialogResponse,
+    StopAgentData,
+    StopAgentResponse,
+    TodoListResponse,
+    TodoStateDTO,
 )
 
 # SSE 事件
 from .sse_events import (
-    EventMetadata,
     BaseSSEEvent,
+    EventMetadata,
     SkillEditPendingEvent,
     SkillEditResolvedEvent,
-    TodoItemDTO,
-    TodoUpdatedEvent,
-    TodoReminderEvent,
     SSEEvent,
+    TodoItemDTO,
+    TodoReminderEvent,
+    TodoUpdatedEvent,
 )
-
-# Todo 相关
-from .responses import TodoStateDTO, TodoListResponse
-
-# Skill 相关
-from .responses import SkillDetailResponse, SkillEditProposalDTO, PendingProposalsResponse
-
-# 其他
-from .responses import ProviderSummary
-
-# 向后兼容别名
-from .compat import *  # noqa: F401,F403
+from .stats import EventBusStats, MemoryStats, SkillStats
 
 __all__ = [
     # 统计模型

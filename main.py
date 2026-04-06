@@ -7,13 +7,13 @@ main.py — 后端入口点（简化版）
 注意：主要逻辑已拆分到 backend/interfaces/http/app.py
 """
 
+import json
 import os
 import warnings
+from datetime import datetime
 
 # 尽早安装 warnings 处理器（在任何 Pydantic 导入之前）
 from pathlib import Path
-import json
-from datetime import datetime
 
 _warning_log_file = Path("logs/deep/serialization_warnings.jsonl")
 _warning_log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -43,6 +43,7 @@ def _custom_showwarning(message, category, filename, lineno, file=None, line=Non
 warnings.showwarning = _custom_showwarning
 
 import logging
+
 import uvicorn
 from loguru import logger
 
@@ -54,6 +55,7 @@ logging.basicConfig(
 
 # 创建 FastAPI 应用
 from backend.interfaces.http.app import create_app
+
 app = create_app()
 
 # 入口点

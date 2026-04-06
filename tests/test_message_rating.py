@@ -5,9 +5,9 @@
 流程：Red -> Green -> Refactor
 """
 
-import pytest
 from datetime import datetime
-from typing import Optional
+
+import pytest
 
 
 class TestMessageRating:
@@ -50,8 +50,9 @@ class TestMessageRating:
 
         def test_rating_score_must_be_integer(self):
             """测试评分必须是整数 - Pydantic 会处理类型验证"""
-            from backend.domain.models.message import MessageRating
             from pydantic import ValidationError
+
+            from backend.domain.models.message import MessageRating
 
             # Pydantic 会尝试转换，但 3.5 不能转为 int
             with pytest.raises(ValidationError):

@@ -3,23 +3,23 @@
 提供 Agent 状态查询和控制接口。
 """
 
-from typing import List, Optional
-from pydantic import BaseModel
 from fastapi import APIRouter
+from pydantic import BaseModel
 
-from backend.infrastructure.container import container
 from backend.domain.models.types import (
-    APIAgentStatusItem,
     APIAgentStatusData,
-    APIStopAgentData,
+    APIAgentStatusItem,
     APIResumeData,
+    APIStopAgentData,
 )
+from backend.infrastructure.container import container
 
 router = APIRouter()
 
 
 class ModelInfo(BaseModel):
     """模型信息"""
+
     id: str
     label: str
     provider: str
@@ -28,9 +28,10 @@ class ModelInfo(BaseModel):
 
 class ActiveModelResponse(BaseModel):
     """当前激活模型响应"""
+
     model: str
     provider: str
-    available_models: List[ModelInfo]
+    available_models: list[ModelInfo]
 
 
 @router.get("/api/config/models")
@@ -54,7 +55,7 @@ async def get_available_models():
             id=m["id"],
             label=m["label"],
             provider=m["provider"],
-            client_type=m.get("client_type", "ChatLiteLLM")
+            client_type=m.get("client_type", "ChatLiteLLM"),
         )
         for m in available_models_raw
     ]
@@ -64,8 +65,8 @@ async def get_available_models():
         "data": ActiveModelResponse(
             model=model_config.model,
             provider=model_config.provider,
-            available_models=available_models
-        )
+            available_models=available_models,
+        ),
     }
 
 
@@ -83,7 +84,7 @@ async def agent_status():
         "data": APIAgentStatusData(
             active_dialogs=active,
             total_dialogs=len(sessions),
-        )
+        ),
     }
 
 
@@ -98,9 +99,9 @@ async def stop_agent():
             await container.runtime.stop(dialog_id)
 
     # 更新状态并广播
-    from backend.interfaces.websocket.broadcast import broadcast
-    from backend.domain.utils import timestamp_ms
     from backend.domain.models.types import make_status_change
+    from backend.domain.utils import timestamp_ms
+    from backend.interfaces.websocket.broadcast import broadcast
 
     for k in stopped:
         container.set_status(k, "idle")
@@ -108,16 +109,10 @@ async def stop_agent():
         # 广播状态变更
         await broadcast(make_status_change(k, "thinking", "idle", timestamp_ms()))
 
-    return {
-        "success": True,
-        "data": APIStopAgentData(stopped_dialogs=stopped, count=len(stopped))
-    }
+    return {"success": True, "data": APIStopAgentData(stopped_dialogs=stopped, count=len(stopped))}
 
 
 @router.post("/api/dialogs/{dialog_id}/resume")
 async def resume_dialog(dialog_id: str):
     """恢复对话"""
-    return {
-        "success": True,
-        "data": APIResumeData(dialog_id=dialog_id, status="idle")
-    }
+    return {"success": True, "data": APIResumeData(dialog_id=dialog_id, status="idle")}

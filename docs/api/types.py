@@ -7,9 +7,9 @@ API 契约 - Python 类型定义
 @version 1.0.0
 """
 
-from typing import Any, Dict, List, Literal, Optional, Union
 from datetime import datetime
 from enum import Enum
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -92,7 +92,7 @@ class ErrorCode(str, Enum):
 
 
 # 错误码消息映射
-ERROR_MESSAGES: Dict[ErrorCode, str] = {
+ERROR_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.VALIDATION_001: "请求参数无效",
     ErrorCode.VALIDATION_002: "缺少必需参数",
     ErrorCode.NOT_FOUND_100: "对话不存在",
@@ -119,11 +119,11 @@ class ToolCall(BaseModel):
     """工具调用"""
     id: str = Field(..., description="工具调用 ID")
     name: str = Field(..., description="工具名称")
-    arguments: Dict[str, Any] = Field(..., description="工具参数")
+    arguments: dict[str, Any] = Field(..., description="工具参数")
     status: ToolCallStatus = Field(..., description="执行状态")
-    result: Optional[str] = Field(None, description="执行结果")
-    started_at: Optional[str] = Field(None, description="开始时间")
-    completed_at: Optional[str] = Field(None, description="完成时间")
+    result: str | None = Field(None, description="执行结果")
+    started_at: str | None = Field(None, description="开始时间")
+    completed_at: str | None = Field(None, description="完成时间")
 
 
 class Message(BaseModel):
@@ -136,13 +136,13 @@ class Message(BaseModel):
     timestamp: str = Field(..., description="时间戳")
 
     # Assistant only
-    tool_calls: Optional[List[ToolCall]] = Field(None, description="工具调用列表")
-    reasoning_content: Optional[str] = Field(None, description="推理内容")
-    agent_name: Optional[str] = Field(None, description="Agent 名称")
+    tool_calls: list[ToolCall] | None = Field(None, description="工具调用列表")
+    reasoning_content: str | None = Field(None, description="推理内容")
+    agent_name: str | None = Field(None, description="Agent 名称")
 
     # Tool only
-    tool_call_id: Optional[str] = Field(None, description="关联工具调用 ID")
-    tool_name: Optional[str] = Field(None, description="工具名称")
+    tool_call_id: str | None = Field(None, description="关联工具调用 ID")
+    tool_name: str | None = Field(None, description="工具名称")
 
 
 class StreamingMessage(BaseModel):
@@ -154,8 +154,8 @@ class StreamingMessage(BaseModel):
     status: Literal["streaming"] = Field("streaming", description="消息状态")
     timestamp: str = Field(..., description="时间戳")
     agent_name: str = Field(..., description="Agent 名称")
-    reasoning_content: Optional[str] = Field(None, description="推理内容")
-    tool_calls: Optional[List[ToolCall]] = Field(None, description="工具调用列表")
+    reasoning_content: str | None = Field(None, description="推理内容")
+    tool_calls: list[ToolCall] | None = Field(None, description="工具调用列表")
 
 
 class DialogMetadata(BaseModel):
@@ -171,8 +171,8 @@ class DialogSession(BaseModel):
     id: str = Field(..., description="对话 ID")
     title: str = Field(..., description="对话标题")
     status: DialogStatus = Field(..., description="对话状态")
-    messages: List[Message] = Field(..., description="消息列表")
-    streaming_message: Optional[StreamingMessage] = Field(None, description="流式消息")
+    messages: list[Message] = Field(..., description="消息列表")
+    streaming_message: StreamingMessage | None = Field(None, description="流式消息")
     metadata: DialogMetadata = Field(..., description="元数据")
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
@@ -208,7 +208,7 @@ class SkillItem(BaseModel):
 
 class CreateDialogRequest(BaseModel):
     """创建对话请求"""
-    title: Optional[str] = Field("New Dialog", description="对话标题")
+    title: str | None = Field("New Dialog", description="对话标题")
 
 
 class SendMessageRequest(BaseModel):
@@ -235,7 +235,7 @@ class HealthResponse(BaseResponse):
 
 class ListDialogsResponse(BaseResponse):
     """对话列表响应"""
-    data: List[DialogSession] = Field(..., description="对话列表")
+    data: list[DialogSession] = Field(..., description="对话列表")
 
 
 class CreateDialogResponse(BaseResponse):
@@ -255,7 +255,7 @@ class DeleteDialogResponse(BaseResponse):
 
 class GetMessagesData(BaseModel):
     """获取消息数据"""
-    items: List[Message] = Field(..., description="消息列表")
+    items: list[Message] = Field(..., description="消息列表")
 
 
 class GetMessagesResponse(BaseResponse):
@@ -293,7 +293,7 @@ class AgentStatusItem(BaseModel):
 
 class AgentStatusData(BaseModel):
     """Agent 状态数据"""
-    active_dialogs: List[AgentStatusItem] = Field(..., description="活跃对话列表")
+    active_dialogs: list[AgentStatusItem] = Field(..., description="活跃对话列表")
     total_dialogs: int = Field(..., description="对话总数")
 
 
@@ -304,7 +304,7 @@ class AgentStatusResponse(BaseResponse):
 
 class StopAgentData(BaseModel):
     """停止 Agent 数据"""
-    stopped_dialogs: List[str] = Field(..., description="停止的对话 ID 列表")
+    stopped_dialogs: list[str] = Field(..., description="停止的对话 ID 列表")
     count: int = Field(..., description="停止的对话数量")
 
 
@@ -315,12 +315,12 @@ class StopAgentResponse(BaseResponse):
 
 class SkillListResponse(BaseResponse):
     """技能列表响应"""
-    data: List[SkillItem] = Field(..., description="技能列表")
+    data: list[SkillItem] = Field(..., description="技能列表")
 
 
 class PendingSkillEditsData(BaseModel):
     """待处理技能编辑数据"""
-    proposals: List[Dict[str, Any]] = Field(default_factory=list, description="提案列表")
+    proposals: list[dict[str, Any]] = Field(default_factory=list, description="提案列表")
 
 
 class PendingSkillEditsResponse(BaseResponse):
@@ -336,7 +336,7 @@ class PendingSkillEditsResponse(BaseResponse):
 class ClientMessage(BaseModel):
     """基础客户端消息"""
     type: str = Field(..., description="消息类型")
-    timestamp: Optional[int] = Field(None, description="客户端时间戳")
+    timestamp: int | None = Field(None, description="客户端时间戳")
 
     class Config:
         # 允许子类覆盖字段类型
@@ -347,7 +347,7 @@ class SubscribeRequest(ClientMessage):
     """订阅请求"""
     type: Literal["subscribe"] = "subscribe"
     dialog_id: str = Field(..., description="对话 ID")
-    last_known_message_id: Optional[str] = Field(None, description="最后已知消息 ID")
+    last_known_message_id: str | None = Field(None, description="最后已知消息 ID")
 
 
 class UnsubscribeRequest(ClientMessage):
@@ -373,7 +373,7 @@ class SyncRequest(ClientMessage):
     """同步请求"""
     type: Literal["sync:request"] = "sync:request"
     dialog_id: str = Field(..., description="对话 ID")
-    last_sync_at: Optional[int] = Field(None, description="最后同步时间戳")
+    last_sync_at: int | None = Field(None, description="最后同步时间戳")
 
 
 # 客户端请求联合类型
@@ -409,13 +409,13 @@ class StreamStartEvent(ServerMessage):
     dialog_id: str = Field(..., description="对话 ID")
     message_id: str = Field(..., description="消息 ID")
     role: MessageRole = Field(..., description="消息角色")
-    metadata: Optional[Dict[str, str]] = Field(None, description="元数据")
+    metadata: dict[str, str] | None = Field(None, description="元数据")
 
 
 class StreamDeltaData(BaseModel):
     """流增量数据"""
     content: str = Field(..., description="内容增量")
-    reasoning: Optional[str] = Field(None, description="推理内容增量")
+    reasoning: str | None = Field(None, description="推理内容增量")
 
 
 class StreamDeltaEvent(ServerMessage):
@@ -441,7 +441,7 @@ class StreamEndEvent(ServerMessage):
     dialog_id: str = Field(..., description="对话 ID")
     message_id: str = Field(..., description="消息 ID")
     final_content: str = Field(..., description="最终内容")
-    usage: Optional[TokenUsage] = Field(None, description="Token 使用量")
+    usage: TokenUsage | None = Field(None, description="Token 使用量")
 
 
 class StreamResumedEvent(ServerMessage):
@@ -484,7 +484,7 @@ class TodoUpdatedEvent(ServerMessage):
     """Todo 更新事件"""
     type: Literal["todo:updated"] = "todo:updated"
     dialog_id: str = Field(..., description="对话 ID")
-    todos: List[TodoItem] = Field(..., description="Todo 列表")
+    todos: list[TodoItem] = Field(..., description="Todo 列表")
     rounds_since_todo: int = Field(0, description="距离上次更新 todo 的轮次")
 
 
@@ -500,14 +500,14 @@ class ErrorDetail(BaseModel):
     """错误详情"""
     code: str = Field(..., description="错误码")
     message: str = Field(..., description="错误消息")
-    details: Optional[Any] = Field(None, description="额外详情")
+    details: Any | None = Field(None, description="额外详情")
 
 
 class ErrorEvent(ServerMessage):
     """错误事件"""
     type: Literal["error"] = "error"
-    dialog_id: Optional[str] = Field(None, description="对话 ID")
-    message_id: Optional[str] = Field(None, description="消息 ID")
+    dialog_id: str | None = Field(None, description="对话 ID")
+    message_id: str | None = Field(None, description="消息 ID")
     error: ErrorDetail = Field(..., description="错误详情")
 
 
@@ -516,8 +516,8 @@ class AckEvent(ServerMessage):
     type: Literal["ack"] = "ack"
     dialog_id: str = Field(..., description="对话 ID")
     client_id: str = Field(..., description="客户端 ID")
-    server_id: Optional[str] = Field(None, description="服务端消息 ID")
-    message: Optional[Any] = Field(None, description="消息数据")
+    server_id: str | None = Field(None, description="服务端消息 ID")
+    message: Any | None = Field(None, description="消息数据")
 
 
 class PongEvent(ServerMessage):
@@ -553,7 +553,7 @@ def get_error_message(code: ErrorCode) -> str:
     return ERROR_MESSAGES.get(code, "未知错误")
 
 
-def create_error_response(code: ErrorCode, details: Optional[Any] = None) -> ErrorEvent:
+def create_error_response(code: ErrorCode, details: Any | None = None) -> ErrorEvent:
     """创建错误事件"""
     return ErrorEvent(
         type="error",

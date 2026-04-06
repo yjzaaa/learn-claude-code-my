@@ -12,22 +12,22 @@
 
 import asyncio
 import json
-from typing import Optional, Callable, Awaitable, Dict, Any
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from backend.infrastructure.logging import get_logger
-from backend.domain.utils import SnapshotBuilder
 
-from .session import DialogSession, SessionStatus, SessionMetadata, StreamingContext
-from .exceptions import SessionNotFoundError, SessionFullError, InvalidTransitionError
+from .event_emitter import EventEmitter
+from .exceptions import SessionNotFoundError
+from .message_ops import MessageOperations
+from .session import DialogSession, SessionStatus, StreamingContext
 
 # 子模块
-from .session_lifecycle import SessionLifecycleManager, SessionEvent
-from .message_ops import MessageOperations
-from .event_emitter import EventEmitter
+from .session_lifecycle import SessionEvent, SessionLifecycleManager
 from .snapshot import SnapshotManager
 
 logger = get_logger(__name__)
@@ -53,7 +53,7 @@ class DialogSessionManager:
         self,
         max_sessions: int = 100,
         session_ttl_seconds: int = 1800,
-        event_handler: Optional[EventHandler] = None,
+        event_handler: EventHandler | None = None,
     ):
         self._max_sessions = max_sessions
         self._session_ttl = session_ttl_seconds
@@ -75,22 +75,22 @@ class DialogSessionManager:
         self._memory_dump_file = Path("logs/session_memory.json")
 
         # 清理任务
-        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_task: asyncio.Task | None = None
 
     # ==================== 委托给 SessionLifecycleManager ====================
 
-    async def create_session(self, dialog_id: str, title: Optional[str] = None) -> DialogSession:
+    async def create_session(self, dialog_id: str, title: str | None = None) -> DialogSession:
         """创建新会话"""
         session = await self._lifecycle.create_session(dialog_id, title)
         self._debug_log(dialog_id, "create_session")
         self.dump_memory()
         return session
 
-    def get_session_sync(self, dialog_id: str) -> Optional[DialogSession]:
+    def get_session_sync(self, dialog_id: str) -> DialogSession | None:
         """同步获取会话"""
         return self._lifecycle.get_session_sync(dialog_id)
 
-    async def get_session(self, dialog_id: str) -> Optional[DialogSession]:
+    async def get_session(self, dialog_id: str) -> DialogSession | None:
         """获取会话"""
         return await self._lifecycle.get_session(dialog_id)
 
@@ -102,7 +102,7 @@ class DialogSessionManager:
         self,
         dialog_id: str,
         to_status: SessionStatus,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
     ) -> DialogSession:
         """状态转换"""
         return await self._lifecycle.transition(dialog_id, to_status, context)
@@ -113,7 +113,7 @@ class DialogSessionManager:
         self,
         dialog_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> HumanMessage:
         """添加用户消息"""
         session = await self._require_session(dialog_id)
@@ -126,7 +126,7 @@ class DialogSessionManager:
         self,
         dialog_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AIMessage:
         """添加助手消息"""
         session = await self._require_session(dialog_id)
@@ -140,7 +140,7 @@ class DialogSessionManager:
         dialog_id: str,
         tool_call_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ToolMessage:
         """添加工具执行结果"""
         session = await self._require_session(dialog_id)
@@ -152,7 +152,7 @@ class DialogSessionManager:
     async def get_messages(
         self,
         dialog_id: str,
-        limit: Optional[int] = None,
+        limit: int | None = None,
     ) -> list:
         """获取消息列表"""
         session = await self._require_session(dialog_id)
@@ -173,7 +173,7 @@ class DialogSessionManager:
         self,
         dialog_id: str,
         delta: str,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> None:
         """转发内容 delta"""
         await self._event_emitter.emit_delta(dialog_id, delta, message_id)
@@ -182,7 +182,7 @@ class DialogSessionManager:
         self,
         dialog_id: str,
         reasoning: str,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> None:
         """转发推理 delta"""
         await self._event_emitter.emit_reasoning_delta(dialog_id, reasoning, message_id)
@@ -207,13 +207,15 @@ class DialogSessionManager:
         dialog_id: str,
         message_id: str,
         content: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> AIMessage:
         """完成 AI 响应"""
         session = await self._require_session(dialog_id)
 
         if session.streaming_context and session.streaming_context.message_id != message_id:
-            logger.warning(f"[SessionManager] Message ID mismatch: expected {session.streaming_context.message_id}, got {message_id}")
+            logger.warning(
+                f"[SessionManager] Message ID mismatch: expected {session.streaming_context.message_id}, got {message_id}"
+            )
 
         msg = await self._msg_ops.add_assistant_message(session, content, metadata)
         session.streaming_context = None
@@ -226,7 +228,7 @@ class DialogSessionManager:
 
     # ==================== 委托给 SnapshotManager ====================
 
-    def build_snapshot(self, dialog_id: str) -> Optional[Dict[str, Any]]:
+    def build_snapshot(self, dialog_id: str) -> dict[str, Any] | None:
         """构建前端快照"""
         session = self._lifecycle.get_session_sync(dialog_id)
         return self._snapshot_mgr.build_snapshot(session)
@@ -312,31 +314,39 @@ class DialogSessionManager:
             memory_state = {
                 "timestamp": datetime.now().isoformat(),
                 "session_count": len(self.list_sessions()),
-                "sessions": {}
+                "sessions": {},
             }
             for session in self.list_sessions():
                 messages = []
                 for msg in session.history.messages:
-                    role = "user" if isinstance(msg, HumanMessage) else "assistant" if isinstance(msg, AIMessage) else "tool"
-                    messages.append({
-                        "type": msg.type,
-                        "role": role,
-                        "content": msg.content[:200] if msg.content else "",
-                    })
+                    role = (
+                        "user"
+                        if isinstance(msg, HumanMessage)
+                        else "assistant"
+                        if isinstance(msg, AIMessage)
+                        else "tool"
+                    )
+                    messages.append(
+                        {
+                            "type": msg.type,
+                            "role": role,
+                            "content": msg.content[:200] if msg.content else "",
+                        }
+                    )
                 memory_state["sessions"][session.dialog_id] = {
                     "status": session.status.value,
                     "message_count": len(messages),
                     "messages": messages,
-                    "streaming_context": {
-                        "message_id": session.streaming_context.message_id
-                    } if session.streaming_context else None,
+                    "streaming_context": {"message_id": session.streaming_context.message_id}
+                    if session.streaming_context
+                    else None,
                 }
             with open(self._memory_dump_file, "w", encoding="utf-8") as f:
                 json.dump(memory_state, f, ensure_ascii=False, indent=2, default=str)
         except Exception as e:
             logger.debug(f"[SessionManager] Memory dump error: {e}")
 
-    def save_checkpoint_snapshot(self, checkpoint_data: Dict[str, Any]) -> Optional[str]:
+    def save_checkpoint_snapshot(self, checkpoint_data: dict[str, Any]) -> str | None:
         """保存 checkpoint 快照"""
         if not checkpoint_data or not checkpoint_data.get("checkpoint_exists"):
             return None

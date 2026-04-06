@@ -3,10 +3,10 @@
 处理 Kimi (Moonshot) API 的响应格式。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ..base import LLMResponseAdapter, StreamingParseResult
-from ..models import UnifiedLLMResponse, TokenUsage
+from ..models import TokenUsage, UnifiedLLMResponse
 
 
 class KimiAdapter(LLMResponseAdapter):
@@ -56,7 +56,7 @@ class KimiAdapter(LLMResponseAdapter):
                 meta = raw_response.usage_metadata
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=meta.get("input_tokens"),
-                    completion_tokens=meta.get("output_tokens")
+                    completion_tokens=meta.get("output_tokens"),
                 )
 
             # 标准化模型名称
@@ -68,7 +68,7 @@ class KimiAdapter(LLMResponseAdapter):
                 model=normalized_model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 处理字典格式
@@ -93,7 +93,7 @@ class KimiAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -102,7 +102,7 @@ class KimiAdapter(LLMResponseAdapter):
                 model=normalized_model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 默认处理
@@ -110,14 +110,11 @@ class KimiAdapter(LLMResponseAdapter):
             content=str(raw_response),
             model="kimi-unknown",
             provider=self.provider_name,
-            metadata={"raw_type": type(raw_response).__name__}
+            metadata={"raw_type": type(raw_response).__name__},
         )
 
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> StreamingParseResult:
         """解析 Kimi 流式响应 chunk
 
@@ -164,7 +161,7 @@ class KimiAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
         new_accumulated_content = accumulated_content + content_delta
@@ -176,7 +173,7 @@ class KimiAdapter(LLMResponseAdapter):
             accumulated_content=new_accumulated_content,
             accumulated_reasoning=new_accumulated_reasoning,
             is_finished=is_finished,
-            usage=usage
+            usage=usage,
         )
 
     def _normalize_model_name(self, model: str) -> str:

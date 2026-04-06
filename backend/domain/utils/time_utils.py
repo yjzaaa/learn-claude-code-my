@@ -4,8 +4,7 @@
 """
 
 import time
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 
 class TimeUtils:
@@ -46,7 +45,7 @@ class TimeUtils:
         return int(time.time())
 
     @staticmethod
-    def iso_timestamp(dt: Optional[datetime] = None) -> str:
+    def iso_timestamp(dt: datetime | None = None) -> str:
         """获取 ISO 格式时间戳
 
         Args:
@@ -60,7 +59,7 @@ class TimeUtils:
             '2024-01-01T00:00:00+00:00'
         """
         if dt is None:
-            dt = datetime.now(timezone.utc)
+            dt = datetime.now(UTC)
         return dt.isoformat()
 
     @staticmethod
@@ -74,7 +73,7 @@ class TimeUtils:
             >>> TimeUtils.iso_timestamp_now()
             '2024-01-01T00:00:00+00:00'
         """
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def from_timestamp_ms(ts_ms: int) -> datetime:
@@ -89,7 +88,7 @@ class TimeUtils:
         Example:
             >>> dt = TimeUtils.from_timestamp_ms(1704067200000)
         """
-        return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+        return datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
 
 
 # 便捷函数，用于快速导入

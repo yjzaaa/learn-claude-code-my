@@ -6,11 +6,8 @@ Model Discovery - 模型发现服务
 """
 
 import asyncio
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
-from datetime import datetime
 
 from backend.infrastructure.logging import get_logger
 
@@ -20,25 +17,27 @@ logger = get_logger(__name__)
 @dataclass
 class Credential:
     """API 凭证"""
+
     key_var: str
     api_key: str
-    url_var: Optional[str]
-    base_url: Optional[str]
+    url_var: str | None
+    base_url: str | None
 
 
 @dataclass
 class ModelConfig:
     """发现的模型配置"""
+
     model_id: str
     key_var: str
     api_key: str
-    base_url: Optional[str]
+    base_url: str | None
     client_type: str
     provider: str
     response_time_ms: float = 0.0
 
 
-def discover_credentials(project_root: Optional[Path] = None) -> list[Credential]:
+def discover_credentials(project_root: Path | None = None) -> list[Credential]:
     """从 .env 文件发现所有配置的 API key"""
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent.parent.parent
@@ -51,7 +50,7 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
 
     configured_keys: dict[str, str] = {}
 
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line_stripped = line.strip()
             if not line_stripped or "=" not in line:
@@ -75,7 +74,7 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
         url_var = f"{base_key}_BASE_URL"
 
         base_url = None
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             for line in f:
                 line_stripped = line.strip()
                 if line_stripped.startswith(url_var + "="):
@@ -83,17 +82,19 @@ def discover_credentials(project_root: Optional[Path] = None) -> list[Credential
                     base_url = url_val.strip().strip('"').strip("'")
                     break
 
-        credentials.append(Credential(
-            key_var=key,
-            api_key=value,
-            url_var=url_var if base_url else None,
-            base_url=base_url,
-        ))
+        credentials.append(
+            Credential(
+                key_var=key,
+                api_key=value,
+                url_var=url_var if base_url else None,
+                base_url=base_url,
+            )
+        )
 
     return credentials
 
 
-def detect_provider_from_url(base_url: Optional[str]) -> Optional[str]:
+def detect_provider_from_url(base_url: str | None) -> str | None:
     """从 URL 检测 provider 名称"""
     if not base_url:
         return None
@@ -155,14 +156,14 @@ async def _test_with_timeout(model, timeout: float = 10.0) -> tuple[bool, str]:
 
             full_response = "".join(response_chunks).strip()
             return bool(full_response), full_response
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return False, "timeout"
 
 
-async def _try_chatlitellm(model_name: str, api_key: str, base_url: Optional[str]):
+async def _try_chatlitellm(model_name: str, api_key: str, base_url: str | None):
     """尝试使用 ChatLiteLLM 创建模型"""
-    from langchain_community.chat_models import ChatLiteLLM
     import litellm
+    from langchain_community.chat_models import ChatLiteLLM
 
     litellm.suppress_debug_info = True
     litellm.set_verbose = False
@@ -179,7 +180,7 @@ async def _try_chatlitellm(model_name: str, api_key: str, base_url: Optional[str
     return ChatLiteLLM(**kwargs)
 
 
-async def _try_chatanthropic(model_name: str, api_key: str, base_url: Optional[str]):
+async def _try_chatanthropic(model_name: str, api_key: str, base_url: str | None):
     """尝试使用 ChatAnthropic 创建模型"""
     from langchain_anthropic import ChatAnthropic
 
@@ -196,13 +197,14 @@ async def _try_chatanthropic(model_name: str, api_key: str, base_url: Optional[s
 async def test_single_model(
     model_name: str,
     api_key: str,
-    base_url: Optional[str],
+    base_url: str | None,
     provider: str,
-) -> Optional[ModelConfig]:
+) -> ModelConfig | None:
     """
     测试单个模型配置，带超时控制
     """
     import time
+
     start_time = time.time()
 
     # 步骤 1: 尝试 ChatLiteLLM（10秒超时）
@@ -225,9 +227,9 @@ async def test_single_model(
 
     # 步骤 2: 尝试 ChatAnthropic（仅适用于 anthropic/kimi，10秒超时）
     should_try_anthropic = (
-        provider in ("anthropic", "kimi") or
-        "claude" in model_name.lower() or
-        "kimi" in model_name.lower()
+        provider in ("anthropic", "kimi")
+        or "claude" in model_name.lower()
+        or "kimi" in model_name.lower()
     )
 
     if should_try_anthropic:
@@ -251,7 +253,7 @@ async def test_single_model(
     return None
 
 
-async def discover_available_models(project_root: Optional[Path] = None) -> list[ModelConfig]:
+async def discover_available_models(project_root: Path | None = None) -> list[ModelConfig]:
     """
     发现所有可用的模型配置（优化版本）
 
@@ -292,7 +294,9 @@ async def discover_available_models(project_root: Optional[Path] = None) -> list
                 if config:
                     config.key_var = cred.key_var
                     configs.append(config)
-                    logger.info(f"[ModelDiscovery] ✓ {model_name} ({config.client_type}, {config.response_time_ms:.0f}ms)")
+                    logger.info(
+                        f"[ModelDiscovery] ✓ {model_name} ({config.client_type}, {config.response_time_ms:.0f}ms)"
+                    )
 
         return configs
 

@@ -3,10 +3,10 @@
 处理 OpenAI API 的标准响应格式。
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ..base import LLMResponseAdapter, StreamingParseResult
-from ..models import UnifiedLLMResponse, TokenUsage
+from ..models import TokenUsage, UnifiedLLMResponse
 
 
 class OpenAIAdapter(LLMResponseAdapter):
@@ -52,7 +52,7 @@ class OpenAIAdapter(LLMResponseAdapter):
                 meta = raw_response.usage_metadata
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=meta.get("input_tokens"),
-                    completion_tokens=meta.get("output_tokens")
+                    completion_tokens=meta.get("output_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -60,7 +60,7 @@ class OpenAIAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 处理字典格式
@@ -82,7 +82,7 @@ class OpenAIAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
             return UnifiedLLMResponse(
@@ -90,7 +90,7 @@ class OpenAIAdapter(LLMResponseAdapter):
                 model=model,
                 provider=self.provider_name,
                 usage=usage,
-                metadata=self._extract_metadata(raw_response)
+                metadata=self._extract_metadata(raw_response),
             )
 
         # 默认处理
@@ -98,14 +98,11 @@ class OpenAIAdapter(LLMResponseAdapter):
             content=str(raw_response),
             model="gpt-unknown",
             provider=self.provider_name,
-            metadata={"raw_type": type(raw_response).__name__}
+            metadata={"raw_type": type(raw_response).__name__},
         )
 
     def parse_streaming_chunk(
-        self,
-        chunk: Any,
-        accumulated_content: str = "",
-        accumulated_reasoning: str = ""
+        self, chunk: Any, accumulated_content: str = "", accumulated_reasoning: str = ""
     ) -> StreamingParseResult:
         """解析 OpenAI 流式响应 chunk
 
@@ -144,7 +141,7 @@ class OpenAIAdapter(LLMResponseAdapter):
                 usage = TokenUsage.from_openai_format(
                     prompt_tokens=usage_data.get("prompt_tokens"),
                     completion_tokens=usage_data.get("completion_tokens"),
-                    total_tokens=usage_data.get("total_tokens")
+                    total_tokens=usage_data.get("total_tokens"),
                 )
 
         new_accumulated_content = accumulated_content + content_delta
@@ -154,7 +151,7 @@ class OpenAIAdapter(LLMResponseAdapter):
             accumulated_content=new_accumulated_content,
             accumulated_reasoning=accumulated_reasoning,
             is_finished=is_finished,
-            usage=usage
+            usage=usage,
         )
 
     def _extract_metadata(self, raw_response: Any) -> dict:
