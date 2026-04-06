@@ -246,7 +246,7 @@ class EventHandlers:
                         )
                     )
 
-                elif runtime_event.type == "complete" or runtime_event.type == "text_complete":
+                elif runtime_event.type in ("complete", "text_complete", "message_complete"):
                     # 发送完成事件
                     if self.event_bus:
                         await self.event_bus.emit(

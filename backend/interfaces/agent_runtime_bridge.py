@@ -8,22 +8,28 @@ Agent Runtime Bridge - AgentRuntime 桥接层
 
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Optional, Dict
+from datetime import UTC, datetime
+from typing import Any
 
-from loguru import logger
 from langchain_core.messages import BaseMessage, message_to_dict
+from loguru import logger
 from pydantic import BaseModel
 
-from backend.infrastructure.protocols.interfaces import IAgentRuntimeBridge
-from backend.infrastructure.runtime.interfaces import IAgentRuntime
 from backend.domain.models import (
-    CustomHumanMessage,
     CustomAIMessage,
     make_status_change,
 )
-from backend.domain.models.shared.types import OpenAIToolCall, OpenAIFunction
-from backend.domain.models.events.websocket import WSDialogSnapshot, WSDialogMetadata, WSSnapshotEvent, WSErrorEvent, WSErrorDetail, WSHitlRequestEvent
+from backend.domain.models.events.websocket import (
+    WSDialogMetadata,
+    WSDialogSnapshot,
+    WSErrorDetail,
+    WSErrorEvent,
+    WSHitlRequestEvent,
+    WSSnapshotEvent,
+)
+from backend.domain.models.shared.types import OpenAIFunction, OpenAIToolCall
+from backend.infrastructure.protocols.interfaces import IAgentRuntimeBridge
+from backend.infrastructure.runtime.interfaces import IAgentRuntime
 from backend.interfaces.websocket import ws_broadcaster
 
 
@@ -46,7 +52,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
     - 支持更丰富的流式事件（工具调用、HITL 等）
     """
 
-    def __init__(self, runtime: Optional[IAgentRuntime] = None):
+    def __init__(self, runtime: IAgentRuntime | None = None):
         """
         初始化桥接层
 
@@ -59,7 +65,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         # dialog_id → "idle" | "thinking" | "completed" | "error"
         self._status: dict[str, str] = dict()  # noqa: bare-dict
         # dialog_id → current streaming CustomAIMessage (or None)
-        self._streaming_msg: dict[str, Optional[CustomAIMessage]] = dict()  # noqa: bare-dict
+        self._streaming_msg: dict[str, CustomAIMessage | None] = dict()  # noqa: bare-dict
         # dialog_id → message_id → chunk_index (用于检查点)
         self._chunk_counters: dict[str, dict[str, int]] = dict()  # noqa: bare-dict
         # dialog_id → message_id → accumulated_content (用于恢复)
@@ -69,13 +75,13 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
 
     def _iso(self) -> str:
         """ISO 格式时间戳"""
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     def _ts(self) -> int:
         """毫秒时间戳"""
         return self._bcast._ts()
 
-    async def _broadcast(self, event: Any, dialog_id: Optional[str] = None) -> None:
+    async def _broadcast(self, event: Any, dialog_id: str | None = None) -> None:
         """广播事件到 WebSocket 客户端"""
         await self._bcast.broadcast(event, dialog_id)
 
@@ -85,7 +91,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         return self._bcast.connection_manager
 
     @property
-    def runtime(self) -> Optional[IAgentRuntime]:
+    def runtime(self) -> IAgentRuntime | None:
         """获取当前 Runtime 实例"""
         return self._runtime
 
@@ -99,7 +105,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         self._runtime = runtime
         logger.info("[AgentRuntimeBridge] Runtime injected: %s", runtime.runtime_id)
 
-    async def initialize_runtime(self, config: Optional[dict[str, Any]] = None) -> IAgentRuntime:  # noqa: bare-dict
+    async def initialize_runtime(self, config: dict[str, Any] | None = None) -> IAgentRuntime:  # noqa: bare-dict
         """
         初始化 Runtime（如果未提供）- 向后兼容
 
@@ -124,7 +130,9 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                 config=engine_config,
             )
             # 注意：这里只创建但不初始化，初始化由调用方负责
-            logger.info("[AgentRuntimeBridge] Runtime created via AgentRuntimeFactory (not initialized)")
+            logger.info(
+                "[AgentRuntimeBridge] Runtime created via AgentRuntimeFactory (not initialized)"
+            )
         return self._runtime
 
     async def shutdown_runtime(self) -> None:
@@ -138,7 +146,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         """转换 BaseMessage 为字典（LangChain 格式）"""
         return message_to_dict(msg)
 
-    def _dialog_to_snapshot(self, dialog_id: str) -> Optional[WSDialogSnapshot]:
+    def _dialog_to_snapshot(self, dialog_id: str) -> WSDialogSnapshot | None:
         """转换 Dialog 为快照模型"""
         if not self._runtime:
             return None
@@ -150,24 +158,24 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         # 处理 BaseModel、Dialog 类或 dict 类型的 dialog
         if isinstance(dialog, BaseModel):
             dialog_data = dialog.model_dump()
-            dialog_id_val = getattr(dialog, 'id', dialog_data.get('id'))
-            dialog_title = getattr(dialog, 'title', dialog_data.get('title', 'New Dialog'))
-            messages = getattr(dialog, 'messages', dialog_data.get('messages', []))
-            created_at = getattr(dialog, 'created_at', dialog_data.get('created_at'))
-            updated_at = getattr(dialog, 'updated_at', dialog_data.get('updated_at'))
-        elif hasattr(dialog, 'id') and hasattr(dialog, 'messages'):
+            dialog_id_val = getattr(dialog, "id", dialog_data.get("id"))
+            dialog_title = getattr(dialog, "title", dialog_data.get("title", "New Dialog"))
+            messages = getattr(dialog, "messages", dialog_data.get("messages", []))
+            created_at = getattr(dialog, "created_at", dialog_data.get("created_at"))
+            updated_at = getattr(dialog, "updated_at", dialog_data.get("updated_at"))
+        elif hasattr(dialog, "id") and hasattr(dialog, "messages"):
             # Dialog 类或其他类似对象
-            dialog_id_val = getattr(dialog, 'id', None)
-            dialog_title = getattr(dialog, 'title', 'New Dialog')
-            messages = getattr(dialog, 'messages', [])
-            created_at = getattr(dialog, 'created_at', None)
-            updated_at = getattr(dialog, 'updated_at', None)
+            dialog_id_val = getattr(dialog, "id", None)
+            dialog_title = getattr(dialog, "title", "New Dialog")
+            messages = getattr(dialog, "messages", [])
+            created_at = getattr(dialog, "created_at", None)
+            updated_at = getattr(dialog, "updated_at", None)
         else:
-            dialog_id_val = dialog.get('id')
-            dialog_title = dialog.get('title', 'New Dialog')
-            messages = dialog.get('messages', [])
-            created_at = dialog.get('created_at')
-            updated_at = dialog.get('updated_at')
+            dialog_id_val = dialog.get("id")
+            dialog_title = dialog.get("title", "New Dialog")
+            messages = dialog.get("messages", [])
+            created_at = dialog.get("created_at")
+            updated_at = dialog.get("updated_at")
 
         # 使用 message_to_dict 序列化所有消息
         msgs = [self._make_message_dict(m) for m in messages]
@@ -175,6 +183,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         # 构建流式消息
         streaming_msg = self._streaming_msg.get(dialog_id)
         from backend.domain.models.events.websocket import WSStreamingMessage
+
         ws_streaming = None
         if streaming_msg is not None:
             ws_streaming = WSStreamingMessage(
@@ -197,16 +206,24 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                 tool_calls_count=0,
                 total_tokens=0,
             ),
-            created_at=created_at.isoformat() if isinstance(created_at, datetime) else str(created_at) if created_at else self._iso(),
-            updated_at=updated_at.isoformat() if isinstance(updated_at, datetime) else str(updated_at) if updated_at else self._iso(),
+            created_at=created_at.isoformat()
+            if isinstance(created_at, datetime)
+            else str(created_at)
+            if created_at
+            else self._iso(),
+            updated_at=updated_at.isoformat()
+            if isinstance(updated_at, datetime)
+            else str(updated_at)
+            if updated_at
+            else self._iso(),
         )
 
     async def run_agent(
         self,
         dialog_id: str,
         content: str,
-        client_message_id: Optional[str] = None,
-        title: Optional[str] = None,
+        client_message_id: str | None = None,
+        title: str | None = None,
     ) -> None:
         """
         运行 Agent 并广播事件
@@ -250,8 +267,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         )
 
         await self._broadcast(
-            make_status_change(dialog_id, "idle", "thinking", self._ts()),
-            dialog_id
+            make_status_change(dialog_id, "idle", "thinking", self._ts()), dialog_id
         )
 
         accumulated = ""
@@ -271,17 +287,17 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                 agent_name="Agent",
                 status="streaming",
             )
-            await self._bcast.broadcast_stream_start(
-                dialog_id, msg_id, message=stream_start_msg
-            )
+            await self._bcast.broadcast_stream_start(dialog_id, msg_id, message=stream_start_msg)
 
             # 调用 Runtime 的 send_message 并处理 AgentEvent 流
             # type: ignore[attr-defined]
-            logger.info(f"[AgentRuntimeBridge] Starting to receive events from runtime")
+            logger.info("[AgentRuntimeBridge] Starting to receive events from runtime")
             event_count = 0
             async for event in self._runtime.send_message(dialog_id, content, stream=True):  # type: ignore[attr-defined]
                 event_count += 1
-                logger.info(f"[AgentRuntimeBridge] Received event #{event_count}: type={event.type}")
+                logger.info(
+                    f"[AgentRuntimeBridge] Received event #{event_count}: type={event.type}"
+                )
                 # 第一个事件到达时发送初始快照
                 if accumulated == "":
                     snap = self._dialog_to_snapshot(dialog_id)
@@ -320,20 +336,24 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                     self._stream_buffers[dialog_id][msg_id] = accumulated
 
                     # 广播节点更新事件
-                    logger.info(f"[AgentRuntimeBridge] Broadcasting node_update: dialog_id={dialog_id}, node={node}, messages={len(messages)}")
+                    logger.info(
+                        f"[AgentRuntimeBridge] Broadcasting node_update: dialog_id={dialog_id}, node={node}, messages={len(messages)}"
+                    )
                     await self._bcast.broadcast_node_update(
                         dialog_id=dialog_id,
                         node=node,
                         messages=messages,
                     )
-                    logger.info(f"[AgentRuntimeBridge] Node update broadcasted successfully")
+                    logger.info("[AgentRuntimeBridge] Node update broadcasted successfully")
 
                 elif event.type == "node_update":
                     data = event.data if isinstance(event.data, dict) else {}
                     messages = data.get("messages", [])
                     node = data.get("node", "unknown")
 
-                    logger.info(f"[AgentRuntimeBridge] Node update: {node}, messages={len(messages)}")
+                    logger.info(
+                        f"[AgentRuntimeBridge] Node update: {node}, messages={len(messages)}"
+                    )
                     await self._bcast.broadcast_node_update(
                         dialog_id=dialog_id,
                         node=node,
@@ -378,7 +398,9 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                         type="function",
                         function=OpenAIFunction(
                             name=tool_name,
-                            arguments=json.dumps(tool_args) if isinstance(tool_args, dict) else str(tool_args),
+                            arguments=json.dumps(tool_args)
+                            if isinstance(tool_args, dict)
+                            else str(tool_args),
                         ),
                     )
                     self._streaming_tools[dialog_id].append(tool_call.model_dump())
@@ -394,13 +416,17 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                     # 工具调用结束
                     result = event.data
                     if isinstance(result, dict):
-                        logger.info(f"[AgentRuntimeBridge] Tool end: {result.get('tool_name', 'unknown')}")
+                        logger.info(
+                            f"[AgentRuntimeBridge] Tool end: {result.get('tool_name', 'unknown')}"
+                        )
                     else:
                         logger.info(f"[AgentRuntimeBridge] Tool end: {result}")
 
-                elif event.type in ("complete", "text_complete"):
+                elif event.type in ("complete", "text_complete", "message_complete"):
                     # 对话完成 (处理两种事件名，兼容不同 runtime)
-                    logger.info(f"[AgentRuntimeBridge] Dialog complete: {dialog_id}, event_type={event.type}")
+                    logger.info(
+                        f"[AgentRuntimeBridge] Dialog complete: {dialog_id}, event_type={event.type}"
+                    )
                     # 如果有数据，更新累积内容
                     if event.data and isinstance(event.data, str):
                         accumulated = event.data
@@ -433,15 +459,12 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
             )
 
             # 发送流结束事件 - 使用最终的 CustomAIMessage
-            await self._bcast.broadcast_stream_end(
-                dialog_id, msg_id, message=final_msg
-            )
+            await self._bcast.broadcast_stream_end(dialog_id, msg_id, message=final_msg)
 
             # 发送状态变更
             self._status[dialog_id] = "completed"
             await self._broadcast(
-                make_status_change(dialog_id, "thinking", "completed", self._ts()),
-                dialog_id
+                make_status_change(dialog_id, "thinking", "completed", self._ts()), dialog_id
             )
 
             # 清理流式消息
@@ -468,9 +491,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
             self._status[dialog_id] = "error"
 
             # 发送流截断事件
-            await self._bcast.broadcast_stream_truncated(
-                dialog_id, msg_id, "error"
-            )
+            await self._bcast.broadcast_stream_truncated(dialog_id, msg_id, "error")
 
             error_event = WSErrorEvent(
                 dialog_id=dialog_id,
@@ -479,8 +500,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
             )
             await self._broadcast(error_event, dialog_id)
             await self._broadcast(
-                make_status_change(dialog_id, "thinking", "error", self._ts()),
-                dialog_id
+                make_status_change(dialog_id, "thinking", "error", self._ts()), dialog_id
             )
 
     def _cleanup_checkpoint(self, dialog_id: str, message_id: str) -> None:
@@ -490,7 +510,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         if dialog_id in self._stream_buffers and message_id in self._stream_buffers[dialog_id]:
             del self._stream_buffers[dialog_id][message_id]
 
-    def get_last_checkpoint(self, dialog_id: str, message_id: str) -> Optional[tuple[int, str]]:
+    def get_last_checkpoint(self, dialog_id: str, message_id: str) -> tuple[int, str] | None:
         """获取最后检查点 (chunk_index, content)"""
         if dialog_id not in self._chunk_counters:
             return None
@@ -555,7 +575,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
             self._streaming_tools[k] = []
         return stopped
 
-    def get_snapshot(self, dialog_id: str) -> Optional[WSDialogSnapshot]:
+    def get_snapshot(self, dialog_id: str) -> WSDialogSnapshot | None:
         """获取对话快照"""
         return self._dialog_to_snapshot(dialog_id)
 
@@ -570,7 +590,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
             )
             await self._broadcast(event, dialog_id)
 
-    async def create_dialog(self, user_input: str, title: Optional[str] = None) -> str:
+    async def create_dialog(self, user_input: str, title: str | None = None) -> str:
         """
         创建新对话
 
@@ -591,7 +611,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         self.init_dialog_state(dialog_id)
         return dialog_id
 
-    def get_dialog(self, dialog_id: str) -> Optional[Any]:
+    def get_dialog(self, dialog_id: str) -> Any | None:
         """获取对话"""
         if not self._runtime:
             return None
@@ -608,7 +628,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         name: str,
         handler: Any,
         description: str,
-        schema: Optional[BaseModel] = None,
+        schema: BaseModel | None = None,
     ) -> None:
         """
         注册工具到 Runtime

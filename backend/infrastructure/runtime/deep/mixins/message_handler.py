@@ -12,7 +12,7 @@ from typing import Any
 
 from loguru import logger
 
-from backend.domain.models.shared import AgentEvent
+from backend.domain.models.events.agent import AgentEvent
 from backend.infrastructure.llm_adapter import LLMResponseAdapterFactory
 
 
@@ -257,25 +257,6 @@ class DeepMessageHandlerMixin:
 
                 if isinstance(raw_event, tuple) and len(raw_event) >= 2:
                     msg_chunk = raw_event[1]
-                    # DEBUG: 记录第一个事件的完整结构
-                    if round_num == 0:
-                        logger.debug(f"[DEBUG] raw_event type: {type(raw_event)}")
-                        logger.debug(f"[DEBUG] msg_chunk type: {type(msg_chunk)}")
-                        if isinstance(msg_chunk, tuple):
-                            logger.debug(f"[DEBUG] msg_chunk[0] type: {type(msg_chunk[0])}")
-                            logger.debug(
-                                f"[DEBUG] msg_chunk[0] content: {getattr(msg_chunk[0], 'content', None)}"
-                            )
-                            logger.debug(
-                                f"[DEBUG] msg_chunk[0] additional_kwargs: {getattr(msg_chunk[0], 'additional_kwargs', None)}"
-                            )
-                        else:
-                            logger.debug(
-                                f"[DEBUG] msg_chunk content: {getattr(msg_chunk, 'content', None)}"
-                            )
-                            logger.debug(
-                                f"[DEBUG] msg_chunk additional_kwargs: {getattr(msg_chunk, 'additional_kwargs', None)}"
-                            )
                     if isinstance(msg_chunk, tuple):
                         event_metadata = msg_chunk[1] if len(msg_chunk) > 1 else None
                         msg_chunk = msg_chunk[0]
@@ -324,8 +305,6 @@ class DeepMessageHandlerMixin:
                             tc_args = tc.get("args", {})
                             if isinstance(tc_args, str):
                                 try:
-                                    import json
-
                                     tc_args = json.loads(tc_args)
                                 except Exception:
                                     tc_args = {"raw": tc_args}
@@ -384,21 +363,6 @@ class DeepMessageHandlerMixin:
                         and msg_chunk.response_metadata
                     ):
                         reasoning = msg_chunk.response_metadata.get("reasoning_content")
-
-                    # DEBUG: 记录第一个 AI 消息的完整结构
-                    if (
-                        getattr(msg_chunk, "type", None) in ("ai", "assistant")
-                        and not accumulated_content
-                        and not accumulated_reasoning
-                    ):
-                        logger.debug(f"[DEBUG] AI msg_chunk type: {type(msg_chunk).__name__}")
-                        logger.debug(f"[DEBUG] AI msg_chunk attrs: {dir(msg_chunk)}")
-                        logger.debug(
-                            f"[DEBUG] AI additional_kwargs: {getattr(msg_chunk, 'additional_kwargs', None)}"
-                        )
-                        logger.debug(
-                            f"[DEBUG] AI response_metadata: {getattr(msg_chunk, 'response_metadata', None)}"
-                        )
 
                     if reasoning:
                         delta_reasoning = str(reasoning)
@@ -482,7 +446,7 @@ class DeepMessageHandlerMixin:
                     "content_length": len(accumulated_content),
                 }
                 yield AgentEvent(
-                    type="text_complete", data=accumulated_content, metadata=completion_metadata
+                    type="message_complete", data=accumulated_content, metadata=completion_metadata
                 )
 
         except Exception as e:
@@ -511,7 +475,9 @@ class DeepMessageHandlerMixin:
                         dialog_id, ai_message_id, accumulated_content, completion_metadata
                     )
                     yield AgentEvent(
-                        type="text_complete", data=accumulated_content, metadata=completion_metadata
+                        type="message_complete",
+                        data=accumulated_content,
+                        metadata=completion_metadata,
                     )
                 except Exception as save_error:
                     logger.error(f"[DeepAgentRuntime] Failed to save partial content: {save_error}")
