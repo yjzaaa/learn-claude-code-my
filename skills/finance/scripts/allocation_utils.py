@@ -61,7 +61,7 @@ def generate_alloc_sql(
     party_value: str,
 ) -> str:
     year_filter = _build_or_list(years, "cdb.year")
-    year_filter_output = _build_or_list(years, "year")
+    year_filter_output = _build_or_list(years, year)
     scenario_filter = _build_or_list(scenarios, "cdb.scenario")
     function_literal = _quote_literal(function_name)
     if isinstance(party_value, str) and not party_value.isdigit():

@@ -310,6 +310,43 @@ class UniversalShellBackend(LocalShellBackend):
                 truncated=False,
             )
 
+    def _resolve_path(self, key: str) -> Path:
+        """解析路径，将虚拟路径转换为实际路径
+
+        覆盖父类方法，使用 _convert_path 进行正确的虚拟路径映射。
+
+        Args:
+            key: 文件路径（虚拟或实际）
+
+        Returns:
+            解析后的实际 Path 对象
+        """
+        actual_path = self._convert_path(key)
+        return Path(actual_path).resolve()
+
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        """读取文件内容
+
+        覆盖父类方法，使用正确的路径转换。
+
+        Args:
+            file_path: 文件路径（支持虚拟路径）
+            offset: 起始行偏移
+            limit: 最大行数
+
+        Returns:
+            带行号的文件内容
+        """
+        # 转换路径
+        actual_path = self._convert_path(file_path)
+        # 调用父类的 read，但传入实际路径
+        return super().read(actual_path, offset=offset, limit=limit)
+
+    async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+        """异步读取文件内容"""
+        actual_path = self._convert_path(file_path)
+        return await super().aread(actual_path, offset=offset, limit=limit)
+
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """下载文件"""
         # 转换路径

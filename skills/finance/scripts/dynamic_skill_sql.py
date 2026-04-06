@@ -8,9 +8,9 @@ def analyze_intent(user_query: str):
     自动添加默认场景过滤条件（如 Scenario = 'Budget1'）。
     """
     keywords = {
-        "分摊": "SSME_FI_InsightBot_CostDataBase",
-        "预算": "SSME_FI_InsightBot_CostDataBase",
-        "趋势": "SSME_FI_InsightBot_CostDataBase"
+        "分摊": "cost_database",
+        "预算": "cost_database",
+        "趋势": "cost_database"
     }
 
     for keyword, table in keywords.items():
@@ -18,7 +18,7 @@ def analyze_intent(user_query: str):
         default_scenario = "Budget1"
         if keyword in user_query:
             return {
-                "scenario": default_scenario,
+                scenario: default_scenario,
                 "is_data_query": True,
                 "table": table,
                 "reason": f"关键词匹配: {keyword}"
@@ -71,7 +71,7 @@ def execute_sql(sql_query):
 
 if __name__ == "__main__":
     user_query = "白领数分摊服务有哪些？"
-    user_filters = {"Year": "2026", "Scenario": "Budget1"}
+    user_filters = {year: "2026", scenario: "Budget1"}
 
     intent_result = analyze_intent(user_query)
     if intent_result["is_data_query"]:

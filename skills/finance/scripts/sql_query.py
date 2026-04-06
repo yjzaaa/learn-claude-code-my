@@ -24,14 +24,14 @@ def _normalize_legacy_sql(sql: str, use_sql_server: bool) -> str:
     # Old demo table name still appears in historical prompts/tool traces.
     normalized = re.sub(
         r"\bcost_database\b",
-        "dbo.SSME_FI_InsightBot_CostDataBase" if use_sql_server else "cost_database",
+        "dbo.cost_database" if use_sql_server else "cost_database",
         normalized,
         flags=re.IGNORECASE,
     )
     
     # Normalize rate table names
     normalized = re.sub(
-        r"\bSSME_FI_InsightBot_Rate\b",
+        r"\brate_table\b",
         "rate_table",
         normalized,
         flags=re.IGNORECASE,

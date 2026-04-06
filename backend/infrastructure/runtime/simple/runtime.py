@@ -18,6 +18,7 @@ from backend.domain.models.shared.config import EngineConfig
 from backend.domain.models.shared.types import MessageDict, ToolCallDict
 from backend.infrastructure.plugins import CompactPlugin, PluginManager
 from backend.infrastructure.runtime.base.manager import ManagerAwareRuntime
+from backend.infrastructure.services.skill_selector import create_skill_selector
 from backend.infrastructure.tools import WorkspaceOps
 
 
@@ -178,7 +179,8 @@ class SimpleRuntime(ManagerAwareRuntime):
             yield AgentEvent(type="error", data="Error: No provider available")
             return
 
-        system_prompt = self._build_system_prompt()
+        # 使用 SkillSelector 根据用户消息选择相关 skill
+        system_prompt = self._build_system_prompt(message)
         if system_prompt:
             messages.insert(0, MessageDict(role="system", content=system_prompt))
 
@@ -312,23 +314,36 @@ class SimpleRuntime(ManagerAwareRuntime):
             )
             yield AgentEvent(type="error", data=str(e))
 
-    def _build_system_prompt(self) -> str:
-        """构建系统提示词"""
+    def _build_system_prompt(self, user_message: str = "") -> str:
+        """构建系统提示词，根据用户消息选择相关 skill"""
         parts = ["You are a helpful AI assistant."]
 
         memory = self._memory_mgr.load_memory()
         if memory and memory.strip() != "# Agent Memory":
             parts.append("\n# Long-term Memory\n" + memory)
 
-        skill_prompts = []
-        for skill in self._skill_mgr.list_skills():
-            prompt = self._skill_mgr.get_skill_prompt(skill.id)
-            if prompt:
-                skill_prompts.append(f"[{skill.name}]\n{prompt}")
+        # 使用 SkillSelector 选择相关 skill
+        if user_message:
+            selector = create_skill_selector(self._skill_mgr)
+            selected_skill_ids = selector.select_skills(user_message)
 
-        if skill_prompts:
-            parts.append("\nActive skills:")
-            parts.append("\n\n".join(skill_prompts))
+            skill_prompts = []
+            for skill_id in selected_skill_ids:
+                skill = self._skill_mgr.get_skill(skill_id)
+                if skill:
+                    prompt = self._skill_mgr.get_skill_prompt(skill.id)
+                    if prompt:
+                        skill_prompts.append(f"[{skill.name}]\n{prompt}")
+
+            if skill_prompts:
+                parts.append("\nActive skills (matched to your request):")
+                parts.append("\n\n".join(skill_prompts))
+                logger.info(f"[SimpleRuntime] Loaded {len(skill_prompts)} skills for message")
+            else:
+                logger.debug("[SimpleRuntime] No skills matched the message")
+        else:
+            # 如果没有用户消息，不加载任何 skill
+            logger.debug("[SimpleRuntime] No user message, skipping skill loading")
 
         plugin_prompt = self._plugin_mgr.get_combined_system_prompt()
         if plugin_prompt:

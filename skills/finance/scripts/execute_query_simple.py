@@ -27,8 +27,8 @@ sql_query = """WITH monthly_alloc AS (
             ), 
             0
         ) AS [Allocated_Month_Cost]
-    FROM SSME_FI_InsightBot_CostDataBase cdb
-    LEFT JOIN SSME_FI_InsightBot_Rate t7
+    FROM cost_database cdb
+    LEFT JOIN rate_table t7
         ON cdb.[Year] = t7.[Year]
         AND cdb.[Scenario] = t7.[Scenario]
         AND cdb.[Key] = t7.[Key]
@@ -127,7 +127,7 @@ def main():
                     rows = data["rows"]
                     if rows:
                         for row in rows:
-                            year = row.get("Year", "未知")
+                            year = row.get(year, "未知")
                             amount = row.get("Year_Allocated_Cost", 0)
                             
                             print(f"财年: FY{year}")

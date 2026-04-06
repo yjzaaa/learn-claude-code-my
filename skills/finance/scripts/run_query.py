@@ -14,7 +14,7 @@ def _default_sql() -> str:
     """Return canonical FY26 HR budget sample query."""
     return """
     SELECT SUM([Amount]) AS total_budget
-    FROM dbo.SSME_FI_InsightBot_CostDataBase
+    FROM dbo.cost_database
     WHERE [Year] = 'FY26'
       AND [Scenario] = 'Budget1'
       AND [Function] = 'HR';

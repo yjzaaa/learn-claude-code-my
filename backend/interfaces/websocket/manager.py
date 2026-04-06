@@ -137,19 +137,27 @@ class WebSocketBroadcaster:
         self,
         dialog_id: str,
         message_id: str,
-        delta: str,
-        is_reasoning: bool = False
+        content: str = "",
+        reasoning: str = "",
     ) -> None:
-        """广播流式增量"""
-        # 前端期望 delta 是纯字符串，不是对象
-        # 手动构造事件字典以匹配前端格式
+        """广播流式增量
+
+        Args:
+            dialog_id: 对话 ID
+            message_id: 消息 ID
+            content: 文本内容增量
+            reasoning: 推理内容增量
+        """
+        # 统一格式：delta 包含 content 和 reasoning
         event = {
             "type": "stream:delta",
             "dialog_id": dialog_id,
             "message_id": message_id,
-            "chunkIndex": 0,  # 前端暂时不使用，设为0
-            "delta": delta,  # 纯字符串，不是对象
-            "isReasoning": is_reasoning,
+            "chunkIndex": 0,
+            "delta": {
+                "content": content,
+                "reasoning": reasoning,
+            },
             "timestamp": self._ts()
         }
         await self.broadcast(event, dialog_id)

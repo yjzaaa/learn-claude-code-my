@@ -93,7 +93,7 @@ def format_report(data):
         return
     
     row = data["rows"][0]
-    year = row.get("year", "FY25")
+    year = row.get(year, "FY25")
     amount = row.get("year_allocated_cost", 0)
     
     print(f"\n📊 查询结果:")

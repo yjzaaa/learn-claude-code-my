@@ -12,15 +12,15 @@
 ### 4.2 聚合统计（单表求和 / 计数，多维分组）
 
 - 场景特征：需按维度分组，对 [Amount] 求和 / 计数等聚合操作，对应示例库 Q2
-- 生成规则：单表查询 + COALESCE(SUM(CAST([Amount] AS FLOAT)), 0) 核心聚合 + GROUP BY 维度字段 + WHERE 字典有效值筛选；支持「明细 + 汇总」分开生成（均为单语句）
+- 生成规则：单表查询 + COALESCE(SUM(CAST(amount AS FLOAT)), 0) 核心聚合 + GROUP BY 维度字段 + WHERE 字典有效值筛选；支持「明细 + 汇总」分开生成（均为单语句）
 - 关键约束：GROUP BY 包含所有 SELECT 非聚合字段，避免 sqlquery 执行报错
 
 ### 4.3 分摊计算（双表联查，金额 × 比例计算）
 
 - 场景特征：需跨表关联计算分摊金额，核心逻辑「分摊金额 = 基础金额 × 分摊比例」，对应示例库 Q3/Q4
-- 生成规则：主表 (cdb) + 规则表 (t7) 四重关联 + LEFT JOIN + 核心计算逻辑：COALESCE(CAST(cdb.[Amount] AS FLOAT), 0) \* COALESCE(
-  CASE WHEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) > 1 THEN TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) / 100
-  ELSE TRY_CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT)
+- 生成规则：主表 (cdb) + 规则表 (t7) 四重关联 + LEFT JOIN + 核心计算逻辑：COALESCE(CAST(cdb.amount AS FLOAT), 0) \* COALESCE(
+  CASE WHEN TRY_CAST(REPLACE(t7.rate_no, '%', '') AS FLOAT) > 1 THEN TRY_CAST(REPLACE(t7.rate_no, '%', '') AS FLOAT) / 100
+  ELSE TRY_CAST(REPLACE(t7.rate_no, '%', '') AS FLOAT)
   END, 0)
 - 别名规范：分摊金额别名为 [Allocated_Cost]，基础金额别名为 [Base_Cost]，比例别名为 [Allocation_Rate]，分摊主体别名为 [Allocated_CC/Allocated_BL]
 - 分组规则：按 Year/Scenario/Function/分摊主体（CC/BL）/Month 分组，确保聚合粒度符合业务需求
@@ -78,13 +78,13 @@
 
 - Scenario 归一化（强制）：
   - 用户表述 `BGT` / `Budget` / `预算` / `计划` 一律映射为 `Budget1`
-  - SQL 中禁止出现 `cdb.[Scenario] = 'BGT'` 或其他字典外 Scenario 字面值
+  - SQL 中禁止出现 `cdb.scenario = 'BGT'` 或其他字典外 Scenario 字面值
 - IT Allocation 场景默认映射 Key = `480056 Cycle`
 - HR Allocation 场景默认映射 Key = `480055 Cycle`
 - Allocation Function 归一化（强制）：
-  - IT 分摊题必须使用 `cdb.[Function] = 'IT Allocation'`
-  - HR 分摊题必须使用 `cdb.[Function] = 'HR Allocation'`
-  - 禁止在分摊题中使用 `cdb.[Function] = 'IT'` 或 `cdb.[Function] = 'HR'` 直接代替 Allocation Function
+  - IT 分摊题必须使用 `cdb.function = 'IT Allocation'`
+  - HR 分摊题必须使用 `cdb.function = 'HR Allocation'`
+  - 禁止在分摊题中使用 `cdb.function = 'IT'` 或 `cdb.function = 'HR'` 直接代替 Allocation Function
 - 分摊题必须按月先算 `amount * rate` 后做年度汇总，不允许直接对 amount 年度求和替代
 - 金额问法（what was ... cost）优先输出单值汇总；对比问法必须同时输出差额与变化率
 

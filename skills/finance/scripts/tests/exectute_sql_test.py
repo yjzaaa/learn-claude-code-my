@@ -14,7 +14,7 @@ def test_execute_sql():
     # 模拟用户查询和意图分析结果
 
     sql = """SELECT *
-FROM SSME_FI_InsightBot_CostDataBase
+FROM cost_database
 where  [Function] = 'IT'"""
     # 执行 SQL 查询
     sql_query = execute_sql(sql)

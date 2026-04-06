@@ -255,6 +255,7 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
         )
 
         accumulated = ""
+        accumulated_reasoning = ""
         chunk_index = 0
         has_error = False
 
@@ -352,7 +353,19 @@ class AgentRuntimeBridge(IAgentRuntimeBridge):
                     self._chunk_counters[dialog_id][msg_id] = chunk_index
                     self._stream_buffers[dialog_id][msg_id] = accumulated
 
-                    await self._bcast.broadcast_delta(dialog_id, msg_id, chunk)
+                    await self._bcast.broadcast_delta(
+                        dialog_id, msg_id, content=chunk, reasoning=""
+                    )
+
+                elif event.type == "reasoning_delta":
+                    # 处理推理内容增量
+                    reasoning_chunk = str(event.data)
+                    accumulated_reasoning += reasoning_chunk
+
+                    # 广播 reasoning delta
+                    await self._bcast.broadcast_delta(
+                        dialog_id, msg_id, content="", reasoning=reasoning_chunk
+                    )
 
                 elif event.type == "tool_start":
                     # 工具调用开始（保留兼容处理）

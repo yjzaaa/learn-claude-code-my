@@ -24,7 +24,7 @@
 
 说明：Q4 的复杂 SQL 已改造成调用 `generate_alloc_sql()` 的流程，建议系统执行步骤如下：
 
-1. 在 Python 中调用 `generate_alloc_sql(years=['FY26','FY25'], scenarios=['Budget1','Actual'], function_name='HR Allocation', party_field='t7.[CC]', party_value="'413001'")` 生成 SQL 字符串。
+1. 在 Python 中调用 `generate_alloc_sql(years=['FY26','FY25'], scenarios=['Budget1','Actual'], function_name='HR Allocation', party_field='t7.cc', party_value="'413001'")` 生成 SQL 字符串。
 2. 使用 SQL 执行工具执行生成的 SQL 并返回年度分摊与同比对比结果。
 3. 在 Python 中对结果做进一步分析或直接输出自然语言结论：
    - 提取各年的年度分摊金额（Year_Allocated_Cost）；

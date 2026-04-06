@@ -158,32 +158,28 @@ class DeepInitializerMixin:
         system_prompt_parts = [p for p in [base_prompt, skill_references_content, path_hint] if p]
         system_prompt = "\n\n".join(system_prompt_parts)
 
-        # 使用 AgentBuilder 创建 Agent
-        from ..agents import AgentBuilder
+        # 使用 AgentFactory 统一构建 Agent
+        from ..services.agent_factory import AgentBuildContext, AgentFactory
 
         # 构建 skill sources 路径（与 backend 的 virtual_root 一致）
         skill_sources = [f"/workspace/skills/{skill}/" for skill in (self._config.skills or [])]
 
-        builder = (
-            AgentBuilder()
-            .with_name(self._config.name or self._agent_id)
-            .with_model(model)
-            .with_tools(adapted_tools)
-            .with_system_prompt(system_prompt)
-            .with_backend(backend)
-            .with_checkpointer(self._checkpointer)
-            .with_store(self._store)
-            .with_skills(self._config.skills or [], sources=skill_sources)
-            .with_todo_list()
-            .with_filesystem()
-            .with_claude_compression(level="standard", enable_session_memory=True)
-            .with_prompt_caching()
+        # 保存构建上下文供后续重建使用（如模型切换）
+        self._agent_context = AgentBuildContext(
+            agent_id=self._agent_id,
+            name=self._config.name,
+            model=model,
+            tools=adapted_tools,
+            system_prompt=system_prompt,
+            backend=backend,
+            checkpointer=self._checkpointer,
+            store=self._store,
+            skills=self._config.skills or [],
+            skill_sources=skill_sources,
+            interrupt_on=self._config.interrupt_on or None,
         )
 
-        if self._config.interrupt_on:
-            builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
-
-        self._agent = builder.build()
+        self._agent = AgentFactory.build(self._agent_context)
         logger.info(f"[DeepAgentRuntime] Initialized: {self._agent_id}")
 
     async def _do_shutdown(self) -> None:

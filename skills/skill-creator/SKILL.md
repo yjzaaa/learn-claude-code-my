@@ -258,6 +258,28 @@ Example: When building a `big-query` skill to handle queries like "How many user
 1. Querying BigQuery requires re-discovering the table schemas and relationships each time
 2. A `references/schema.md` file documenting the table schemas would be helpful to store in the skill
 
+**Example: Database Query Skill (finance)**
+
+For skills querying databases like the `finance` skill:
+
+1. **Schema Discovery**: Create `references/schema_query.md` with standard queries to discover table structure:
+   ```sql
+   SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '...';
+   ```
+
+2. **SQL Templates**: Create `references/sql_templates.md` with reusable query patterns for common operations
+
+3. **SKILL.md Workflow**: Define a clear workflow in SKILL.md:
+   - Step 1: Schema discovery (if needed)
+   - Step 2: Determine question type
+   - Step 3: Read constraints/examples
+   - Step 4: Generate and execute SQL
+   - Step 5: Interpret results
+
+4. **Constraints**: Document domain-specific rules (e.g., allocation calculations, field mappings)
+
+See `references/database-skill-patterns.md` for complete database skill design guidelines.
+
 To establish the skill's contents, analyze each concrete example to create a list of the reusable resources to include: scripts, references, and assets.
 
 ### Step 3: Initializing the Skill
@@ -301,6 +323,7 @@ Consult these helpful guides based on your skill's needs:
 
 - **Multi-step processes**: See references/workflows.md for sequential workflows and conditional logic
 - **Specific output formats or quality standards**: See references/output-patterns.md for template and example patterns
+- **Database query skills**: See references/database-skill-patterns.md for database skill best practices
 
 These files contain established best practices for effective skill design.
 

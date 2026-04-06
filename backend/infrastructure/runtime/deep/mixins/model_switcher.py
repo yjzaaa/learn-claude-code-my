@@ -103,36 +103,40 @@ class DeepModelSwitcherMixin:
                 for name, tool_info in self._tools.items()
             ]
 
-            # 重新构建 agent
-            from ..agents import AgentBuilder
+            # 使用 AgentFactory 重建 agent（保留原有配置，仅切换模型）
+            from ..services.agent_factory import AgentFactory
 
-            base_prompt = self._config.system or self._config.system_prompt or ""
-            system_prompt = base_prompt + (
-                "\n\n## Environment\n"
-                "You run inside a Linux Docker container. "
-                "Use Linux commands (ls, cat, grep, cd). "
+            if not hasattr(self, "_agent_context"):
+                # 如果上下文不存在，需要构建它（兼容旧代码）
+                from ..services.agent_factory import AgentBuildContext
+
+                base_prompt = self._config.system or self._config.system_prompt or ""
+                system_prompt = base_prompt + (
+                    "\n\n## Environment\n"
+                    "You run inside a Linux Docker container. "
+                    "Use Linux commands (ls, cat, grep, cd). "
+                )
+                skill_sources = [
+                    f"/workspace/skills/{skill}/"
+                    for skill in (self._config.skills or [])
+                ]
+                self._agent_context = AgentBuildContext(
+                    agent_id=self._agent_id,
+                    name=self._config.name,
+                    model=new_model,  # 会被替换
+                    tools=adapted_tools,
+                    system_prompt=system_prompt,
+                    backend=backend,
+                    checkpointer=self._checkpointer,
+                    store=self._store,
+                    skills=self._config.skills or [],
+                    skill_sources=skill_sources,
+                    interrupt_on=self._config.interrupt_on,
+                )
+
+            self._agent = AgentFactory.rebuild_for_model_switch(
+                self._agent_context, new_model
             )
-
-            builder = (
-                AgentBuilder()
-                .with_name(self._config.name or self._agent_id)
-                .with_model(new_model)
-                .with_tools(adapted_tools)
-                .with_system_prompt(system_prompt)
-                .with_backend(backend)
-                .with_checkpointer(self._checkpointer)
-                .with_store(self._store)
-                .with_skills(self._config.skills or [])
-                .with_todo_list()
-                .with_filesystem()
-                .with_claude_compression(level="standard", enable_session_memory=True)
-                .with_prompt_caching()
-            )
-
-            if self._config.interrupt_on:
-                builder.with_human_in_the_loop(interrupt_on=self._config.interrupt_on)
-
-            self._agent = builder.build()
             logger.info(f"[DeepAgentRuntime] Rebuilt agent with new model: {selected_model}")
             return True
         except Exception as e:

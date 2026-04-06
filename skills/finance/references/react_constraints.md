@@ -4,26 +4,26 @@
 
 ### 1.1 数据源规范
 
-- 主表：SSME_FI_InsightBot_CostDataBase（费用基础数据），别名统一用 cdb
-- 规则表：SSME_FI_InsightBot_Rate（分摊比例），别名统一用 t7
+- 主表：cost_database（费用基础数据），别名统一用 cdb
+- 规则表：rate_table（分摊比例），别名统一用 t7
 - 严格禁止：使用临时表、视图、存储过程，仅生成单表 / 联表的原生 SELECT 语句（适配 sqlquery 工具执行规范）
 
 ### 1.2 字段处理强制规则
 
-- 数值转换：所有 [Amount] 字段必须执行 CAST([Amount] AS FLOAT) 转换，无隐式类型转换
+- 数值转换：所有 amount 字段必须执行 CAST(amount AS FLOAT) 转换，无隐式类型转换
 - 空值处理：所有参与计算 / 输出的字段，必须用 COALESCE(值, 0) 做 0 值兜底，避免 sqlquery 执行返回空值
-- 比例计算：[RateNo] 字段处理规则：
-  - 数据库中 RateNo 存储为小数字符串格式（如 `"0.020800"` 表示 2.08%）
+- 比例计算：rate_no 字段处理规则：
+  - 数据库中 rate_no 存储为小数字符串格式（如 `"0.020800"` 表示 2.08%）
   - **直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100**
   - 极少数情况下若遇到百分数字符串（如 `"12.5%"`），才去 `%` 再 `/100`
-  - 错误示例：`CAST(REPLACE(t7.[RateNo], '%', '') AS FLOAT) / 100`（会导致结果缩小 100 倍）
+  - 错误示例：`CAST(REPLACE(t7.rate_no, '%', '') AS FLOAT) / 100`（会导致结果缩小 100 倍）
   - 正确示例：`CAST(t7.rate_no AS NUMERIC)`
-- 维度优先级：比例关联时优先使用 [CC] 字段，[BL] 仅作为业务线辅助维度，无 CC 值时才允许使用 BL；CC/BL 与业务主体的对应关系：cc 号在 Bl 的范围内则直接取 CC 的值进行筛选
+- 维度优先级：比例关联时优先使用 cc 字段，bl 仅作为业务线辅助维度，无 CC 值时才允许使用 BL；CC/BL 与业务主体的对应关系：cc 号在 Bl 的范围内则直接取 CC 的值进行筛选
 
 ### 1.3 输出语法强制规范（适配 sqlquery 工具执行）
 
 - 单语句原则：仅生成单条 SELECT 语句（复杂对比 / 趋势用 CTE 实现），禁止分号分隔的多语句，确保 sqlquery 工具一次执行
-- 字段显式声明：所有表字段、别名字段（语义化命名）必须用 **[]** 包裹，无任何裸字段；别名优先用英文（如 [Service_Content]），复杂计算用中文（如 [分摊金额]）
+- 字段显式声明：所有表字段、别名字段（语义化命名）必须用 **""** 包裹（PostgreSQL语法），无任何裸字段；别名优先用英文（如 "Service_Content"），复杂计算用中文（如 "分摊金额"）
 - 排序限制：ORDER BY 子句仅能使用 SELECT 结果集中的显式声明字段 / 别名，禁止使用表原始字段 / 数字索引；月度排序统一通过 month_num 数字值实现
 - 聚合一致性：聚合查询必须保证 GROUP BY 子句包含 SELECT 中所有非聚合字段，避免 sqlquery 执行报聚合函数错误
 - 别名统一：主表别名固定 cdb，规则表别名固定 t7，联合查询结果别名固定 combined_result，CTE 表按功能命名（如 base_cost/monthly_cost）
@@ -42,21 +42,21 @@
 
 ## 二、固定数据结构字典（关联 / 筛选 / 计算的唯一依据）
 
-### 2.1 费用主表（SSME_FI_InsightBot_CostDataBase）核心字段
+### 2.1 费用主表（cost_database）核心字段
 
-- 维度字段：[Year]、[Scenario]（仅 Budget/Actual/Budget1）、[Function]、[Month]（精确匹配）、[Cost text]、[Key]（分摊依据，必填）
-- 计算字段：[Amount]（必须 CAST 转换）、[Year Total]
-- 关键约束：[Scenario] 严格匹配版本（Budget/Actual/Budget1），[Month] 为月度值需精确匹配字典有效值
+- 维度字段：year、scenario（仅 Budget/Actual/Budget1）、function、month（精确匹配）、"Cost text"、key（分摊依据，必填）
+- 计算字段：amount（必须 CAST 转换）、"Year Total"
+- 关键约束：scenario 严格匹配版本（Budget/Actual/Budget1），month 为月度值需精确匹配字典有效值
 - Scenario 强约束：
   - SQL 仅允许 `Budget1` / `Actual` / `Budget`
   - 用户输入 `BGT` / `Budget` / `预算` / `计划` 时，必须归一化为 `Budget1`
   - 禁止 SQL 中出现 `Scenario = 'BGT'`
 
-### 2.2 分摊规则表（SSME_FI_InsightBot_Rate）核心字段
+### 2.2 分摊规则表（rate_table）核心字段
 
-- 关联字段：[Year]、[Scenario]、[Month]、[Key]（与主表四重关联核心字段）
-- 比例字段：[RateNo]（需去 % 转小数）、[CC]（优先使用）、[BL]（业务线辅助维度）
-- 业务规则：仅当 [CC] 无值 / 不满足筛选时，才可使用 [BL] 做辅助维度筛选 / 分组；CC 号在 BL 范围内时，直接取 CC 值筛选
+- 关联字段：year、scenario、month、key（与主表四重关联核心字段）
+- 比例字段：rate_no（需去 % 转小数）、cc（优先使用）、bl（业务线辅助维度）
+- 业务规则：仅当 cc 无值 / 不满足筛选时，才可使用 bl 做辅助维度筛选 / 分组；CC 号在 BL 范围内时，直接取 CC 值筛选
 
 ### 2.3 表关联核心条件（双表联查专用）
 
@@ -64,7 +64,7 @@
 
 ```
 
-cdb.[Year] = t7.[Year] AND cdb.[Scenario] = t7.[Scenario] AND cdb.[Key] = t7.[Key] AND cdb.[Month] = t7.[Month]
+cdb.year = t7.year AND cdb.scenario = t7.scenario AND cdb.key = t7.key AND cdb.month = t7.month
 ```
 
 关联字段值均需为字典有效值，确保 sqlquery 执行关联无笛卡尔积、无无效匹配；联表类型优先用 LEFT JOIN（保留无比例主表数据）。
@@ -72,15 +72,15 @@ cdb.[Year] = t7.[Year] AND cdb.[Scenario] = t7.[Scenario] AND cdb.[Key] = t7.[Ke
 ### 2.6 Allocation 场景固定映射（强约束）
 
 - 若问题是 IT 分摊金额（allocated IT / IT allocation to ...），必须使用：
-  - `cdb.[Function] = 'IT Allocation'`
-  - `cdb.[Key] = '480056 Cycle'`
+  - `cdb.function = 'IT Allocation'`
+  - `cdb.key = '480056 Cycle'`
 - 若问题是 HR 分摊金额（HR allocation to ...），必须使用：
-  - `cdb.[Function] = 'HR Allocation'`
-  - `cdb.[Key] = '480055 Cycle'`
+  - `cdb.function = 'HR Allocation'`
+  - `cdb.key = '480055 Cycle'`
 - Allocation Function 强约束：
-  - 分摊题禁止使用 `cdb.[Function] = 'IT'` 或 `cdb.[Function] = 'HR'`
+  - 分摊题禁止使用 `cdb.function = 'IT'` 或 `cdb.function = 'HR'`
   - 只有非分摊普通费用题，才允许 `IT` / `HR` Function
-- 计算必须按月执行：`CAST(cdb.[Amount] AS FLOAT) * normalized_rate_no`，再汇总到年。
+- 计算必须按月执行：`CAST(cdb.amount AS FLOAT) * normalized_rate_no`，再汇总到年。
 - `normalized_rate_no` 统一规则：
   - **数据库中 RateNo 存储为小数字符串（如 `"0.020800"` = 2.08%）**
   - **直接使用 `CAST(rate_no AS NUMERIC)`，无需除以 100**
@@ -122,13 +122,13 @@ SME_FI_InsightBot_CostDataBase Month(Jul) 7月份发生的费用，和Year合起
 SME_FI_InsightBot_CostDataBase Month(Aug) 8月份发生的费用，和Year合起来看，就知道是具体哪一个月份
 SME_FI_InsightBot_CostDataBase Month(Sep) 9月份发生的费用，和Year合起来看，就知道是具体哪一个月份
 SME_FI_InsightBot_CostDataBase Year Total 汇总12个月份的数字，全年的金额
-SSME_FI_InsightBot_Rate Year 财年
-SSME_FI_InsightBot_Rate Scenario 版本
-SSME_FI_InsightBot_Rate Month 所属期，所属月份，全年总计
-SSME_FI_InsightBot_Rate Key Key的名字，就是Cost页的Key，分摊逻辑名称
-SSME_FI_InsightBot_Rate CC cost center，成本中心
-SSME_FI_InsightBot_Rate BL 部门，业务线
-SSME_FI_InsightBot_Rate RateNo 代表某一个月某一个成本中心（列），用某一个分摊依据（行）分摊时的比例是多少
+rate_table Year 财年
+rate_table Scenario 版本
+rate_table Month 所属期，所属月份，全年总计
+rate_table Key Key的名字，就是Cost页的Key，分摊逻辑名称
+rate_table CC cost center，成本中心
+rate_table BL 部门，业务线
+rate_table RateNo 代表某一个月某一个成本中心（列），用某一个分摊依据（行）分摊时的比例是多少
 ```
 
 ## 缩写与术语对照
