@@ -39,6 +39,8 @@ class DeepMessageHandlerMixin:
     _fire_log_tool_result: Any
     _get_checkpoint_snapshot: Any
     session_manager: Any
+    is_stop_requested: Any
+    clear_stop_request: Any
 
     async def send_message(
         self,
@@ -91,6 +93,13 @@ class DeepMessageHandlerMixin:
             async for raw_event in self._agent.astream(
                 {"messages": messages}, config, stream_mode=["messages"]
             ):
+                # 检查是否请求停止
+                if self.is_stop_requested(dialog_id):
+                    logger.info(f"[DeepAgentRuntime] Stopping dialog {dialog_id} as requested")
+                    self.clear_stop_request(dialog_id)
+                    yield AgentEvent(type="error", data="Agent stopped by user")
+                    return
+
                 delta_content = ""
                 delta_reasoning = ""
                 event_metadata = None
@@ -200,6 +209,9 @@ class DeepMessageHandlerMixin:
                     snapshot_path = session_mgr.save_checkpoint_snapshot(checkpoint_data)
                     if snapshot_path:
                         self._fire_log_update("debug", f"Checkpoint snapshot saved: {snapshot_path}", dialog_id)
+
+            # 正常完成，清除停止请求
+            self.clear_stop_request(dialog_id)
 
             if accumulated_content:
                 effective_model = actual_model_name or self._model_name or "unknown"
