@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from backend.domain.models.dialog.dialog import Dialog, Message
+from backend.domain.models.dialog.dialog import Dialog
+from backend.domain.models.message.message import Message
 from backend.domain.models.events.base import (
     DialogClosed,
     DialogCreated,
