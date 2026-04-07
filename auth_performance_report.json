@@ -1,0 +1,185 @@
+{
+  "response_time_comparison": {
+    "labels": [
+      "并发登录测试",
+      "Token刷新性能测试",
+      "连续请求测试",
+      "混合负载测试",
+      "数据库连接池测试"
+    ],
+    "datasets": [
+      {
+        "label": "平均响应时间 (ms)",
+        "data": [
+          9312.693048978334,
+          139.80117499944754,
+          2.5329021000652574,
+          200.0821613331694,
+          0.0
+        ]
+      },
+      {
+        "label": "P95响应时间 (ms)",
+        "data": [
+          12326.754800000344,
+          284.0684999973746,
+          1.5175999869825318,
+          429.84660000365693,
+          0.0
+        ]
+      },
+      {
+        "label": "P99响应时间 (ms)",
+        "data": [
+          12348.342800003593,
+          306.01539999770466,
+          3.2058000069810078,
+          614.5318999915617,
+          0.0
+        ]
+      }
+    ]
+  },
+  "throughput_comparison": {
+    "labels": [
+      "并发登录测试",
+      "Token刷新性能测试",
+      "连续请求测试",
+      "混合负载测试",
+      "数据库连接池测试"
+    ],
+    "datasets": [
+      {
+        "label": "吞吐量 (req/s)",
+        "data": [
+          3.8872825156622848,
+          7.033266047251524,
+          380.8784832707459,
+          4.971238263053933,
+          0.0
+        ]
+      }
+    ]
+  },
+  "success_rate": {
+    "labels": [
+      "并发登录测试",
+      "Token刷新性能测试",
+      "连续请求测试",
+      "混合负载测试",
+      "数据库连接池测试"
+    ],
+    "datasets": [
+      {
+        "label": "成功率 (%)",
+        "data": [
+          98.0,
+          100.0,
+          100.0,
+          100.0,
+          0.0
+        ]
+      }
+    ]
+  },
+  "detailed_results": [
+    {
+      "test_name": "并发登录测试",
+      "total_requests": 50,
+      "successful_requests": 49,
+      "failed_requests": 1,
+      "success_rate_percent": 98.0,
+      "total_time_seconds": 12.605,
+      "throughput_rps": 3.89,
+      "response_times_ms": {
+        "min": 1680.27,
+        "avg": 9312.69,
+        "max": 12348.34,
+        "p95": 12326.75,
+        "p99": 12348.34
+      },
+      "errors": [
+        "{\"detail\":\"Auto-login failed: (sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class 'asyncpg.exceptions.UniqueViolationError'>: duplicate key value violates unique constraint \\\"ix_user_sessions_client_id\\\"\\nDETAIL:  Key (client_id)=(1-780ba3a4) already exists.\\n[SQL: INSERT INTO user_sessions (user_id, client_id, refresh_token_hash, ip_address, user_agent, created_at, expires_at, last_active_at, is_active) VALUES ($1::INTEGER, $2::VARCHAR, $3::VARCHAR, $4::VARCHAR, $5::VARCHAR, $6::TIMESTAMP WITHOUT TIME ZONE, $7::TIMESTAMP WITHOUT TIME ZONE, $8::TIMESTAMP WITHOUT TIME ZONE, $9::BOOLEAN) RETURNING user_sessions.id]\\n[parameters: (1, '1-780ba3a4', '295c3ee2a8d7966da72a753862a2a3825235bebdb9e02ccebb47a8e0d7ce67be', '127.0.0.1', 'Python/3.11 aiohttp/3.13.5', datetime.datetime(2026, 4, 7, 22, 38, 28, 7654), datetime.datetime(2026, 5, 7, 22, 38, 24, 723978), datetime.datetime(2026, 4, 7, 22, 38, 28, 7654), True)]\\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\"}"
+      ]
+    },
+    {
+      "test_name": "Token刷新性能测试",
+      "total_requests": 100,
+      "successful_requests": 100,
+      "failed_requests": 0,
+      "success_rate_percent": 100.0,
+      "total_time_seconds": 14.218,
+      "throughput_rps": 7.03,
+      "response_times_ms": {
+        "min": 21.64,
+        "avg": 139.8,
+        "max": 306.02,
+        "p95": 284.07,
+        "p99": 306.02
+      },
+      "errors": []
+    },
+    {
+      "test_name": "连续请求测试",
+      "total_requests": 1000,
+      "successful_requests": 1000,
+      "failed_requests": 0,
+      "success_rate_percent": 100.0,
+      "total_time_seconds": 2.626,
+      "throughput_rps": 380.88,
+      "response_times_ms": {
+        "min": 0.42,
+        "avg": 2.53,
+        "max": 233.79,
+        "p95": 1.52,
+        "p99": 3.21
+      },
+      "errors": []
+    },
+    {
+      "test_name": "混合负载测试",
+      "total_requests": 300,
+      "successful_requests": 300,
+      "failed_requests": 0,
+      "success_rate_percent": 100.0,
+      "total_time_seconds": 60.347,
+      "throughput_rps": 4.97,
+      "response_times_ms": {
+        "min": 0.71,
+        "avg": 200.08,
+        "max": 23972.8,
+        "p95": 429.85,
+        "p99": 614.53
+      },
+      "errors": []
+    },
+    {
+      "test_name": "数据库连接池测试",
+      "total_requests": 100,
+      "successful_requests": 0,
+      "failed_requests": 100,
+      "success_rate_percent": 0.0,
+      "total_time_seconds": 30.5,
+      "throughput_rps": 0.0,
+      "response_times_ms": {
+        "min": 0.0,
+        "avg": 0.0,
+        "max": 0.0,
+        "p95": 0.0,
+        "p99": 0.0
+      },
+      "errors": [
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed",
+        "login_failed"
+      ]
+    }
+  ]
+}

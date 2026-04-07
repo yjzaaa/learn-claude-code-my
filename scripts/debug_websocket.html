@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Debug</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .log { margin: 5px 0; padding: 5px; border-left: 3px solid #ccc; }
+        .sent { border-color: green; background: #f0fff0; }
+        .received { border-color: blue; background: #f0f0ff; }
+        .error { border-color: red; background: #fff0f0; }
+        #logs { max-height: 80vh; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Debug Tool</h1>
+    <div>
+        <button onclick="connect()">Connect</button>
+        <button onclick="sendSubscribe()">Subscribe to Dialog</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+    <div>
+        <input type="text" id="dialogId" placeholder="Dialog ID" value="">
+        <input type="text" id="clientId" placeholder="Client ID" value="test-client">
+    </div>
+    <div id="logs"></div>
+
+    <script>
+        let ws = null;
+        const logs = document.getElementById('logs');
+
+        function log(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `log ${type}`;
+            div.textContent = `[${new Date().toISOString()}] ${msg}`;
+            logs.appendChild(div);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function connect() {
+            const clientId = document.getElementById('clientId').value || 'test-client';
+            const url = `ws://localhost:8001/ws/${clientId}`;
+
+            log(`Connecting to ${url}...`, 'info');
+
+            ws = new WebSocket(url);
+
+            ws.onopen = () => {
+                log('WebSocket connected!', 'received');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                log(`RECEIVED: ${JSON.stringify(data, null, 2)}`, 'received');
+            };
+
+            ws.onerror = (error) => {
+                log(`ERROR: ${error}`, 'error');
+            };
+
+            ws.onclose = () => {
+                log('WebSocket closed', 'error');
+            };
+        }
+
+        function sendSubscribe() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected!', 'error');
+                return;
+            }
+
+            const dialogId = document.getElementById('dialogId').value;
+            if (!dialogId) {
+                log('Please enter a dialog ID', 'error');
+                return;
+            }
+
+            const msg = { type: 'subscribe', dialog_id: dialogId };
+            ws.send(JSON.stringify(msg));
+            log(`SENT: ${JSON.stringify(msg)}`, 'sent');
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+    </script>
+</body>
+</html>

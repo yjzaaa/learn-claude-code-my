@@ -1,0 +1,445 @@
+# OpenSpec Authentication Specification
+# 登录系统接口规范 v1.0.0
+
+openapi: 3.0.3
+info:
+  title: Hana Authentication API
+  version: 1.0.0
+  description: |
+    基于JWT的认证系统，支持自动登录（开发模式）和手动登录。
+    所有受保护的API需要在请求头中携带 `Authorization: Bearer {token}`
+
+servers:
+  - url: http://localhost:8001
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: 用户认证相关接口
+  - name: Auto Login
+    description: 自动登录（开发模式）
+
+paths:
+  # ═════════════════════════════════════════════════════════════════
+  # 自动登录（开发模式）
+  # ═════════════════════════════════════════════════════════════════
+  /api/auth/auto-login:
+    post:
+      tags:
+        - Auto Login
+      summary: Admin自动登录
+      description: |
+        开发模式下的快速登录方式。自动创建admin用户（如果不存在）并返回JWT token。
+        **仅在开发环境启用。**
+      operationId: autoLogin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_id:
+                  type: string
+                  description: 客户端标识（可选，用于WebSocket连接）
+                  example: "browser-client-1"
+            required: []
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '403':
+          description: 自动登录被禁用（生产环境）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═════════════════════════════════════════════════════════════════
+  # 标准认证
+  # ═════════════════════════════════════════════════════════════════
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: 用户登录
+      description: 使用用户名和密码登录
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccessResponse'
+        '401':
+          description: 认证失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: 用户注册
+      description: 创建新用户账号
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '409':
+          description: 用户名已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: 用户登出
+      description: 使当前token失效
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 登出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: 刷新Token
+      description: 使用refresh token获取新的access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: 刷新令牌
+              required:
+                - refresh_token
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Refresh token无效或过期
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ═════════════════════════════════════════════════════════════════
+  # 当前用户
+  # ═════════════════════════════════════════════════════════════════
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: 获取当前用户信息
+      description: 获取当前登录用户的详细信息
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: 未授权
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      tags:
+        - Authentication
+      summary: 更新当前用户信息
+      description: 更新当前用户的个人信息
+      operationId: updateCurrentUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+components:
+  # ═════════════════════════════════════════════════════════════════
+  # Security Schemes
+  # ═════════════════════════════════════════════════════════════════
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT认证令牌
+
+  # ═════════════════════════════════════════════════════════════════
+  # Schemas
+  # ═════════════════════════════════════════════════════════════════
+  schemas:
+    # ─────────────────────────────────────────────────────────────
+    # Request Schemas
+    # ─────────────────────────────────────────────────────────────
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[a-zA-Z0-9_-]+$'
+          description: 用户名（字母、数字、下划线、连字符）
+          example: "admin"
+        password:
+          type: string
+          minLength: 6
+          maxLength: 128
+          description: 密码
+          example: "admin123"
+      required:
+        - username
+        - password
+
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[a-zA-Z0-9_-]+$'
+          description: 用户名
+          example: "newuser"
+        password:
+          type: string
+          minLength: 6
+          maxLength: 128
+          description: 密码（至少6位）
+          example: "password123"
+        display_name:
+          type: string
+          maxLength: 64
+          description: 显示名称（可选）
+          example: "张三"
+      required:
+        - username
+        - password
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+          maxLength: 64
+          description: 显示名称
+        current_password:
+          type: string
+          description: 当前密码（修改密码时需要）
+        new_password:
+          type: string
+          minLength: 6
+          maxLength: 128
+          description: 新密码
+
+    # ─────────────────────────────────────────────────────────────
+    # Response Schemas
+    # ─────────────────────────────────────────────────────────────
+    LoginSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            tokens:
+              $ref: '#/components/schemas/TokenPair'
+            client_id:
+              type: string
+              description: 客户端ID（用于WebSocket连接）
+              example: "user-1-abc123"
+
+    UserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/User'
+
+    TokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/TokenPair'
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "操作成功"
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "unauthorized"
+            message:
+              type: string
+              example: "认证失败"
+
+    # ─────────────────────────────────────────────────────────────
+    # Entity Schemas
+    # ─────────────────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 用户ID
+          example: 1
+        username:
+          type: string
+          description: 用户名
+          example: "admin"
+        display_name:
+          type: string
+          description: 显示名称
+          example: "管理员"
+        role:
+          type: string
+          enum: [admin, user]
+          description: 用户角色
+          example: "admin"
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+          example: "2024-01-01T00:00:00Z"
+        last_login:
+          type: string
+          format: date-time
+          description: 最后登录时间
+          example: "2024-01-15T10:30:00Z"
+
+    TokenPair:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: 访问令牌（短期有效）
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        refresh_token:
+          type: string
+          description: 刷新令牌（长期有效）
+          example: "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
+        token_type:
+          type: string
+          enum: [bearer]
+          example: "bearer"
+        expires_in:
+          type: integer
+          description: 访问令牌过期时间（秒）
+          example: 3600
+
+# ═════════════════════════════════════════════════════════════════
+# Database Schema (for reference)
+# ═════════════════════════════════════════════════════════════════
+#
+# Table: users
+#   - id: SERIAL PRIMARY KEY
+#   - username: VARCHAR(32) UNIQUE NOT NULL
+#   - password_hash: VARCHAR(256) NOT NULL
+#   - display_name: VARCHAR(64)
+#   - role: VARCHAR(16) DEFAULT 'user'
+#   - is_active: BOOLEAN DEFAULT true
+#   - created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+#   - updated_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+#   - last_login: TIMESTAMP
+#
+# Table: user_sessions
+#   - id: SERIAL PRIMARY KEY
+#   - user_id: INTEGER REFERENCES users(id) ON DELETE CASCADE
+#   - client_id: VARCHAR(64) UNIQUE NOT NULL
+#   - refresh_token_hash: VARCHAR(256)
+#   - ip_address: INET
+#   - user_agent: TEXT
+#   - created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+#   - expires_at: TIMESTAMP
+#   - last_active_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+#
+# Table: refresh_tokens
+#   - id: SERIAL PRIMARY KEY
+#   - user_id: INTEGER REFERENCES users(id) ON DELETE CASCADE
+#   - token_hash: VARCHAR(256) UNIQUE NOT NULL
+#   - session_id: INTEGER REFERENCES user_sessions(id) ON DELETE CASCADE
+#   - created_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+#   - expires_at: TIMESTAMP NOT NULL
+#   - revoked_at: TIMESTAMP
